@@ -1,0 +1,27 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}{{ kontakt }} – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2>{{ kontakt.vorname }} {{ kontakt.nachname }}</h2>
+        <div class="text-muted">{{ kontakt.position }} bei <a href="{{ kontakt.firma.get_absolute_url }}">{{ kontakt.firma.name }}</a></div>
+    </div>
+    <div>
+        <a href="{% url 'vertrieb:kontakt_update' kontakt.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
+        <a href="{% url 'vertrieb:kontakt_delete' kontakt.pk %}" class="btn btn-outline-danger">Löschen</a>
+    </div>
+</div>
+<div class="card mb-3" style="max-width:500px;">
+    <ul class="list-group list-group-flush">
+        <li class="list-group-item"><strong>E-Mail:</strong> {{ kontakt.email|default:"–" }}</li>
+        <li class="list-group-item"><strong>Telefon:</strong> {{ kontakt.telefon|default:"–" }}</li>
+        <li class="list-group-item"><strong>Mobil:</strong> {{ kontakt.mobil|default:"–" }}</li>
+    </ul>
+</div>
+{% if kontakt.notizen %}
+<div class="card" style="max-width:500px;">
+    <div class="card-header fw-semibold">Notizen</div>
+    <div class="card-body">{{ kontakt.notizen|linebreaks }}</div>
+</div>
+{% endif %}
+{% endblock %}

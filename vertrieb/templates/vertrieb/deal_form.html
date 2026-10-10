@@ -1,0 +1,30 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Deal {% if object %}bearbeiten{% else %}anlegen{% endif %}{% endblock %}
+{% block content %}
+<h2 class="mb-3">Deal {% if object %}bearbeiten{% else %}anlegen{% endif %}</h2>
+<div class="card" style="max-width: 700px;">
+    <div class="card-body">
+        <form method="post">
+            {% csrf_token %}
+            {% include "vertrieb/_form_fields.html" %}
+            <button type="submit" class="btn btn-primary">Speichern</button>
+            <a href="{% url 'vertrieb:deal_list' %}" class="btn btn-outline-secondary">Abbrechen</a>
+        </form>
+    </div>
+</div>
+<script>
+// Schlägt beim Wechsel der Phase die Standard-Wahrscheinlichkeit vor (bleibt editierbar).
+document.addEventListener("DOMContentLoaded", function () {
+    var standard = {"lead": 10, "qualifiziert": 30, "angebot": 50, "verhandlung": 70, "gewonnen": 100, "verloren": 0};
+    var phaseSelect = document.getElementById("id_phase");
+    var whkInput = document.getElementById("id_wahrscheinlichkeit");
+    if (phaseSelect && whkInput) {
+        phaseSelect.addEventListener("change", function () {
+            if (standard.hasOwnProperty(this.value)) {
+                whkInput.value = standard[this.value];
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

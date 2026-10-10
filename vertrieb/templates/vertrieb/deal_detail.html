@@ -1,0 +1,74 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}{{ deal.titel }} – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2>{{ deal.titel }}</h2>
+        <div class="text-muted">
+            <a href="{{ deal.firma.get_absolute_url }}">{{ deal.firma.name }}</a>
+            {% if deal.kontakt %} · {{ deal.kontakt }}{% endif %}
+        </div>
+        <span class="badge text-bg-secondary">{{ deal.get_geschaeftsbereich_display }}</span>
+        <span class="badge text-bg-light border">{{ deal.get_phase_display }}</span>
+    </div>
+    <div>
+        <a href="{% url 'vertrieb:deal_update' deal.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
+        <a href="{% url 'vertrieb:deal_delete' deal.pk %}" class="btn btn-outline-danger">Löschen</a>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-5">
+        <div class="card mb-3">
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item"><strong>Wert (netto):</strong> {{ deal.wert|floatformat:2 }} €</li>
+                <li class="list-group-item"><strong>Wahrscheinlichkeit:</strong> {{ deal.wahrscheinlichkeit }}%</li>
+                <li class="list-group-item"><strong>Gewichteter Wert:</strong> {{ deal.gewichteter_wert|floatformat:2 }} €</li>
+                <li class="list-group-item"><strong>Erw. Abschluss:</strong> {{ deal.erwartetes_abschlussdatum|date:"d.m.Y"|default:"–" }}</li>
+                <li class="list-group-item"><strong>Zuständig:</strong> {{ deal.zustaendiger|default:"–" }}</li>
+                {% if deal.verloren_grund %}<li class="list-group-item"><strong>Verloren-Grund:</strong> {{ deal.verloren_grund }}</li>{% endif %}
+            </ul>
+        </div>
+        {% if deal.notizen %}
+        <div class="card">
+            <div class="card-header fw-semibold">Notizen</div>
+            <div class="card-body">{{ deal.notizen|linebreaks }}</div>
+        </div>
+        {% endif %}
+    </div>
+    <div class="col-md-7">
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between">
+                <span class="fw-semibold">Angebote</span>
+                <a href="{% url 'vertrieb:angebot_create' %}?deal={{ deal.pk }}" class="btn btn-sm btn-outline-primary">+ Angebot</a>
+            </div>
+            <ul class="list-group list-group-flush">
+                {% for a in deal.angebote.all %}
+                <li class="list-group-item d-flex justify-content-between">
+                    <a href="{{ a.get_absolute_url }}">{{ a.nummer }}</a>
+                    <span>{{ a.get_status_display }} · {{ a.gesamtsumme|floatformat:2 }} €</span>
+                </li>
+                {% empty %}
+                <li class="list-group-item text-muted">Noch keine Angebote erstellt.</li>
+                {% endfor %}
+            </ul>
+        </div>
+        <div class="card">
+            <div class="card-header d-flex justify-content-between">
+                <span class="fw-semibold">Aktivitäten</span>
+                <a href="{% url 'vertrieb:aktivitaet_create' %}?deal={{ deal.pk }}" class="btn btn-sm btn-outline-primary">+ Aktivität</a>
+            </div>
+            <ul class="list-group list-group-flush">
+                {% for a in deal.aktivitaeten.all %}
+                <li class="list-group-item">
+                    <a href="{{ a.get_absolute_url }}">{{ a.betreff }}</a>
+                    <div class="small text-muted">{{ a.get_typ_display }} · {{ a.datum|date:"d.m.Y H:i" }}</div>
+                </li>
+                {% empty %}
+                <li class="list-group-item text-muted">Keine Aktivitäten hinterlegt.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

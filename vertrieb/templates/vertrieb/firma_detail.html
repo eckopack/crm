@@ -1,0 +1,95 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}{{ firma.name }} – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2>{{ firma.name }}</h2>
+        <span class="badge text-bg-secondary">{{ firma.get_geschaeftsbereich_display }}</span>
+        <span class="badge text-bg-light border">{{ firma.get_status_display }}</span>
+    </div>
+    <div>
+        <a href="{% url 'vertrieb:firma_update' firma.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
+        <a href="{% url 'vertrieb:firma_delete' firma.pk %}" class="btn btn-outline-danger">Löschen</a>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-5">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Stammdaten</div>
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item"><strong>Branche Kunde:</strong> {{ firma.branche_kunde|default:"–" }}</li>
+                <li class="list-group-item"><strong>Adresse:</strong> {{ firma.adresse_einzeilig|default:"–" }}</li>
+                <li class="list-group-item"><strong>Telefon:</strong> {{ firma.telefon|default:"–" }}</li>
+                <li class="list-group-item"><strong>E-Mail:</strong> {{ firma.email|default:"–" }}</li>
+                <li class="list-group-item"><strong>Webseite:</strong>
+                    {% if firma.website %}<a href="{{ firma.website }}" target="_blank">{{ firma.website }}</a>{% else %}–{% endif %}
+                </li>
+                <li class="list-group-item"><strong>Zuständig:</strong> {{ firma.zustaendiger|default:"–" }}</li>
+            </ul>
+        </div>
+        {% if firma.notizen %}
+        <div class="card">
+            <div class="card-header fw-semibold">Notizen</div>
+            <div class="card-body">{{ firma.notizen|linebreaks }}</div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-md-7">
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between">
+                <span class="fw-semibold">Kontakte</span>
+                <a href="{% url 'vertrieb:kontakt_create' %}?firma={{ firma.pk }}" class="btn btn-sm btn-outline-primary">+ Kontakt</a>
+            </div>
+            <ul class="list-group list-group-flush">
+                {% for k in firma.kontakte.all %}
+                <li class="list-group-item">
+                    <a href="{{ k.get_absolute_url }}">{{ k.vorname }} {{ k.nachname }}</a>
+                    {% if k.ist_hauptansprechpartner %}<span class="badge text-bg-primary">Hauptansprechpartner</span>{% endif %}
+                    <div class="small text-muted">{{ k.position }} · {{ k.email }}</div>
+                </li>
+                {% empty %}
+                <li class="list-group-item text-muted">Keine Kontakte hinterlegt.</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between">
+                <span class="fw-semibold">Deals</span>
+                <a href="{% url 'vertrieb:deal_create' %}?firma={{ firma.pk }}" class="btn btn-sm btn-outline-primary">+ Deal</a>
+            </div>
+            <ul class="list-group list-group-flush">
+                {% for d in firma.deals.all %}
+                <li class="list-group-item d-flex justify-content-between">
+                    <a href="{{ d.get_absolute_url }}">{{ d.titel }}</a>
+                    <span>{{ d.get_phase_display }} · {{ d.wert|floatformat:0 }} €</span>
+                </li>
+                {% empty %}
+                <li class="list-group-item text-muted">Keine Deals hinterlegt.</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <div class="card">
+            <div class="card-header d-flex justify-content-between">
+                <span class="fw-semibold">Aktivitäten</span>
+                <a href="{% url 'vertrieb:aktivitaet_create' %}?firma={{ firma.pk }}" class="btn btn-sm btn-outline-primary">+ Aktivität</a>
+            </div>
+            <ul class="list-group list-group-flush">
+                {% for a in firma.aktivitaeten.all %}
+                <li class="list-group-item">
+                    <a href="{{ a.get_absolute_url }}">{{ a.betreff }}</a>
+                    <div class="small text-muted">{{ a.get_typ_display }} · {{ a.datum|date:"d.m.Y H:i" }}
+                        {% if a.erledigt %}<span class="badge text-bg-success">erledigt</span>{% endif %}
+                    </div>
+                </li>
+                {% empty %}
+                <li class="list-group-item text-muted">Keine Aktivitäten hinterlegt.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

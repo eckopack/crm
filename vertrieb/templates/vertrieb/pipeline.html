@@ -1,0 +1,50 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Pipeline – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Pipeline</h2>
+    <a href="{% url 'vertrieb:deal_create' %}" class="btn btn-primary">+ Neuer Deal</a>
+</div>
+
+<div class="d-flex gap-3" style="overflow-x: auto;">
+    {% for spalte in spalten %}
+    <div class="kanban-col flex-shrink-0">
+        <div class="card h-100">
+            <div class="card-header">
+                <div class="fw-semibold">{{ spalte.label }}</div>
+                <div class="small text-muted">{{ spalte.deals|length }} Deal(s) · {{ spalte.summe|floatformat:0 }} €</div>
+            </div>
+            <div class="card-body p-2" style="min-height: 200px;">
+                {% for deal in spalte.deals %}
+                <div class="card mb-2 kanban-card">
+                    <div class="card-body p-2">
+                        <a href="{{ deal.get_absolute_url }}" class="fw-semibold text-decoration-none d-block">{{ deal.titel }}</a>
+                        <div class="small text-muted">{{ deal.firma.name }}</div>
+                        <div class="small">{{ deal.wert|floatformat:0 }} € · {{ deal.wahrscheinlichkeit }}%</div>
+                        {% if deal.ist_offen %}
+                        <div class="dropdown mt-1">
+                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                Phase ändern
+                            </button>
+                            <ul class="dropdown-menu">
+                                {% for p in spalten %}
+                                <li>
+                                    <form method="post" action="{% url 'vertrieb:deal_phase_setzen' deal.pk %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="phase" value="{{ p.key }}">
+                                        <button type="submit" class="dropdown-item">{{ p.label }}</button>
+                                    </form>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

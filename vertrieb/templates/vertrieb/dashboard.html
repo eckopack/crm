@@ -1,0 +1,96 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Dashboard – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<h2 class="mb-4">Dashboard</h2>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card text-bg-primary h-100">
+            <div class="card-body">
+                <div class="small">Offene Pipeline (netto)</div>
+                <div class="fs-3 fw-bold">{{ pipeline_wert|floatformat:0 }} €</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-bg-secondary h-100">
+            <div class="card-body">
+                <div class="small">Gewichtete Prognose</div>
+                <div class="fs-3 fw-bold">{{ pipeline_gewichtet|floatformat:0 }} €</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-bg-light h-100 border">
+            <div class="card-body">
+                <div class="small text-muted">Offene Deals</div>
+                <div class="fs-3 fw-bold">{{ anzahl_offene_deals }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-bg-light h-100 border">
+            <div class="card-body">
+                <div class="small text-muted">Firmen gesamt</div>
+                <div class="fs-3 fw-bold">{{ anzahl_firmen }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-5">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">Pipeline nach Phase</div>
+            <ul class="list-group list-group-flush">
+                {% for p in phasen_uebersicht %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    {{ p.label }}
+                    <span>
+                        <span class="badge text-bg-secondary me-2">{{ p.anzahl }}</span>
+                        {{ p.wert|floatformat:0 }} €
+                    </span>
+                </li>
+                {% endfor %}
+            </ul>
+            <div class="card-footer text-end">
+                <a href="{% url 'vertrieb:pipeline' %}" class="btn btn-sm btn-outline-primary">Zur Kanban-Pipeline →</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">Anstehende Aktivitäten</div>
+            <ul class="list-group list-group-flush">
+                {% for a in anstehend %}
+                <li class="list-group-item">
+                    <a href="{{ a.get_absolute_url }}">{{ a.betreff }}</a>
+                    <div class="small text-muted">{{ a.get_typ_display }} · {{ a.datum|date:"d.m.Y H:i" }}</div>
+                </li>
+                {% empty %}
+                <li class="list-group-item text-muted">Keine anstehenden Aktivitäten.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card h-100 {% if ueberfaellig %}border-danger{% endif %}">
+            <div class="card-header fw-semibold {% if ueberfaellig %}text-danger{% endif %}">
+                Überfällig ({{ ueberfaellig|length }})
+            </div>
+            <ul class="list-group list-group-flush">
+                {% for a in ueberfaellig %}
+                <li class="list-group-item">
+                    <a href="{{ a.get_absolute_url }}">{{ a.betreff }}</a>
+                    <div class="small text-muted">{{ a.datum|date:"d.m.Y H:i" }}</div>
+                </li>
+                {% empty %}
+                <li class="list-group-item text-muted">Keine überfälligen Aktivitäten.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

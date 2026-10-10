@@ -1,0 +1,32 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Deals – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Deals</h2>
+    <a href="{% url 'vertrieb:deal_create' %}" class="btn btn-primary">+ Neuer Deal</a>
+</div>
+
+<div class="card">
+    <table class="table table-hover mb-0">
+        <thead>
+        <tr><th>Titel</th><th>Firma</th><th>Phase</th><th>Wert</th><th>Whk.</th><th>Erw. Abschluss</th><th>Zuständig</th></tr>
+        </thead>
+        <tbody>
+        {% for d in deals %}
+        <tr onclick="window.location='{{ d.get_absolute_url }}'" style="cursor:pointer;">
+            <td>{{ d.titel }}</td>
+            <td>{{ d.firma.name }}</td>
+            <td><span class="badge text-bg-light border">{{ d.get_phase_display }}</span></td>
+            <td>{{ d.wert|floatformat:0 }} €</td>
+            <td>{{ d.wahrscheinlichkeit }}%</td>
+            <td>{{ d.erwartetes_abschlussdatum|date:"d.m.Y"|default:"–" }}</td>
+            <td>{{ d.zustaendiger|default:"–" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-muted text-center py-3">Noch keine Deals angelegt.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% include "vertrieb/_pagination.html" %}
+{% endblock %}

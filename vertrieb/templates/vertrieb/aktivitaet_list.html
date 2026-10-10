@@ -1,0 +1,46 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Aktivitäten – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Aktivitäten</h2>
+    <a href="{% url 'vertrieb:aktivitaet_create' %}" class="btn btn-primary">+ Neue Aktivität</a>
+</div>
+
+<div class="mb-3">
+    <a href="?offen=1" class="btn btn-sm btn-outline-secondary {% if request.GET.offen == '1' %}active{% endif %}">Nur offene</a>
+    <a href="?" class="btn btn-sm btn-outline-secondary {% if not request.GET.offen %}active{% endif %}">Alle</a>
+</div>
+
+<div class="card">
+    <table class="table table-hover mb-0">
+        <thead>
+        <tr><th></th><th>Betreff</th><th>Typ</th><th>Datum</th><th>Bezug</th><th>Zuständig</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for a in aktivitaeten %}
+        <tr class="{% if a.ist_ueberfaellig %}table-danger{% endif %}">
+            <td>
+                <form method="post" action="{% url 'vertrieb:aktivitaet_erledigt' a.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-link p-0" title="Erledigt umschalten">
+                        {% if a.erledigt %}✅{% else %}⬜{% endif %}
+                    </button>
+                </form>
+            </td>
+            <td><a href="{{ a.get_absolute_url }}">{{ a.betreff }}</a></td>
+            <td>{{ a.get_typ_display }}</td>
+            <td>{{ a.datum|date:"d.m.Y H:i" }}</td>
+            <td class="small text-muted">
+                {% if a.deal %}{{ a.deal }}{% elif a.firma %}{{ a.firma }}{% elif a.kontakt %}{{ a.kontakt }}{% else %}–{% endif %}
+            </td>
+            <td>{{ a.zustaendiger|default:"–" }}</td>
+            <td><a href="{% url 'vertrieb:aktivitaet_update' a.pk %}" class="btn btn-sm btn-outline-secondary">Bearb.</a></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-muted text-center py-3">Keine Aktivitäten gefunden.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% include "vertrieb/_pagination.html" %}
+{% endblock %}

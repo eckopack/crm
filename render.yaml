@@ -1,0 +1,24 @@
+# Render.com Blueprint – für die schnelle, kostenlose Testphase.
+# WICHTIG: Der kostenlose Web-Service-Plan von Render hat KEIN persistentes
+# Dateisystem. Die SQLite-Datenbank wird bei jedem Neustart/Deploy
+# zurückgesetzt (Beispieldaten werden automatisch neu angelegt). Das ist für
+# diese Phase (gemeinsam live Features ansehen/testen) in Ordnung, aber NICHT
+# für echte Kundendaten gedacht. Für Phase 2 (siehe README.md) auf einen
+# echten VPS mit PostgreSQL + persistentem Speicher umziehen.
+
+services:
+  - type: web
+    name: eckopack-crm
+    runtime: python
+    plan: free
+    buildCommand: >
+      pip install -r requirements.txt &&
+      python manage.py collectstatic --noinput &&
+      python manage.py migrate &&
+      python manage.py beispieldaten
+    startCommand: gunicorn eckopack_crm.wsgi:application --bind 0.0.0.0:$PORT
+    envVars:
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "False"

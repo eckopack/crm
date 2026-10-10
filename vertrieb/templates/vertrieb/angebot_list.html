@@ -1,0 +1,31 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Angebote – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Angebote</h2>
+    <a href="{% url 'vertrieb:angebot_create' %}" class="btn btn-primary">+ Neues Angebot</a>
+</div>
+
+<div class="card">
+    <table class="table table-hover mb-0">
+        <thead>
+        <tr><th>Nummer</th><th>Deal</th><th>Firma</th><th>Datum</th><th>Status</th><th>Summe</th></tr>
+        </thead>
+        <tbody>
+        {% for a in angebote %}
+        <tr onclick="window.location='{{ a.get_absolute_url }}'" style="cursor:pointer;">
+            <td>{{ a.nummer }}</td>
+            <td>{{ a.deal.titel }}</td>
+            <td>{{ a.deal.firma.name }}</td>
+            <td>{{ a.datum|date:"d.m.Y" }}</td>
+            <td><span class="badge text-bg-light border">{{ a.get_status_display }}</span></td>
+            <td>{{ a.gesamtsumme|floatformat:2 }} €</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-muted text-center py-3">Noch keine Angebote erstellt.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% include "vertrieb/_pagination.html" %}
+{% endblock %}
