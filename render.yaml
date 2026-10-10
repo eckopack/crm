@@ -1,16 +1,22 @@
-# Render.com Blueprint – für die schnelle, kostenlose Testphase.
-# WICHTIG: Der kostenlose Web-Service-Plan von Render hat KEIN persistentes
-# Dateisystem. Die SQLite-Datenbank wird bei jedem Neustart/Deploy
-# zurückgesetzt (Beispieldaten werden automatisch neu angelegt). Das ist für
-# diese Phase (gemeinsam live Features ansehen/testen) in Ordnung, aber NICHT
-# für echte Kundendaten gedacht. Für Phase 2 (siehe README.md) auf einen
-# echten VPS mit PostgreSQL + persistentem Speicher umziehen.
+# Render.com Blueprint.
+# Läuft auf dem Starter-Plan (kostenpflichtig, aktuell 7 $/Monat) MIT persistenter
+# Disk (1 GB, ca. 0,25 $/Monat zusätzlich) – die SQLite-Datenbank liegt auf dieser
+# Disk unter /var/data und übersteht damit Neustarts und Inaktivitäts-Spin-downs
+# (anders als beim kostenlosen Plan, der keine persistente Disk unterstützt und bei
+# jeder Inaktivität >15 Min das Dateisystem zurücksetzt). Für echten Dauerbetrieb mit
+# mehreren Nutzern und Backups später trotzdem auf einen VPS mit PostgreSQL umziehen
+# (siehe README.md, Abschnitt Deployment) – diese Lösung ist die kostengünstige
+# Zwischenstufe für die interne Testphase.
 
 services:
   - type: web
     name: eckopack-crm
     runtime: python
-    plan: free
+    plan: starter
+    disk:
+      name: eckopack-data
+      mountPath: /var/data
+      sizeGB: 1
     buildCommand: >
       pip install -r requirements.txt &&
       python manage.py collectstatic --noinput &&
@@ -22,3 +28,5 @@ services:
         generateValue: true
       - key: DJANGO_DEBUG
         value: "False"
+      - key: DJANGO_SQLITE_PATH
+        value: /var/data/db.sqlite3
