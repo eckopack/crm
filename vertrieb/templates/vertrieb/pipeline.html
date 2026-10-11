@@ -12,7 +12,7 @@
         <div class="card h-100">
             <div class="card-header">
                 <div class="fw-semibold">{{ spalte.label }}</div>
-                <div class="small text-muted">{{ spalte.deals|length }} Deal(s) · {{ spalte.summe|floatformat:0 }} €</div>
+                <div class="small text-muted">{{ spalte.deals|length }} Deal(s) · {{ spalte.summe|floatformat:0 }} € · {{ spalte.tonnen_summe|floatformat:1 }} t</div>
             </div>
             <div class="card-body p-2" style="min-height: 200px;">
                 {% for deal in spalte.deals %}
@@ -20,7 +20,7 @@
                     <div class="card-body p-2">
                         <a href="{{ deal.get_absolute_url }}" class="fw-semibold text-decoration-none d-block">{{ deal.titel }}</a>
                         <div class="small text-muted">{{ deal.firma.name }}</div>
-                        <div class="small">{{ deal.wert|floatformat:0 }} € · {{ deal.wahrscheinlichkeit }}%</div>
+                        <div class="small">{{ deal.wert|floatformat:0 }} € · {{ deal.wahrscheinlichkeit }}%{% if deal.potenzial_tonnen %} · {{ deal.potenzial_tonnen|floatformat:1 }} t{% endif %}</div>
                         {% if deal.ist_offen %}
                         <div class="dropdown mt-1">
                             <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">

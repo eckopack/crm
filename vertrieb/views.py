@@ -67,6 +67,7 @@ def pipeline_kanban(request):
             "label": label,
             "deals": deals,
             "summe": deals.aggregate(s=Sum("wert"))["s"] or 0,
+            "tonnen_summe": deals.aggregate(s=Sum("potenzial_tonnen"))["s"] or 0,
         })
     return render(request, "vertrieb/pipeline.html", {"spalten": spalten})
 

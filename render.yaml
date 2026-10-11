@@ -28,10 +28,15 @@
 # vertrieb/management/commands/import_leadliste.py erhalten, falls die Liste
 # später erneut gepflegt und importiert werden soll.
 #
-# EINMALIGES AUFRAEUMEN (11.10.2026): Die 3 Beispiel-Firmen aus der Testphase
-# (Müller Maschinenbau, GrünPack, Nordlicht) werden einmalig per Django-Shell im
-# Start Command gelöscht, da jetzt echte Leads importiert sind. Zugehörige Kontakte/
-# Deals/Aktivitäten/Angebote werden per CASCADE automatisch mitgelöscht. Nach
+# EINMALIGES AUFRAEUMEN (11.10.2026, erledigt): Die 3 Beispiel-Firmen aus der
+# Testphase (Müller Maschinenbau, GrünPack, Nordlicht) wurden einmalig per
+# Django-Shell im Start Command gelöscht (Log bestätigt: "Loesche 3 Beispiel-
+# Firmen"), zugehörige Kontakte/Deals/Aktivitäten/Angebote per CASCADE mit. Zeile
+# danach wieder entfernt, da nicht mehr nötig.
+#
+# EINMALIGE ZUWEISUNG (11.10.2026): Alle importierten Firmen/Deals/Aktivitäten
+# hatten kein Feld "Zuständiger" (Excel-Quelle leer). Einmalig im Start Command auf
+# den admin-User gesetzt, bis echte Mitarbeiter-Accounts angelegt sind. Nach
 # Bestätigung im Log wieder entfernen.
 
 services:
@@ -49,7 +54,7 @@ services:
     startCommand: >
       python manage.py migrate &&
       python manage.py beispieldaten &&
-      python manage.py shell -c "from vertrieb.models import Firma; names=['M\u00fcller Maschinenbau GmbH','Gr\u00fcnPack Lebensmittel AG','Nordlicht Immobilien Verwaltung']; qs=Firma.objects.filter(name__in=names); print('Loesche', qs.count(), 'Beispiel-Firmen:', list(qs.values_list('name', flat=True))); qs.delete()" &&
+      python manage.py shell -c "from django.contrib.auth import get_user_model; from vertrieb.models import Firma, Deal, Aktivitaet; U=get_user_model(); admin=U.objects.get(username='admin'); f=Firma.objects.filter(zustaendiger__isnull=True).update(zustaendiger=admin); d=Deal.objects.filter(zustaendiger__isnull=True).update(zustaendiger=admin); a=Aktivitaet.objects.filter(zustaendiger__isnull=True).update(zustaendiger=admin); print('Zustaendiger gesetzt - Firmen:', f, 'Deals:', d, 'Aktivitaeten:', a)" &&
       gunicorn eckopack_crm.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: DJANGO_SECRET_KEY
