@@ -7,6 +7,15 @@
 # mehreren Nutzern und Backups später trotzdem auf einen VPS mit PostgreSQL umziehen
 # (siehe README.md, Abschnitt Deployment) – diese Lösung ist die kostengünstige
 # Zwischenstufe für die interne Testphase.
+#
+# WICHTIG (Fix 11.10.2026): Persistente Disks sind laut Render-Doku während des
+# Build Command NICHT verfügbar, erst zur Laufzeit (Start Command). migrate/
+# beispieldaten dürfen deshalb NICHT im Build Command laufen (sonst schreiben sie
+# auf einen Pfad, der beim eigentlichen Start durch die echte, leere/alte Disk
+# überlagert wird - genau das hat zuvor das Admin-Passwort nach jedem Deploy auf
+# admin123 zurückgesetzt). Beide Befehle laufen jetzt im Start Command, direkt vor
+# gunicorn. collectstatic bleibt im Build Command, da es nicht auf die Disk
+# angewiesen ist.
 
 services:
   - type: web
@@ -19,10 +28,11 @@ services:
       sizeGB: 1
     buildCommand: >
       pip install -r requirements.txt &&
-      python manage.py collectstatic --noinput &&
+      python manage.py collectstatic --noinput
+    startCommand: >
       python manage.py migrate &&
-      python manage.py beispieldaten
-    startCommand: gunicorn eckopack_crm.wsgi:application --bind 0.0.0.0:$PORT
+      python manage.py beispieldaten &&
+      gunicorn eckopack_crm.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: DJANGO_SECRET_KEY
         generateValue: true
