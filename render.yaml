@@ -39,10 +39,11 @@
 # Command auf den admin-User gesetzt (Log bestätigt: "Zustaendiger gesetzt - Firmen:
 # 35 Deals: 36 Aktivitaeten: 36"). Zeile danach wieder entfernt.
 #
-# EINMALIGER EXPORT (11.10.2026): Fuer eine pflegbare Excel-Masterdatei (fuer
-# Kolleg:innen ohne CRM-Zugang) einmalig alle Firmen/Kontakte/Deals als JSON-
-# Zeilen (Praefix FIRMA_ROW:/KONTAKT_ROW:/DEAL_ROW:) ins Deploy-Log geschrieben.
-# Nach Auslesen der Logs wieder entfernen.
+# EINMALIGER EXPORT (11.10.2026, teilweise erledigt): Kontakte/Deals erfolgreich
+# ausgelesen (51 Kontakte, 36 Deals, Praefix KONTAKT_ROW:/DEAL_ROW:). Die 35
+# Firmen-Zeilen (Praefix FIRMA_ROW:) waren in der Render-Log-Oberflaeche nicht
+# mehr scrollbar erreichbar - deshalb hier als eigener, kleinerer Nachtrag
+# wiederholt. Nach Auslesen wieder entfernen.
 
 services:
   - type: web
@@ -59,7 +60,7 @@ services:
     startCommand: >
       python manage.py migrate &&
       python manage.py beispieldaten &&
-      python manage.py shell -c "import json; from vertrieb.models import Firma, Kontakt, Deal; [print('FIRMA_ROW:' + json.dumps({'externe_id': f.externe_id, 'name': f.name, 'geschaeftsbereich': f.geschaeftsbereich, 'status': f.status, 'branche_kunde': f.branche_kunde, 'website': f.website, 'telefon': f.telefon, 'email': f.email, 'strasse': f.strasse, 'plz': f.plz, 'ort': f.ort, 'land': f.land, 'zustaendiger': (f.zustaendiger.username if f.zustaendiger_id else ''), 'notizen': f.notizen})) for f in Firma.objects.all().order_by('externe_id')]; [print('KONTAKT_ROW:' + json.dumps({'externe_id': k.externe_id, 'firma_externe_id': k.firma.externe_id, 'vorname': k.vorname, 'nachname': k.nachname, 'position': k.position, 'email': k.email, 'telefon': k.telefon, 'mobil': k.mobil, 'hauptansprechpartner': k.ist_hauptansprechpartner, 'notizen': k.notizen})) for k in Kontakt.objects.all().order_by('externe_id')]; [print('DEAL_ROW:' + json.dumps({'externe_id': d.externe_id, 'titel': d.titel, 'firma_externe_id': d.firma.externe_id, 'kontakt_externe_id': (d.kontakt.externe_id if d.kontakt_id else ''), 'geschaeftsbereich': d.geschaeftsbereich, 'wert': str(d.wert), 'potenzial_tonnen': (str(d.potenzial_tonnen) if d.potenzial_tonnen is not None else ''), 'phase': d.phase, 'wahrscheinlichkeit': d.wahrscheinlichkeit, 'erwartetes_abschlussdatum': (d.erwartetes_abschlussdatum.isoformat() if d.erwartetes_abschlussdatum else ''), 'zustaendiger': (d.zustaendiger.username if d.zustaendiger_id else ''), 'verloren_grund': d.verloren_grund, 'notizen': d.notizen})) for d in Deal.objects.all().order_by('externe_id')]" &&
+      python manage.py shell -c "import json; from vertrieb.models import Firma; [print('FIRMA_ROW:' + json.dumps({'externe_id': f.externe_id, 'name': f.name, 'geschaeftsbereich': f.geschaeftsbereich, 'status': f.status, 'branche_kunde': f.branche_kunde, 'website': f.website, 'telefon': f.telefon, 'email': f.email, 'strasse': f.strasse, 'plz': f.plz, 'ort': f.ort, 'land': f.land, 'zustaendiger': (f.zustaendiger.username if f.zustaendiger_id else ''), 'notizen': f.notizen})) for f in Firma.objects.all().order_by('externe_id')]" &&
       gunicorn eckopack_crm.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: DJANGO_SECRET_KEY
