@@ -10,6 +10,7 @@ GESCHAEFTSBEREICH_CHOICES = [
     ("service", "Service"),
     ("immobilien", "Immobilien"),
     ("nachhaltige_verpackung", "Nachhaltige Verpackungslösungen"),
+    ("einweg_serviceprodukte", "Einweg-/Serviceprodukte"),
     ("sonstiges", "Sonstiges"),
 ]
 
@@ -88,6 +89,10 @@ class Firma(models.Model):
         null=True, blank=True, on_delete=models.SET_NULL, related_name="firmen"
     )
     notizen = models.TextField("Notizen", blank=True)
+    externe_id = models.CharField(
+        "Externe ID (z.B. aus Lead-Recherche-Liste)", max_length=30, blank=True, db_index=True,
+        help_text="Für Abgleich beim wiederholten Import aus einer Excel-Liste, z.B. 'F001'.",
+    )
     erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
     aktualisiert_am = models.DateTimeField("Aktualisiert am", auto_now=True)
 
@@ -118,6 +123,10 @@ class Kontakt(models.Model):
     mobil = models.CharField("Mobil", max_length=50, blank=True)
     ist_hauptansprechpartner = models.BooleanField("Hauptansprechpartner", default=False)
     notizen = models.TextField("Notizen", blank=True)
+    externe_id = models.CharField(
+        "Externe ID (z.B. aus Lead-Recherche-Liste)", max_length=30, blank=True, db_index=True,
+        help_text="Für Abgleich beim wiederholten Import aus einer Excel-Liste, z.B. 'K001'.",
+    )
     erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
 
     class Meta:
@@ -143,6 +152,10 @@ class Deal(models.Model):
         "Geschäftsbereich", max_length=30, choices=GESCHAEFTSBEREICH_CHOICES, default="sonstiges"
     )
     wert = models.DecimalField("Wert (EUR, netto)", max_digits=12, decimal_places=2, default=0)
+    potenzial_tonnen = models.DecimalField(
+        "Mengenpotenzial (Tonnen)", max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Geschätzte Jahres-/Bezugsmenge in Tonnen, unabhängig vom EUR-Wert (z.B. aus Lead-Recherche).",
+    )
     phase = models.CharField("Phase", max_length=20, choices=DEAL_PHASE_CHOICES, default="lead")
     wahrscheinlichkeit = models.PositiveSmallIntegerField("Wahrscheinlichkeit (%)", default=10)
     erwartetes_abschlussdatum = models.DateField("Erwartetes Abschlussdatum", null=True, blank=True)
@@ -152,6 +165,10 @@ class Deal(models.Model):
     )
     verloren_grund = models.CharField("Grund (bei Verloren)", max_length=300, blank=True)
     notizen = models.TextField("Notizen", blank=True)
+    externe_id = models.CharField(
+        "Externe ID (z.B. aus Lead-Recherche-Liste)", max_length=30, blank=True, db_index=True,
+        help_text="Für Abgleich beim wiederholten Import aus einer Excel-Liste, z.B. 'L001'.",
+    )
     erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
     aktualisiert_am = models.DateTimeField("Aktualisiert am", auto_now=True)
 

@@ -22,6 +22,7 @@
         <div class="card mb-3">
             <ul class="list-group list-group-flush">
                 <li class="list-group-item"><strong>Wert (netto):</strong> {{ deal.wert|floatformat:2 }} €</li>
+                {% if deal.potenzial_tonnen %}<li class="list-group-item"><strong>Mengenpotenzial:</strong> {{ deal.potenzial_tonnen|floatformat:2 }} t</li>{% endif %}
                 <li class="list-group-item"><strong>Wahrscheinlichkeit:</strong> {{ deal.wahrscheinlichkeit }}%</li>
                 <li class="list-group-item"><strong>Gewichteter Wert:</strong> {{ deal.gewichteter_wert|floatformat:2 }} €</li>
                 <li class="list-group-item"><strong>Erw. Abschluss:</strong> {{ deal.erwartetes_abschlussdatum|date:"d.m.Y"|default:"–" }}</li>

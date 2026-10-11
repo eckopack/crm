@@ -1,5 +1,6 @@
 Django==6.1.2
 gunicorn==23.0.0
 whitenoise==6.8.2
+openpyxl==3.1.5
 # Für Produktivbetrieb mit PostgreSQL (echter VPS, Phase 2) zusätzlich installieren:
 # psycopg[binary]==3.2.*
