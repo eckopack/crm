@@ -16,6 +16,15 @@
 # admin123 zurückgesetzt). Beide Befehle laufen jetzt im Start Command, direkt vor
 # gunicorn. collectstatic bleibt im Build Command, da es nicht auf die Disk
 # angewiesen ist.
+#
+# DIAGNOSE (11.10.2026, 2. Fix-Versuch): Trotz obigem Fix wird bei jedem Redeploy
+# (auch ohne Code-Änderung, reiner "Manual Deploy") wieder ein neuer Admin mit
+# admin123 angelegt und "Beispieldaten erfolgreich angelegt" ausgegeben - die
+# Datenbank ist also bei jedem Start wieder leer. Die zwei "ls -la /var/data"
+# Zeilen unten sind reine Diagnose (kein Risiko, keine Datenänderung): sie zeigen
+# im Deploy-Log, ob die Disk VOR migrate bereits eine db.sqlite3 von einem
+# früheren Deploy enthält oder wirklich leer ist. Nach Klärung der Ursache wieder
+# entfernen.
 
 services:
   - type: web
@@ -30,8 +39,12 @@ services:
       pip install -r requirements.txt &&
       python manage.py collectstatic --noinput
     startCommand: >
+      echo "=== DEBUG: /var/data VOR migrate ===" &&
+      ls -la /var/data &&
       python manage.py migrate &&
       python manage.py beispieldaten &&
+      echo "=== DEBUG: /var/data NACH beispieldaten ===" &&
+      ls -la /var/data &&
       gunicorn eckopack_crm.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: DJANGO_SECRET_KEY
