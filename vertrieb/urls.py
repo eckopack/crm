@@ -39,4 +39,19 @@ urlpatterns = [
     path("angebote/<int:pk>/", views.AngebotDetailView.as_view(), name="angebot_detail"),
     path("angebote/<int:pk>/bearbeiten/", views.angebot_bearbeiten, name="angebot_update"),
     path("angebote/<int:pk>/loeschen/", views.AngebotDeleteView.as_view(), name="angebot_delete"),
+    path("angebote/<int:pk>/pdf/", views.angebot_pdf_download, name="angebot_pdf"),
+
+    path("lieferscheine/", views.LieferscheinListView.as_view(), name="lieferschein_list"),
+    path("lieferscheine/neu/", views.lieferschein_erstellen, name="lieferschein_create"),
+    path("lieferscheine/<int:pk>/", views.LieferscheinDetailView.as_view(), name="lieferschein_detail"),
+    path("lieferscheine/<int:pk>/bearbeiten/", views.lieferschein_bearbeiten, name="lieferschein_update"),
+    path("lieferscheine/<int:pk>/loeschen/", views.LieferscheinDeleteView.as_view(), name="lieferschein_delete"),
+    path("lieferscheine/<int:pk>/pdf/", views.lieferschein_pdf_download, name="lieferschein_pdf"),
+
+    path("rechnungen/", views.RechnungListView.as_view(), name="rechnung_list"),
+    path("rechnungen/neu/", views.rechnung_erstellen, name="rechnung_create"),
+    path("rechnungen/<int:pk>/", views.RechnungDetailView.as_view(), name="rechnung_detail"),
+    path("rechnungen/<int:pk>/bearbeiten/", views.rechnung_bearbeiten, name="rechnung_update"),
+    path("rechnungen/<int:pk>/loeschen/", views.RechnungDeleteView.as_view(), name="rechnung_delete"),
+    path("rechnungen/<int:pk>/pdf/", views.rechnung_pdf_download, name="rechnung_pdf"),
 ]

@@ -11,9 +11,11 @@
         <span class="badge text-bg-light border">{{ angebot.get_status_display }}</span>
     </div>
     <div class="d-print-none">
+        <a href="{% url 'vertrieb:lieferschein_create' %}?angebot={{ angebot.pk }}" class="btn btn-primary">Lieferschein erstellen</a>
+        <a href="{% url 'vertrieb:rechnung_create' %}?angebot={{ angebot.pk }}" class="btn btn-primary">Rechnung erstellen</a>
+        <a href="{% url 'vertrieb:angebot_pdf' angebot.pk %}" target="_blank" class="btn btn-outline-primary">PDF</a>
         <a href="{% url 'vertrieb:angebot_update' angebot.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
         <a href="{% url 'vertrieb:angebot_delete' angebot.pk %}" class="btn btn-outline-danger">Löschen</a>
-        <button onclick="window.print()" class="btn btn-outline-primary">Drucken</button>
     </div>
 </div>
 

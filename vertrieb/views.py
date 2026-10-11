@@ -1,18 +1,23 @@
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Sum
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
 
+from . import pdf
 from .forms import (
     AktivitaetForm, AngebotForm, AngebotPositionFormSet, DealForm, FirmaForm, KontaktForm,
+    LieferscheinForm, LieferscheinPositionFormSet, RechnungForm, RechnungPositionFormSet,
 )
 from .models import (
     DEAL_PHASE_CHOICES, PHASE_STANDARD_WAHRSCHEINLICHKEIT,
-    Aktivitaet, Angebot, Deal, Firma, Kontakt,
+    Aktivitaet, Angebot, Deal, Firma, Kontakt, Lieferschein, Rechnung,
 )
+from django.forms import inlineformset_factory
 
 
 # ---------------------------------------------------------------------------
@@ -341,3 +346,232 @@ class AngebotDeleteView(LoginRequiredMixin, DeleteView):
     model = Angebot
     template_name = "vertrieb/confirm_delete.html"
     success_url = reverse_lazy("vertrieb:angebot_list")
+
+
+@login_required
+def angebot_pdf_download(request, pk):
+    angebot = get_object_or_404(Angebot, pk=pk)
+    pdf_bytes = pdf.angebot_pdf_erzeugen(angebot)
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'inline; filename="{angebot.nummer}.pdf"'
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Lieferschein
+# ---------------------------------------------------------------------------
+
+class LieferscheinListView(LoginRequiredMixin, ListView):
+    model = Lieferschein
+    template_name = "vertrieb/lieferschein_list.html"
+    context_object_name = "lieferscheine"
+    paginate_by = 25
+
+    def get_queryset(self):
+        return Lieferschein.objects.all().select_related("deal", "deal__firma")
+
+
+class LieferscheinDetailView(LoginRequiredMixin, DetailView):
+    model = Lieferschein
+    template_name = "vertrieb/lieferschein_detail.html"
+    context_object_name = "lieferschein"
+
+
+@login_required
+def lieferschein_erstellen(request):
+    angebot_quelle = None
+    angebot_id = request.GET.get("angebot")
+    if angebot_id:
+        angebot_quelle = get_object_or_404(Angebot, pk=angebot_id)
+
+    if request.method == "POST":
+        form = LieferscheinForm(request.POST)
+        if form.is_valid():
+            lieferschein = form.save()
+            formset = LieferscheinPositionFormSet(request.POST, instance=lieferschein)
+            if formset.is_valid():
+                formset.save()
+                return redirect(lieferschein.get_absolute_url())
+        else:
+            formset = LieferscheinPositionFormSet(request.POST)
+    else:
+        initial = {}
+        deal_id = request.GET.get("deal")
+        if angebot_quelle:
+            initial = {"deal": angebot_quelle.deal_id, "angebot": angebot_quelle.pk}
+        elif deal_id:
+            initial = {"deal": deal_id}
+        form = LieferscheinForm(initial=initial)
+
+        if angebot_quelle and angebot_quelle.positionen.exists():
+            positionen_initial = [
+                {"position": p.position, "bezeichnung": p.bezeichnung, "menge": p.menge, "einheit": p.einheit}
+                for p in angebot_quelle.positionen.all()
+            ]
+            FormSetVorbefuellt = inlineformset_factory(
+                Lieferschein, Lieferschein.positionen.rel.related_model,
+                form=LieferscheinPositionFormSet.form, extra=len(positionen_initial), can_delete=True,
+            )
+            formset = FormSetVorbefuellt(initial=positionen_initial)
+        else:
+            formset = LieferscheinPositionFormSet()
+    return render(request, "vertrieb/lieferschein_form.html", {
+        "form": form, "formset": formset, "angebot_quelle": angebot_quelle,
+    })
+
+
+@login_required
+def lieferschein_bearbeiten(request, pk):
+    lieferschein = get_object_or_404(Lieferschein, pk=pk)
+    if request.method == "POST":
+        form = LieferscheinForm(request.POST, instance=lieferschein)
+        formset = LieferscheinPositionFormSet(request.POST, instance=lieferschein)
+        if form.is_valid() and formset.is_valid():
+            form.save()
+            formset.save()
+            return redirect(lieferschein.get_absolute_url())
+    else:
+        form = LieferscheinForm(instance=lieferschein)
+        formset = LieferscheinPositionFormSet(instance=lieferschein)
+    return render(request, "vertrieb/lieferschein_form.html", {
+        "form": form, "formset": formset, "lieferschein": lieferschein,
+    })
+
+
+class LieferscheinDeleteView(LoginRequiredMixin, DeleteView):
+    model = Lieferschein
+    template_name = "vertrieb/confirm_delete.html"
+    success_url = reverse_lazy("vertrieb:lieferschein_list")
+
+
+@login_required
+def lieferschein_pdf_download(request, pk):
+    lieferschein = get_object_or_404(Lieferschein, pk=pk)
+    pdf_bytes = pdf.lieferschein_pdf_erzeugen(lieferschein)
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'inline; filename="{lieferschein.nummer}.pdf"'
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Rechnung
+# ---------------------------------------------------------------------------
+
+class RechnungListView(LoginRequiredMixin, ListView):
+    model = Rechnung
+    template_name = "vertrieb/rechnung_list.html"
+    context_object_name = "rechnungen"
+    paginate_by = 25
+
+    def get_queryset(self):
+        return Rechnung.objects.all().select_related("deal", "deal__firma")
+
+
+class RechnungDetailView(LoginRequiredMixin, DetailView):
+    model = Rechnung
+    template_name = "vertrieb/rechnung_detail.html"
+    context_object_name = "rechnung"
+
+
+@login_required
+def rechnung_erstellen(request):
+    angebot_quelle = None
+    lieferschein_quelle = None
+    if request.method == "GET":
+        angebot_id = request.GET.get("angebot")
+        lieferschein_id = request.GET.get("lieferschein")
+        if lieferschein_id:
+            lieferschein_quelle = get_object_or_404(Lieferschein, pk=lieferschein_id)
+            angebot_quelle = lieferschein_quelle.angebot
+        elif angebot_id:
+            angebot_quelle = get_object_or_404(Angebot, pk=angebot_id)
+
+    if request.method == "POST":
+        form = RechnungForm(request.POST)
+        if form.is_valid():
+            rechnung = form.save()
+            formset = RechnungPositionFormSet(request.POST, instance=rechnung)
+            if formset.is_valid():
+                formset.save()
+                return redirect(rechnung.get_absolute_url())
+        else:
+            formset = RechnungPositionFormSet(request.POST)
+    else:
+        initial = {}
+        deal_id = request.GET.get("deal")
+        if lieferschein_quelle:
+            initial = {
+                "deal": lieferschein_quelle.deal_id, "lieferschein": lieferschein_quelle.pk,
+                "angebot": lieferschein_quelle.angebot_id,
+            }
+        elif angebot_quelle:
+            initial = {"deal": angebot_quelle.deal_id, "angebot": angebot_quelle.pk}
+        elif deal_id:
+            initial = {"deal": deal_id}
+        form = RechnungForm(initial=initial)
+
+        quelle_positionen = None
+        if lieferschein_quelle:
+            quelle_positionen = lieferschein_quelle.positionen.all()
+        elif angebot_quelle:
+            quelle_positionen = angebot_quelle.positionen.all()
+
+        if quelle_positionen is not None and quelle_positionen.exists():
+            positionen_initial = []
+            for p in quelle_positionen:
+                einzelpreis = getattr(p, "einzelpreis", 0) or 0
+                positionen_initial.append({
+                    "position": p.position, "bezeichnung": p.bezeichnung,
+                    "menge": p.menge, "einheit": p.einheit, "einzelpreis": einzelpreis,
+                })
+            FormSetVorbefuellt = inlineformset_factory(
+                Rechnung, Rechnung.positionen.rel.related_model,
+                form=RechnungPositionFormSet.form, extra=len(positionen_initial), can_delete=True,
+            )
+            formset = FormSetVorbefuellt(initial=positionen_initial)
+        else:
+            formset = RechnungPositionFormSet()
+    return render(request, "vertrieb/rechnung_form.html", {
+        "form": form, "formset": formset, "angebot_quelle": angebot_quelle, "lieferschein_quelle": lieferschein_quelle,
+    })
+
+
+@login_required
+def rechnung_bearbeiten(request, pk):
+    rechnung = get_object_or_404(Rechnung, pk=pk)
+    if not rechnung.ist_bearbeitbar:
+        messages.warning(
+            request,
+            "Diese Rechnung wurde bereits versendet und darf nach GoBD nicht mehr nachtraeglich "
+            "geaendert werden. Fuer Korrekturen bitte eine Stornorechnung/Gutschrift erstellen "
+            "(dieser Workflow ist noch nicht automatisiert).",
+        )
+        return redirect(rechnung.get_absolute_url())
+    if request.method == "POST":
+        form = RechnungForm(request.POST, instance=rechnung)
+        formset = RechnungPositionFormSet(request.POST, instance=rechnung)
+        if form.is_valid() and formset.is_valid():
+            form.save()
+            formset.save()
+            return redirect(rechnung.get_absolute_url())
+    else:
+        form = RechnungForm(instance=rechnung)
+        formset = RechnungPositionFormSet(instance=rechnung)
+    return render(request, "vertrieb/rechnung_form.html", {
+        "form": form, "formset": formset, "rechnung": rechnung,
+    })
+
+
+class RechnungDeleteView(LoginRequiredMixin, DeleteView):
+    model = Rechnung
+    template_name = "vertrieb/confirm_delete.html"
+    success_url = reverse_lazy("vertrieb:rechnung_list")
+
+
+@login_required
+def rechnung_pdf_download(request, pk):
+    rechnung = get_object_or_404(Rechnung, pk=pk)
+    pdf_bytes = pdf.rechnung_pdf_erzeugen(rechnung)
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'inline; filename="{rechnung.nummer}.pdf"'
+    return response

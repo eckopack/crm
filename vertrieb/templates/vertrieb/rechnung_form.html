@@ -1,0 +1,57 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Rechnung {% if rechnung %}bearbeiten{% else %}anlegen{% endif %}{% endblock %}
+{% block content %}
+<h2 class="mb-3">Rechnung {% if rechnung %}bearbeiten{% else %}anlegen{% endif %}</h2>
+{% if lieferschein_quelle %}
+<p class="text-muted">Positionen aus Lieferschein {{ lieferschein_quelle.nummer }} übernommen – Einzelpreise bitte prüfen.</p>
+{% elif angebot_quelle %}
+<p class="text-muted">Positionen aus Angebot {{ angebot_quelle.nummer }} übernommen – bei Bedarf anpassen.</p>
+{% endif %}
+
+<form method="post">
+    {% csrf_token %}
+    <div class="card mb-3" style="max-width: 700px;">
+        <div class="card-body">
+            {% include "vertrieb/_form_fields.html" %}
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header fw-semibold">Positionen</div>
+        <div class="card-body">
+            {{ formset.management_form }}
+            {% if formset.non_form_errors %}
+                <div class="alert alert-danger">{{ formset.non_form_errors }}</div>
+            {% endif %}
+            <table class="table" id="positionen-tabelle">
+                <thead>
+                <tr>
+                    <th>Pos.</th><th>Bezeichnung</th><th>Menge</th><th>Einheit</th><th>Einzelpreis</th><th>USt-Satz</th>
+                    {% if formset.can_delete %}<th>Löschen</th>{% endif %}
+                </tr>
+                </thead>
+                <tbody>
+                {% for pform in formset %}
+                <tr>
+                    {% for hidden in pform.hidden_fields %}{{ hidden }}{% endfor %}
+                    <td>{{ pform.position }}</td>
+                    <td>{{ pform.bezeichnung }}</td>
+                    <td>{{ pform.menge }}</td>
+                    <td>{{ pform.einheit }}</td>
+                    <td>{{ pform.einzelpreis }}</td>
+                    <td>{{ pform.steuersatz }}</td>
+                    {% if formset.can_delete %}<td>{{ pform.DELETE }}</td>{% endif %}
+                </tr>
+                {% for field in pform %}{% for error in field.errors %}
+                <tr><td colspan="7" class="text-danger small">{{ field.label }}: {{ error }}</td></tr>
+                {% endfor %}{% endfor %}
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Speichern</button>
+    <a href="{% url 'vertrieb:rechnung_list' %}" class="btn btn-outline-secondary">Abbrechen</a>
+</form>
+{% endblock %}

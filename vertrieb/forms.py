@@ -1,7 +1,10 @@
 from django import forms
 from django.forms import inlineformset_factory
 
-from .models import Aktivitaet, Angebot, AngebotPosition, Deal, Firma, Kontakt
+from .models import (
+    Aktivitaet, Angebot, AngebotPosition, Deal, Firma, Kontakt,
+    Lieferschein, LieferscheinPosition, Rechnung, RechnungPosition,
+)
 
 
 class BootstrapFormMixin:
@@ -108,4 +111,69 @@ class AngebotPositionForm(BootstrapFormMixin, forms.ModelForm):
 
 AngebotPositionFormSet = inlineformset_factory(
     Angebot, AngebotPosition, form=AngebotPositionForm, extra=1, can_delete=True
+)
+
+
+class LieferscheinForm(BootstrapFormMixin, forms.ModelForm):
+    class Meta:
+        model = Lieferschein
+        fields = ["deal", "angebot", "datum", "status", "notizen"]
+        widgets = {
+            "notizen": forms.Textarea(attrs={"rows": 3}),
+            "datum": forms.DateInput(attrs={"type": "date"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()
+        self.fields["angebot"].required = False
+
+
+class LieferscheinPositionForm(BootstrapFormMixin, forms.ModelForm):
+    class Meta:
+        model = LieferscheinPosition
+        fields = ["position", "bezeichnung", "menge", "einheit"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()
+
+
+LieferscheinPositionFormSet = inlineformset_factory(
+    Lieferschein, LieferscheinPosition, form=LieferscheinPositionForm, extra=1, can_delete=True
+)
+
+
+class RechnungForm(BootstrapFormMixin, forms.ModelForm):
+    class Meta:
+        model = Rechnung
+        fields = [
+            "deal", "angebot", "lieferschein", "rechnungsdatum", "leistungsdatum",
+            "zahlungsziel_tage", "status", "notizen",
+        ]
+        widgets = {
+            "notizen": forms.Textarea(attrs={"rows": 3}),
+            "rechnungsdatum": forms.DateInput(attrs={"type": "date"}),
+            "leistungsdatum": forms.DateInput(attrs={"type": "date"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()
+        self.fields["angebot"].required = False
+        self.fields["lieferschein"].required = False
+
+
+class RechnungPositionForm(BootstrapFormMixin, forms.ModelForm):
+    class Meta:
+        model = RechnungPosition
+        fields = ["position", "bezeichnung", "menge", "einheit", "einzelpreis", "steuersatz"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()
+
+
+RechnungPositionFormSet = inlineformset_factory(
+    Rechnung, RechnungPosition, form=RechnungPositionForm, extra=1, can_delete=True
 )

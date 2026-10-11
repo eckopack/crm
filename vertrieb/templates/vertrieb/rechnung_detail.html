@@ -1,0 +1,72 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}{{ rechnung.nummer }} – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2>{{ rechnung.nummer }}</h2>
+        <div class="text-muted">
+            Deal: <a href="{{ rechnung.deal.get_absolute_url }}">{{ rechnung.deal.titel }}</a>
+            · Firma: <a href="{{ rechnung.deal.firma.get_absolute_url }}">{{ rechnung.deal.firma.name }}</a>
+            {% if rechnung.lieferschein %}· Lieferschein: <a href="{{ rechnung.lieferschein.get_absolute_url }}">{{ rechnung.lieferschein.nummer }}</a>{% endif %}
+        </div>
+        <span class="badge text-bg-light border">{{ rechnung.get_status_display }}</span>
+        {% if not rechnung.ist_bearbeitbar %}
+        <span class="badge text-bg-warning">Nach Versand nicht mehr änderbar (GoBD)</span>
+        {% endif %}
+    </div>
+    <div class="d-print-none">
+        <a href="{% url 'vertrieb:rechnung_pdf' rechnung.pk %}" target="_blank" class="btn btn-outline-primary">PDF</a>
+        {% if rechnung.ist_bearbeitbar %}
+        <a href="{% url 'vertrieb:rechnung_update' rechnung.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
+        {% endif %}
+        <a href="{% url 'vertrieb:rechnung_delete' rechnung.pk %}" class="btn btn-outline-danger">Löschen</a>
+    </div>
+</div>
+
+<div class="card mb-3" style="max-width:300px;">
+    <ul class="list-group list-group-flush">
+        <li class="list-group-item"><strong>Rechnungsdatum:</strong> {{ rechnung.rechnungsdatum|date:"d.m.Y" }}</li>
+        <li class="list-group-item"><strong>Leistungsdatum:</strong> {{ rechnung.leistungsdatum|date:"d.m.Y"|default:rechnung.rechnungsdatum|date:"d.m.Y" }}</li>
+        <li class="list-group-item"><strong>Zahlungsziel:</strong> {{ rechnung.zahlungsziel_tage }} Tage netto</li>
+        <li class="list-group-item"><strong>Fällig am:</strong> {{ rechnung.faelligkeitsdatum|date:"d.m.Y" }}</li>
+    </ul>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header fw-semibold">Positionen</div>
+    <table class="table mb-0">
+        <thead>
+        <tr><th>Pos.</th><th>Bezeichnung</th><th>Menge</th><th>Einheit</th><th>Einzelpreis</th><th>USt.</th><th>Netto</th></tr>
+        </thead>
+        <tbody>
+        {% for p in rechnung.positionen.all %}
+        <tr>
+            <td>{{ p.position }}</td>
+            <td>{{ p.bezeichnung }}</td>
+            <td>{{ p.menge }}</td>
+            <td>{{ p.get_einheit_display }}</td>
+            <td>{{ p.einzelpreis|floatformat:2 }} €</td>
+            <td>{{ p.steuersatz|floatformat:0 }} %</td>
+            <td>{{ p.nettobetrag|floatformat:2 }} €</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-muted text-center py-3">Keine Positionen erfasst.</td></tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+        <tr><td colspan="6" class="text-end">Nettosumme</td><td>{{ rechnung.nettosumme|floatformat:2 }} €</td></tr>
+        {% for satz, netto, steuer in rechnung.steuer_aufschluesselung %}
+        <tr><td colspan="6" class="text-end">zzgl. USt {{ satz|floatformat:0 }}% auf {{ netto|floatformat:2 }} €</td><td>{{ steuer|floatformat:2 }} €</td></tr>
+        {% endfor %}
+        <tr class="fw-bold"><td colspan="6" class="text-end">Gesamtbetrag (brutto)</td><td>{{ rechnung.bruttosumme|floatformat:2 }} €</td></tr>
+        </tfoot>
+    </table>
+</div>
+
+{% if rechnung.notizen %}
+<div class="card">
+    <div class="card-header fw-semibold">Notizen/Zahlungshinweis</div>
+    <div class="card-body">{{ rechnung.notizen|linebreaks }}</div>
+</div>
+{% endif %}
+{% endblock %}

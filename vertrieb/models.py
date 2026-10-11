@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.conf import settings
 from django.db import models
 from django.urls import reverse
@@ -284,3 +285,181 @@ class AngebotPosition(models.Model):
     @property
     def gesamtpreis(self):
         return self.menge * self.einzelpreis
+
+
+LIEFERSCHEIN_STATUS_CHOICES = [
+    ("entwurf", "Entwurf"),
+    ("versendet", "Versendet/Geliefert"),
+]
+
+RECHNUNG_STATUS_CHOICES = [
+    ("entwurf", "Entwurf"),
+    ("versendet", "Versendet"),
+    ("bezahlt", "Bezahlt"),
+    ("storniert", "Storniert"),
+]
+
+STEUERSATZ_CHOICES = [
+    (Decimal("19.00"), "19 %"),
+    (Decimal("7.00"), "7 %"),
+    (Decimal("0.00"), "0 % (steuerfrei)"),
+]
+
+
+class Lieferschein(models.Model):
+    nummer = models.CharField("Lieferscheinnummer", max_length=30, unique=True, blank=True)
+    deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.CASCADE, related_name="lieferscheine")
+    angebot = models.ForeignKey(
+        Angebot, verbose_name="Angebot", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="lieferscheine"
+    )
+    datum = models.DateField("Lieferdatum", default=timezone.now)
+    status = models.CharField("Status", max_length=20, choices=LIEFERSCHEIN_STATUS_CHOICES, default="entwurf")
+    notizen = models.TextField("Notizen", blank=True)
+    erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Lieferschein"
+        verbose_name_plural = "Lieferscheine"
+        ordering = ["-datum", "-nummer"]
+
+    def __str__(self):
+        return self.nummer or f"Lieferschein (Entwurf) – {self.deal}"
+
+    def get_absolute_url(self):
+        return reverse("vertrieb:lieferschein_detail", args=[self.pk])
+
+    def save(self, *args, **kwargs):
+        if not self.nummer:
+            jahr = (self.datum or timezone.now().date()).year
+            letzter = Lieferschein.objects.filter(nummer__startswith=f"LS-{jahr}-").order_by("-nummer").first()
+            if letzter and letzter.nummer.split("-")[-1].isdigit():
+                naechste = int(letzter.nummer.split("-")[-1]) + 1
+            else:
+                naechste = 1
+            self.nummer = f"LS-{jahr}-{naechste:04d}"
+        super().save(*args, **kwargs)
+
+
+class LieferscheinPosition(models.Model):
+    lieferschein = models.ForeignKey(Lieferschein, on_delete=models.CASCADE, related_name="positionen")
+    position = models.PositiveIntegerField("Pos.", default=1)
+    bezeichnung = models.CharField("Bezeichnung", max_length=300)
+    menge = models.DecimalField("Menge", max_digits=10, decimal_places=2, default=1)
+    einheit = models.CharField("Einheit", max_length=10, choices=EINHEIT_CHOICES, default="stk")
+
+    class Meta:
+        verbose_name = "Lieferscheinposition"
+        verbose_name_plural = "Lieferscheinpositionen"
+        ordering = ["position"]
+
+    def __str__(self):
+        return self.bezeichnung
+
+
+class Rechnung(models.Model):
+    nummer = models.CharField("Rechnungsnummer", max_length=30, unique=True, blank=True)
+    deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.CASCADE, related_name="rechnungen")
+    angebot = models.ForeignKey(
+        Angebot, verbose_name="Angebot", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="rechnungen"
+    )
+    lieferschein = models.ForeignKey(
+        Lieferschein, verbose_name="Lieferschein", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="rechnungen"
+    )
+    rechnungsdatum = models.DateField("Rechnungsdatum", default=timezone.now)
+    leistungsdatum = models.DateField(
+        "Liefer-/Leistungsdatum", null=True, blank=True,
+        help_text="Falls abweichend vom Rechnungsdatum; Pflichtangabe nach §14 UStG.",
+    )
+    zahlungsziel_tage = models.PositiveSmallIntegerField("Zahlungsziel (Tage, netto)", default=7)
+    status = models.CharField("Status", max_length=20, choices=RECHNUNG_STATUS_CHOICES, default="entwurf")
+    notizen = models.TextField("Notizen/Zahlungshinweis", blank=True)
+    erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Rechnung"
+        verbose_name_plural = "Rechnungen"
+        ordering = ["-rechnungsdatum", "-nummer"]
+
+    def __str__(self):
+        return self.nummer or f"Rechnung (Entwurf) – {self.deal}"
+
+    def get_absolute_url(self):
+        return reverse("vertrieb:rechnung_detail", args=[self.pk])
+
+    def save(self, *args, **kwargs):
+        if not self.nummer:
+            jahr = (self.rechnungsdatum or timezone.now().date()).year
+            letzte = Rechnung.objects.filter(nummer__startswith=f"RE-{jahr}-").order_by("-nummer").first()
+            if letzte and letzte.nummer.split("-")[-1].isdigit():
+                naechste = int(letzte.nummer.split("-")[-1]) + 1
+            else:
+                naechste = 1
+            self.nummer = f"RE-{jahr}-{naechste:04d}"
+        super().save(*args, **kwargs)
+
+    @property
+    def faelligkeitsdatum(self):
+        from datetime import timedelta
+        basis = self.rechnungsdatum or timezone.now().date()
+        return basis + timedelta(days=self.zahlungsziel_tage)
+
+    @property
+    def ist_bearbeitbar(self):
+        return self.status == "entwurf"
+
+    @property
+    def nettosumme(self):
+        return sum((p.nettobetrag for p in self.positionen.all()), start=Decimal("0"))
+
+    @property
+    def steuerbetrag(self):
+        return sum((p.steuerbetrag for p in self.positionen.all()), start=Decimal("0"))
+
+    @property
+    def bruttosumme(self):
+        return self.nettosumme + self.steuerbetrag
+
+    @property
+    def steuer_aufschluesselung(self):
+        """Liste von (Steuersatz, Netto-Bemessungsgrundlage, Steuerbetrag) je verwendetem Satz –
+        so wie §14 UStG den Steuerausweis auf der Rechnung verlangt."""
+        gruppen = {}
+        for p in self.positionen.all():
+            netto, steuer = gruppen.get(p.steuersatz, (Decimal("0"), Decimal("0")))
+            gruppen[p.steuersatz] = (netto + p.nettobetrag, steuer + p.steuerbetrag)
+        return [(satz, *werte) for satz, werte in sorted(gruppen.items())]
+
+
+class RechnungPosition(models.Model):
+    rechnung = models.ForeignKey(Rechnung, on_delete=models.CASCADE, related_name="positionen")
+    position = models.PositiveIntegerField("Pos.", default=1)
+    bezeichnung = models.CharField("Bezeichnung", max_length=300)
+    menge = models.DecimalField("Menge", max_digits=10, decimal_places=2, default=1)
+    einheit = models.CharField("Einheit", max_length=10, choices=EINHEIT_CHOICES, default="stk")
+    einzelpreis = models.DecimalField("Einzelpreis (EUR, netto)", max_digits=12, decimal_places=2, default=0)
+    steuersatz = models.DecimalField(
+        "USt-Satz (%)", max_digits=4, decimal_places=2, choices=STEUERSATZ_CHOICES, default=Decimal("19.00")
+    )
+
+    class Meta:
+        verbose_name = "Rechnungsposition"
+        verbose_name_plural = "Rechnungspositionen"
+        ordering = ["position"]
+
+    def __str__(self):
+        return self.bezeichnung
+
+    @property
+    def nettobetrag(self):
+        return self.menge * self.einzelpreis
+
+    @property
+    def steuerbetrag(self):
+        return (self.nettobetrag * self.steuersatz / Decimal("100")).quantize(Decimal("0.01"))
+
+    @property
+    def bruttobetrag(self):
+        return self.nettobetrag + self.steuerbetrag
