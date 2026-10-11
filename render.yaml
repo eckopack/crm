@@ -21,13 +21,18 @@
 # Jetzt in eckopack_crm/settings.py korrigiert: Die SQLite-Datei liegt damit
 # tatsächlich unter /var/data/db.sqlite3 auf der persistenten Disk.
 #
-# EINMALIGER IMPORT (11.10.2026): import_leadliste läuft einmalig im Start Command,
-# um die echte Lead-Recherche-Liste (data/20260926_ECKOPACK_Leadliste.xlsx) in die
-# Produktionsdatenbank zu übernehmen (Render Shell hat laut Render-Doku keinen
-# Zugriff auf die persistente Disk, deshalb nicht über die Shell ausführbar - der
-# Import muss im echten Start-Prozess laufen). Der Befehl ist idempotent
-# (Erkennung über externe_id), daher ungefährlich, falls er versehentlich ein
-# zweites Mal läuft. Nach Bestätigung im Log wieder entfernen.
+# EINMALIGER IMPORT (11.10.2026, erledigt): import_leadliste lief einmalig im Start
+# Command und hat die echte Lead-Recherche-Liste erfolgreich übernommen (35 Firmen,
+# 51 Kontakte, 36 Deals, 1 Warnung wegen fehlendem Land bei Firma F035). Zeile danach
+# wieder entfernt, da nicht mehr nötig - der Befehl selbst bleibt idempotent in
+# vertrieb/management/commands/import_leadliste.py erhalten, falls die Liste
+# später erneut gepflegt und importiert werden soll.
+#
+# EINMALIGES AUFRAEUMEN (11.10.2026): Die 3 Beispiel-Firmen aus der Testphase
+# (Müller Maschinenbau, GrünPack, Nordlicht) werden einmalig per Django-Shell im
+# Start Command gelöscht, da jetzt echte Leads importiert sind. Zugehörige Kontakte/
+# Deals/Aktivitäten/Angebote werden per CASCADE automatisch mitgelöscht. Nach
+# Bestätigung im Log wieder entfernen.
 
 services:
   - type: web
@@ -44,7 +49,7 @@ services:
     startCommand: >
       python manage.py migrate &&
       python manage.py beispieldaten &&
-      python manage.py import_leadliste data/20260926_ECKOPACK_Leadliste.xlsx &&
+      python manage.py shell -c "from vertrieb.models import Firma; names=['M\u00fcller Maschinenbau GmbH','Gr\u00fcnPack Lebensmittel AG','Nordlicht Immobilien Verwaltung']; qs=Firma.objects.filter(name__in=names); print('Loesche', qs.count(), 'Beispiel-Firmen:', list(qs.values_list('name', flat=True))); qs.delete()" &&
       gunicorn eckopack_crm.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: DJANGO_SECRET_KEY
