@@ -20,10 +20,15 @@
 # DIAGNOSE (11.10.2026, 2. Fix-Versuch): Trotz obigem Fix wird bei jedem Redeploy
 # (auch ohne Code-Änderung, reiner "Manual Deploy") wieder ein neuer Admin mit
 # admin123 angelegt und "Beispieldaten erfolgreich angelegt" ausgegeben - die
-# Datenbank ist also bei jedem Start wieder leer. Die zwei "ls -la /var/data"
-# Zeilen unten sind reine Diagnose (kein Risiko, keine Datenänderung): sie zeigen
-# im Deploy-Log, ob die Disk VOR migrate bereits eine db.sqlite3 von einem
-# früheren Deploy enthält oder wirklich leer ist. Nach Klärung der Ursache wieder
+# Datenbank ist also bei jedem Start wieder leer. Die "ls -la /var/data" Zeilen
+# haben das bestätigt: /var/data ist VOR UND NACH migrate komplett leer, obwohl
+# migrate erfolgreich durchläuft. Django schreibt die DB also offenbar gar nicht
+# auf die Disk.
+#
+# DIAGNOSE (11.10.2026, 3. Runde): Zusätzliche Zeilen geben aus, ob die Variable
+# DJANGO_SQLITE_PATH im laufenden Prozess tatsächlich ankommt und welchen
+# Datenbankpfad Django wirklich verwendet (settings.DATABASES). Reine Diagnose,
+# keine Datenänderung. Nach Klärung der Ursache alle DEBUG-Zeilen wieder
 # entfernen.
 
 services:
@@ -39,6 +44,8 @@ services:
       pip install -r requirements.txt &&
       python manage.py collectstatic --noinput
     startCommand: >
+      echo "=== DEBUG: DJANGO_SQLITE_PATH=$DJANGO_SQLITE_PATH ===" &&
+      python manage.py shell -c "from django.conf import settings; print('=== DEBUG: DATABASES =', settings.DATABASES)" &&
       echo "=== DEBUG: /var/data VOR migrate ===" &&
       ls -la /var/data &&
       python manage.py migrate &&
