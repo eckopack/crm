@@ -20,6 +20,14 @@
 # Kopie der korrigierten settings.py landete versehentlich im falschen Ordner).
 # Jetzt in eckopack_crm/settings.py korrigiert: Die SQLite-Datei liegt damit
 # tatsächlich unter /var/data/db.sqlite3 auf der persistenten Disk.
+#
+# EINMALIGER IMPORT (11.10.2026): import_leadliste läuft einmalig im Start Command,
+# um die echte Lead-Recherche-Liste (data/20260926_ECKOPACK_Leadliste.xlsx) in die
+# Produktionsdatenbank zu übernehmen (Render Shell hat laut Render-Doku keinen
+# Zugriff auf die persistente Disk, deshalb nicht über die Shell ausführbar - der
+# Import muss im echten Start-Prozess laufen). Der Befehl ist idempotent
+# (Erkennung über externe_id), daher ungefährlich, falls er versehentlich ein
+# zweites Mal läuft. Nach Bestätigung im Log wieder entfernen.
 
 services:
   - type: web
@@ -36,6 +44,7 @@ services:
     startCommand: >
       python manage.py migrate &&
       python manage.py beispieldaten &&
+      python manage.py import_leadliste data/20260926_ECKOPACK_Leadliste.xlsx &&
       gunicorn eckopack_crm.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: DJANGO_SECRET_KEY
