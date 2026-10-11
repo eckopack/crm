@@ -11,11 +11,12 @@ from django.views.generic import CreateView, DeleteView, DetailView, ListView, U
 from . import pdf
 from .forms import (
     AktivitaetForm, AngebotForm, AngebotPositionFormSet, DealForm, FirmaForm, KontaktForm,
+    PackscheinForm, PackscheinPositionFormSet,
     LieferscheinForm, LieferscheinPositionFormSet, RechnungForm, RechnungPositionFormSet,
 )
 from .models import (
     DEAL_PHASE_CHOICES, PHASE_STANDARD_WAHRSCHEINLICHKEIT,
-    Aktivitaet, Angebot, Deal, Firma, Kontakt, Lieferschein, Rechnung,
+    Aktivitaet, Angebot, Deal, Firma, Kontakt, Packschein, Lieferschein, Rechnung,
 )
 from django.forms import inlineformset_factory
 
@@ -358,6 +359,102 @@ def angebot_pdf_download(request, pk):
 
 
 # ---------------------------------------------------------------------------
+# Packschein (internes Kommissionier-/Packdokument fürs Lager)
+# ---------------------------------------------------------------------------
+
+class PackscheinListView(LoginRequiredMixin, ListView):
+    model = Packschein
+    template_name = "vertrieb/packschein_list.html"
+    context_object_name = "packscheine"
+    paginate_by = 25
+
+    def get_queryset(self):
+        return Packschein.objects.all().select_related("deal", "deal__firma")
+
+
+class PackscheinDetailView(LoginRequiredMixin, DetailView):
+    model = Packschein
+    template_name = "vertrieb/packschein_detail.html"
+    context_object_name = "packschein"
+
+
+@login_required
+def packschein_erstellen(request):
+    angebot_quelle = None
+    angebot_id = request.GET.get("angebot")
+    if angebot_id:
+        angebot_quelle = get_object_or_404(Angebot, pk=angebot_id)
+
+    if request.method == "POST":
+        form = PackscheinForm(request.POST)
+        if form.is_valid():
+            packschein = form.save()
+            formset = PackscheinPositionFormSet(request.POST, instance=packschein)
+            if formset.is_valid():
+                formset.save()
+                return redirect(packschein.get_absolute_url())
+        else:
+            formset = PackscheinPositionFormSet(request.POST)
+    else:
+        initial = {}
+        deal_id = request.GET.get("deal")
+        if angebot_quelle:
+            initial = {"deal": angebot_quelle.deal_id, "angebot": angebot_quelle.pk}
+        elif deal_id:
+            initial = {"deal": deal_id}
+        form = PackscheinForm(initial=initial)
+
+        if angebot_quelle and angebot_quelle.positionen.exists():
+            positionen_initial = [
+                {"position": p.position, "bezeichnung": p.bezeichnung, "menge": p.menge, "einheit": p.einheit}
+                for p in angebot_quelle.positionen.all()
+            ]
+            FormSetVorbefuellt = inlineformset_factory(
+                Packschein, Packschein.positionen.rel.related_model,
+                form=PackscheinPositionFormSet.form, extra=len(positionen_initial), can_delete=True,
+            )
+            formset = FormSetVorbefuellt(initial=positionen_initial)
+        else:
+            formset = PackscheinPositionFormSet()
+    return render(request, "vertrieb/packschein_form.html", {
+        "form": form, "formset": formset, "angebot_quelle": angebot_quelle,
+    })
+
+
+@login_required
+def packschein_bearbeiten(request, pk):
+    packschein = get_object_or_404(Packschein, pk=pk)
+    if request.method == "POST":
+        form = PackscheinForm(request.POST, instance=packschein)
+        formset = PackscheinPositionFormSet(request.POST, instance=packschein)
+        if form.is_valid() and formset.is_valid():
+            form.save()
+            formset.save()
+            return redirect(packschein.get_absolute_url())
+    else:
+        form = PackscheinForm(instance=packschein)
+        formset = PackscheinPositionFormSet(instance=packschein)
+    return render(request, "vertrieb/packschein_form.html", {
+        "form": form, "formset": formset, "packschein": packschein,
+    })
+
+
+class PackscheinDeleteView(LoginRequiredMixin, DeleteView):
+    model = Packschein
+    template_name = "vertrieb/confirm_delete.html"
+    success_url = reverse_lazy("vertrieb:packschein_list")
+
+
+@login_required
+def packschein_pdf_download(request, pk):
+    packschein = get_object_or_404(Packschein, pk=pk)
+    pdf_bytes = pdf.packschein_pdf_erzeugen(packschein)
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'inline; filename="{packschein.nummer}.pdf"'
+    return response
+
+
+# ---------------------------------------------------------------------------
 # Lieferschein
 # ---------------------------------------------------------------------------
 
@@ -384,6 +481,11 @@ def lieferschein_erstellen(request):
     if angebot_id:
         angebot_quelle = get_object_or_404(Angebot, pk=angebot_id)
 
+    packschein_quelle = None
+    packschein_id = request.GET.get("packschein")
+    if packschein_id:
+        packschein_quelle = get_object_or_404(Packschein, pk=packschein_id)
+
     if request.method == "POST":
         form = LieferscheinForm(request.POST)
         if form.is_valid():
@@ -397,16 +499,25 @@ def lieferschein_erstellen(request):
     else:
         initial = {}
         deal_id = request.GET.get("deal")
-        if angebot_quelle:
+        quelle_positionen = None
+        if packschein_quelle:
+            initial = {
+                "deal": packschein_quelle.deal_id,
+                "angebot": packschein_quelle.angebot_id,
+                "packschein": packschein_quelle.pk,
+            }
+            quelle_positionen = packschein_quelle.positionen.all()
+        elif angebot_quelle:
             initial = {"deal": angebot_quelle.deal_id, "angebot": angebot_quelle.pk}
+            quelle_positionen = angebot_quelle.positionen.all()
         elif deal_id:
             initial = {"deal": deal_id}
         form = LieferscheinForm(initial=initial)
 
-        if angebot_quelle and angebot_quelle.positionen.exists():
+        if quelle_positionen is not None and quelle_positionen.exists():
             positionen_initial = [
                 {"position": p.position, "bezeichnung": p.bezeichnung, "menge": p.menge, "einheit": p.einheit}
-                for p in angebot_quelle.positionen.all()
+                for p in quelle_positionen
             ]
             FormSetVorbefuellt = inlineformset_factory(
                 Lieferschein, Lieferschein.positionen.rel.related_model,
@@ -416,7 +527,8 @@ def lieferschein_erstellen(request):
         else:
             formset = LieferscheinPositionFormSet()
     return render(request, "vertrieb/lieferschein_form.html", {
-        "form": form, "formset": formset, "angebot_quelle": angebot_quelle,
+        "form": form, "formset": formset,
+        "angebot_quelle": angebot_quelle, "packschein_quelle": packschein_quelle,
     })
 
 

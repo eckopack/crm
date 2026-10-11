@@ -3,7 +3,8 @@ from django.forms import inlineformset_factory
 
 from .models import (
     Aktivitaet, Angebot, AngebotPosition, Deal, Firma, Kontakt,
-    Lieferschein, LieferscheinPosition, Rechnung, RechnungPosition,
+    Packschein, PackscheinPosition, Lieferschein, LieferscheinPosition,
+    Rechnung, RechnungPosition,
 )
 
 
@@ -114,10 +115,10 @@ AngebotPositionFormSet = inlineformset_factory(
 )
 
 
-class LieferscheinForm(BootstrapFormMixin, forms.ModelForm):
+class PackscheinForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
-        model = Lieferschein
-        fields = ["deal", "angebot", "datum", "status", "notizen"]
+        model = Packschein
+        fields = ["deal", "angebot", "datum", "kommissionierer", "status", "notizen"]
         widgets = {
             "notizen": forms.Textarea(attrs={"rows": 3}),
             "datum": forms.DateInput(attrs={"type": "date"}),
@@ -127,6 +128,37 @@ class LieferscheinForm(BootstrapFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         self._bootstrapify()
         self.fields["angebot"].required = False
+
+
+class PackscheinPositionForm(BootstrapFormMixin, forms.ModelForm):
+    class Meta:
+        model = PackscheinPosition
+        fields = ["position", "bezeichnung", "menge", "einheit", "gepackt"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()
+
+
+PackscheinPositionFormSet = inlineformset_factory(
+    Packschein, PackscheinPosition, form=PackscheinPositionForm, extra=1, can_delete=True
+)
+
+
+class LieferscheinForm(BootstrapFormMixin, forms.ModelForm):
+    class Meta:
+        model = Lieferschein
+        fields = ["deal", "angebot", "packschein", "datum", "status", "notizen"]
+        widgets = {
+            "notizen": forms.Textarea(attrs={"rows": 3}),
+            "datum": forms.DateInput(attrs={"type": "date"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()
+        self.fields["angebot"].required = False
+        self.fields["packschein"].required = False
 
 
 class LieferscheinPositionForm(BootstrapFormMixin, forms.ModelForm):

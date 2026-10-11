@@ -221,6 +221,122 @@ def _dokument_pdf_bytes(*, titel, nummer, empfaenger_zeilen, meta_zeilen, spalte
     return buffer.getvalue()
 
 
+def _kopf_intern_erste_seite(info_zeilen, meta_zeilen, titel):
+    """Kopf für interne Lagerdokumente (Packschein): kein Briefpapier-Hintergrund,
+    stattdessen ein schlichter Hinweis-Header statt Kunden-/Firmenadresse."""
+    def zeichnen(canvas_obj, doc):
+        canvas_obj.saveState()
+        canvas_obj.setFont("Helvetica", 8.5)
+        canvas_obj.setFillColor(GRAU)
+        canvas_obj.drawString(RAND_LINKS, SEITENHOEHE - 40, "ECKO-PACK GmbH – Internes Dokument, nicht für den Kundenversand")
+
+        y = HEADER_START_Y
+        canvas_obj.setFont("Helvetica", 10)
+        canvas_obj.setFillColor(DUNKEL)
+        for zeile in info_zeilen:
+            canvas_obj.drawString(RAND_LINKS, y, zeile)
+            y -= ZEILENHOEHE
+
+        y_meta = HEADER_START_Y
+        meta_x = SEITENBREITE - RAND_RECHTS
+        for label, wert in meta_zeilen:
+            canvas_obj.setFont("Helvetica", 10)
+            wert_breite = canvas_obj.stringWidth(wert, "Helvetica", 10)
+            canvas_obj.drawRightString(meta_x, y_meta, wert)
+            canvas_obj.setFont("Helvetica-Bold", 10)
+            canvas_obj.drawRightString(meta_x - wert_breite, y_meta, f"{label}: ")
+            y_meta -= ZEILENHOEHE + 3
+
+        y_titel = min(y, y_meta) - TITEL_ABSTAND
+        canvas_obj.setFont("Helvetica-Bold", 16)
+        canvas_obj.setFillColor(DUNKEL)
+        canvas_obj.drawString(RAND_LINKS, y_titel, titel)
+        canvas_obj.setStrokeColor(MINT)
+        canvas_obj.setLineWidth(1.6)
+        canvas_obj.line(RAND_LINKS, y_titel - DIVIDER_ABSTAND, SEITENBREITE - RAND_RECHTS, y_titel - DIVIDER_ABSTAND)
+        canvas_obj.restoreState()
+    return zeichnen
+
+
+def _kopf_intern_folgeseite(titel, nummer):
+    def zeichnen(canvas_obj, doc):
+        canvas_obj.saveState()
+        canvas_obj.setFont("Helvetica", 9)
+        canvas_obj.setFillColor(GRAU)
+        canvas_obj.drawString(RAND_LINKS, SEITENHOEHE - 40, f"{titel} {nummer} – Fortsetzung (internes Dokument)")
+        canvas_obj.restoreState()
+    return zeichnen
+
+
+def _unterschriftenzeile():
+    tabelle = Table(
+        [[
+            Paragraph("Kommissioniert von (Name, Datum, Unterschrift)", STIL_TEXT),
+            Paragraph("Kontrolliert von (Name, Datum, Unterschrift)", STIL_TEXT),
+        ]],
+        colWidths=[INHALT_BREITE / 2, INHALT_BREITE / 2],
+    )
+    tabelle.setStyle(TableStyle([
+        ("LINEABOVE", (0, 0), (0, 0), 0.6, GRAU),
+        ("LINEABOVE", (1, 0), (1, 0), 0.6, GRAU),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (1, 0), (1, 0), 0),
+    ]))
+    return tabelle
+
+
+def packschein_pdf_erzeugen(packschein):
+    """Internes Kommissionier-/Packdokument fürs Lager – schlicht, ohne Briefpapier
+    und ohne Preisangaben; mit Ankreuzspalte je Position zum händischen Abhaken."""
+    deal = packschein.deal
+    firma = deal.firma
+    info_zeilen = [f"Firma: {firma.name}", f"Deal: {deal.titel}"]
+
+    meta_zeilen = [
+        ("Packscheinnummer", packschein.nummer),
+        ("Kommissionierdatum", _datum(packschein.datum)),
+        ("Kommissioniert von", packschein.kommissionierer or "–"),
+        ("Status", packschein.get_status_display()),
+        ("Bezug Angebot", packschein.angebot.nummer if packschein.angebot_id else "–"),
+    ]
+    spalten = [
+        ("Pos.", 32, "l"), ("Bezeichnung", 265, "l"), ("Menge", 70, "r"),
+        ("Einheit", 70, "r"), ("Gepackt", 46, "r"),
+    ]
+    zeilen = []
+    for p in packschein.positionen.all():
+        # Unicode-Kästchen (☐/☑) werden von reportlabs Standard-Helvetica nicht
+        # unterstützt (kaputtes Glyph im PDF) - daher ASCII-Darstellung.
+        haken = "[X]" if p.gepackt else "[  ]"
+        zeilen.append([p.position, p.bezeichnung, _menge(p.menge), p.get_einheit_display(), haken])
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        topMargin=TOP_MARGIN, bottomMargin=BOTTOM_MARGIN,
+        leftMargin=RAND_LINKS, rightMargin=RAND_RECHTS,
+    )
+    story = [_positionstabelle(spalten, zeilen)]
+
+    if packschein.notizen:
+        story.append(Spacer(1, 18))
+        story.append(Paragraph("<b>Notizen (z. B. Lagerplatz, Besonderheiten)</b>", STIL_NOTIZEN))
+        for absatz in str(packschein.notizen).split("\n"):
+            if absatz.strip():
+                story.append(Paragraph(absatz, STIL_NOTIZEN))
+
+    story.append(Spacer(1, 36))
+    story.append(_unterschriftenzeile())
+
+    doc.build(
+        story,
+        onFirstPage=_kopf_intern_erste_seite(info_zeilen, meta_zeilen, "PACKSCHEIN"),
+        onLaterPages=_kopf_intern_folgeseite("PACKSCHEIN", packschein.nummer),
+    )
+    return buffer.getvalue()
+
+
 def angebot_pdf_erzeugen(angebot):
     deal = angebot.deal
     firma = deal.firma

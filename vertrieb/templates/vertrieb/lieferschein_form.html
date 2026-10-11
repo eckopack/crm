@@ -2,7 +2,9 @@
 {% block title %}Lieferschein {% if lieferschein %}bearbeiten{% else %}anlegen{% endif %}{% endblock %}
 {% block content %}
 <h2 class="mb-3">Lieferschein {% if lieferschein %}bearbeiten{% else %}anlegen{% endif %}</h2>
-{% if angebot_quelle %}
+{% if packschein_quelle %}
+<p class="text-muted">Positionen aus Packschein {{ packschein_quelle.nummer }} übernommen – bei Bedarf anpassen.</p>
+{% elif angebot_quelle %}
 <p class="text-muted">Positionen aus Angebot {{ angebot_quelle.nummer }} übernommen – bei Bedarf anpassen.</p>
 {% endif %}
 

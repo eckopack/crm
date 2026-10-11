@@ -1,4 +1,5 @@
 from decimal import Decimal
+
 from django.conf import settings
 from django.db import models
 from django.urls import reverse
@@ -68,6 +69,30 @@ EINHEIT_CHOICES = [
     ("kg", "kg"),
     ("m", "m"),
     ("m2", "m²"),
+]
+
+PACKSCHEIN_STATUS_CHOICES = [
+    ("offen", "Offen"),
+    ("in_arbeit", "In Bearbeitung"),
+    ("fertig", "Fertig gepackt"),
+]
+
+LIEFERSCHEIN_STATUS_CHOICES = [
+    ("entwurf", "Entwurf"),
+    ("versendet", "Versendet/Geliefert"),
+]
+
+RECHNUNG_STATUS_CHOICES = [
+    ("entwurf", "Entwurf"),
+    ("versendet", "Versendet"),
+    ("bezahlt", "Bezahlt"),
+    ("storniert", "Storniert"),
+]
+
+STEUERSATZ_CHOICES = [
+    (Decimal("19.00"), "19 %"),
+    (Decimal("7.00"), "7 %"),
+    (Decimal("0.00"), "0 % (steuerfrei)"),
 ]
 
 
@@ -287,23 +312,69 @@ class AngebotPosition(models.Model):
         return self.menge * self.einzelpreis
 
 
-LIEFERSCHEIN_STATUS_CHOICES = [
-    ("entwurf", "Entwurf"),
-    ("versendet", "Versendet/Geliefert"),
-]
+class Packschein(models.Model):
+    """Internes Kommissionier-/Packdokument fürs Lagerpersonal.
 
-RECHNUNG_STATUS_CHOICES = [
-    ("entwurf", "Entwurf"),
-    ("versendet", "Versendet"),
-    ("bezahlt", "Bezahlt"),
-    ("storniert", "Storniert"),
-]
+    Kein Kunden-/Briefpapierbezug – dient der Vorbereitung im Lager, bevor der
+    (kundenseitige) Lieferschein erstellt wird. Positionen lassen sich einzeln
+    als „gepackt“ abhaken, sowohl in der CRM-Oberfläche als auch handschriftlich
+    auf dem Ausdruck.
+    """
+    nummer = models.CharField("Packscheinnummer", max_length=30, unique=True, blank=True)
+    deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.CASCADE, related_name="packscheine")
+    angebot = models.ForeignKey(
+        Angebot, verbose_name="Angebot", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="packscheine"
+    )
+    datum = models.DateField("Kommissionierdatum", default=timezone.now)
+    kommissionierer = models.CharField("Kommissioniert von", max_length=150, blank=True)
+    status = models.CharField("Status", max_length=20, choices=PACKSCHEIN_STATUS_CHOICES, default="offen")
+    notizen = models.TextField("Notizen (z. B. Lagerplatz, Besonderheiten)", blank=True)
+    erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
 
-STEUERSATZ_CHOICES = [
-    (Decimal("19.00"), "19 %"),
-    (Decimal("7.00"), "7 %"),
-    (Decimal("0.00"), "0 % (steuerfrei)"),
-]
+    class Meta:
+        verbose_name = "Packschein"
+        verbose_name_plural = "Packscheine"
+        ordering = ["-datum", "-nummer"]
+
+    def __str__(self):
+        return self.nummer or f"Packschein (Entwurf) – {self.deal}"
+
+    def get_absolute_url(self):
+        return reverse("vertrieb:packschein_detail", args=[self.pk])
+
+    @property
+    def vollstaendig_gepackt(self):
+        positionen = list(self.positionen.all())
+        return bool(positionen) and all(p.gepackt for p in positionen)
+
+    def save(self, *args, **kwargs):
+        if not self.nummer:
+            jahr = (self.datum or timezone.now().date()).year
+            letzter = Packschein.objects.filter(nummer__startswith=f"PACK-{jahr}-").order_by("-nummer").first()
+            if letzter and letzter.nummer.split("-")[-1].isdigit():
+                naechste = int(letzter.nummer.split("-")[-1]) + 1
+            else:
+                naechste = 1
+            self.nummer = f"PACK-{jahr}-{naechste:04d}"
+        super().save(*args, **kwargs)
+
+
+class PackscheinPosition(models.Model):
+    packschein = models.ForeignKey(Packschein, on_delete=models.CASCADE, related_name="positionen")
+    position = models.PositiveIntegerField("Pos.", default=1)
+    bezeichnung = models.CharField("Bezeichnung", max_length=300)
+    menge = models.DecimalField("Menge", max_digits=10, decimal_places=2, default=1)
+    einheit = models.CharField("Einheit", max_length=10, choices=EINHEIT_CHOICES, default="stk")
+    gepackt = models.BooleanField("Gepackt", default=False)
+
+    class Meta:
+        verbose_name = "Packscheinposition"
+        verbose_name_plural = "Packscheinpositionen"
+        ordering = ["position"]
+
+    def __str__(self):
+        return self.bezeichnung
 
 
 class Lieferschein(models.Model):
@@ -311,6 +382,10 @@ class Lieferschein(models.Model):
     deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.CASCADE, related_name="lieferscheine")
     angebot = models.ForeignKey(
         Angebot, verbose_name="Angebot", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="lieferscheine"
+    )
+    packschein = models.ForeignKey(
+        Packschein, verbose_name="Packschein", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="lieferscheine"
     )
     datum = models.DateField("Lieferdatum", default=timezone.now)

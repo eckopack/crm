@@ -1,0 +1,66 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}{{ packschein.nummer }} – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2>{{ packschein.nummer }}</h2>
+        <div class="text-muted">
+            Deal: <a href="{{ packschein.deal.get_absolute_url }}">{{ packschein.deal.titel }}</a>
+            · Firma: <a href="{{ packschein.deal.firma.get_absolute_url }}">{{ packschein.deal.firma.name }}</a>
+            {% if packschein.angebot %}· Angebot: <a href="{{ packschein.angebot.get_absolute_url }}">{{ packschein.angebot.nummer }}</a>{% endif %}
+        </div>
+        <span class="badge text-bg-light border">{{ packschein.get_status_display }}</span>
+        {% if packschein.vollstaendig_gepackt %}
+        <span class="badge text-bg-success">Alle Positionen gepackt</span>
+        {% endif %}
+    </div>
+    <div class="d-print-none">
+        <a href="{% url 'vertrieb:lieferschein_create' %}?packschein={{ packschein.pk }}" class="btn btn-primary">Lieferschein erstellen</a>
+        <a href="{% url 'vertrieb:packschein_pdf' packschein.pk %}" target="_blank" class="btn btn-outline-primary">PDF</a>
+        <a href="{% url 'vertrieb:packschein_update' packschein.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
+        <a href="{% url 'vertrieb:packschein_delete' packschein.pk %}" class="btn btn-outline-danger">Löschen</a>
+    </div>
+</div>
+
+<div class="card mb-3" style="max-width:300px;">
+    <ul class="list-group list-group-flush">
+        <li class="list-group-item"><strong>Kommissionierdatum:</strong> {{ packschein.datum|date:"d.m.Y" }}</li>
+        <li class="list-group-item"><strong>Kommissioniert von:</strong> {{ packschein.kommissionierer|default:"–" }}</li>
+    </ul>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header fw-semibold">Positionen</div>
+    <table class="table mb-0">
+        <thead>
+        <tr><th>Pos.</th><th>Bezeichnung</th><th>Menge</th><th>Einheit</th><th>Gepackt</th></tr>
+        </thead>
+        <tbody>
+        {% for p in packschein.positionen.all %}
+        <tr>
+            <td>{{ p.position }}</td>
+            <td>{{ p.bezeichnung }}</td>
+            <td>{{ p.menge }}</td>
+            <td>{{ p.get_einheit_display }}</td>
+            <td>
+                {% if p.gepackt %}
+                <span class="badge text-bg-success">✓ gepackt</span>
+                {% else %}
+                <span class="badge text-bg-light border">offen</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-muted text-center py-3">Keine Positionen erfasst.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if packschein.notizen %}
+<div class="card">
+    <div class="card-header fw-semibold">Notizen (z. B. Lagerplatz, Besonderheiten)</div>
+    <div class="card-body">{{ packschein.notizen|linebreaks }}</div>
+</div>
+{% endif %}
+{% endblock %}

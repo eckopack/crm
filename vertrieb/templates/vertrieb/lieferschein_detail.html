@@ -8,6 +8,7 @@
             Deal: <a href="{{ lieferschein.deal.get_absolute_url }}">{{ lieferschein.deal.titel }}</a>
             · Firma: <a href="{{ lieferschein.deal.firma.get_absolute_url }}">{{ lieferschein.deal.firma.name }}</a>
             {% if lieferschein.angebot %}· Angebot: <a href="{{ lieferschein.angebot.get_absolute_url }}">{{ lieferschein.angebot.nummer }}</a>{% endif %}
+            {% if lieferschein.packschein %}· Packschein: <a href="{{ lieferschein.packschein.get_absolute_url }}">{{ lieferschein.packschein.nummer }}</a>{% endif %}
         </div>
         <span class="badge text-bg-light border">{{ lieferschein.get_status_display }}</span>
     </div>
