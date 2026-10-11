@@ -10,26 +10,16 @@
 #
 # WICHTIG (Fix 11.10.2026): Persistente Disks sind laut Render-Doku während des
 # Build Command NICHT verfügbar, erst zur Laufzeit (Start Command). migrate/
-# beispieldaten dürfen deshalb NICHT im Build Command laufen (sonst schreiben sie
-# auf einen Pfad, der beim eigentlichen Start durch die echte, leere/alte Disk
-# überlagert wird - genau das hat zuvor das Admin-Passwort nach jedem Deploy auf
-# admin123 zurückgesetzt). Beide Befehle laufen jetzt im Start Command, direkt vor
-# gunicorn. collectstatic bleibt im Build Command, da es nicht auf die Disk
-# angewiesen ist.
+# beispieldaten dürfen deshalb NICHT im Build Command laufen. Beide Befehle laufen
+# im Start Command, direkt vor gunicorn. collectstatic bleibt im Build Command, da
+# es nicht auf die Disk angewiesen ist.
 #
-# DIAGNOSE (11.10.2026, 2. Fix-Versuch): Trotz obigem Fix wird bei jedem Redeploy
-# (auch ohne Code-Änderung, reiner "Manual Deploy") wieder ein neuer Admin mit
-# admin123 angelegt und "Beispieldaten erfolgreich angelegt" ausgegeben - die
-# Datenbank ist also bei jedem Start wieder leer. Die "ls -la /var/data" Zeilen
-# haben das bestätigt: /var/data ist VOR UND NACH migrate komplett leer, obwohl
-# migrate erfolgreich durchläuft. Django schreibt die DB also offenbar gar nicht
-# auf die Disk.
-#
-# DIAGNOSE (11.10.2026, 3. Runde): Zusätzliche Zeilen geben aus, ob die Variable
-# DJANGO_SQLITE_PATH im laufenden Prozess tatsächlich ankommt und welchen
-# Datenbankpfad Django wirklich verwendet (settings.DATABASES). Reine Diagnose,
-# keine Datenänderung. Nach Klärung der Ursache alle DEBUG-Zeilen wieder
-# entfernen.
+# ECHTE URSACHE GEFUNDEN (11.10.2026): Die Datenbank wurde bei jedem Deploy neu
+# angelegt, weil eckopack_crm/settings.py die Variable DJANGO_SQLITE_PATH gar
+# nicht ausgewertet hat (ein Tippfehler bei einem früheren Datei-Update - eine
+# Kopie der korrigierten settings.py landete versehentlich im falschen Ordner).
+# Jetzt in eckopack_crm/settings.py korrigiert: Die SQLite-Datei liegt damit
+# tatsächlich unter /var/data/db.sqlite3 auf der persistenten Disk.
 
 services:
   - type: web
@@ -44,14 +34,8 @@ services:
       pip install -r requirements.txt &&
       python manage.py collectstatic --noinput
     startCommand: >
-      echo "=== DEBUG: DJANGO_SQLITE_PATH=$DJANGO_SQLITE_PATH ===" &&
-      python manage.py shell -c "from django.conf import settings; print('=== DEBUG: DATABASES =', settings.DATABASES)" &&
-      echo "=== DEBUG: /var/data VOR migrate ===" &&
-      ls -la /var/data &&
       python manage.py migrate &&
       python manage.py beispieldaten &&
-      echo "=== DEBUG: /var/data NACH beispieldaten ===" &&
-      ls -la /var/data &&
       gunicorn eckopack_crm.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: DJANGO_SECRET_KEY

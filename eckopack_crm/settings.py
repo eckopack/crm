@@ -102,10 +102,14 @@ if os.environ.get("DJANGO_DB_ENGINE") == "postgres":
         }
     }
 else:
+    # Auf Render liegt die SQLite-Datei auf der persistenten Disk (siehe render.yaml,
+    # Mount-Pfad /var/data), damit sie Neustarts/Spin-downs übersteht. Lokal/Dev ohne
+    # gesetzte Variable landet sie wie bisher einfach im Projektordner.
+    _sqlite_path = os.environ.get("DJANGO_SQLITE_PATH")
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
+            "NAME": Path(_sqlite_path) if _sqlite_path else BASE_DIR / "db.sqlite3",
         }
     }
 
