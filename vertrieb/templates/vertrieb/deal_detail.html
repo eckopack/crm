@@ -11,7 +11,20 @@
         <span class="badge text-bg-secondary">{{ deal.get_geschaeftsbereich_display }}</span>
         <span class="badge text-bg-light border">{{ deal.get_phase_display }}</span>
     </div>
-    <div>
+    <div class="d-print-none">
+        {% if musterversand %}
+        <a href="{{ musterversand.get_absolute_url }}" class="btn btn-outline-info">
+            Musterversand: {{ musterversand.get_status_display }}
+        </a>
+        {% elif deal.ist_offen %}
+        <form method="post" action="{% url 'vertrieb:musterkarton_anfordern' deal.pk %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-primary"
+                    onclick="return confirm('Musterkarton-Packschein für diesen Lead anlegen?');">
+                Musterkarton anfordern
+            </button>
+        </form>
+        {% endif %}
         <a href="{% url 'vertrieb:deal_update' deal.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
         <a href="{% url 'vertrieb:deal_delete' deal.pk %}" class="btn btn-outline-danger">Löschen</a>
     </div>
@@ -30,6 +43,28 @@
                 {% if deal.verloren_grund %}<li class="list-group-item"><strong>Verloren-Grund:</strong> {{ deal.verloren_grund }}</li>{% endif %}
             </ul>
         </div>
+        {% if musterversand %}
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Musterversand</div>
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item">
+                    <a href="{{ musterversand.get_absolute_url }}">{{ musterversand.nummer }}</a>
+                    · {{ musterversand.get_status_display }}
+                </li>
+                {% if musterversand.trackingnummer %}
+                <li class="list-group-item">
+                    <strong>Tracking:</strong> {{ musterversand.get_versanddienstleister_display|default:"" }}
+                    {{ musterversand.trackingnummer }}
+                </li>
+                {% endif %}
+                {% if musterversand.bestaetigungsmail_gesendet_am %}
+                <li class="list-group-item text-muted small">
+                    Bestätigungsmail gesendet am {{ musterversand.bestaetigungsmail_gesendet_am|date:"d.m.Y H:i" }}
+                </li>
+                {% endif %}
+            </ul>
+        </div>
+        {% endif %}
         {% if deal.notizen %}
         <div class="card">
             <div class="card-header fw-semibold">Notizen</div>
@@ -63,7 +98,10 @@
                 {% for a in deal.aktivitaeten.all %}
                 <li class="list-group-item">
                     <a href="{{ a.get_absolute_url }}">{{ a.betreff }}</a>
-                    <div class="small text-muted">{{ a.get_typ_display }} · {{ a.datum|date:"d.m.Y H:i" }}</div>
+                    <div class="small text-muted">
+                        {{ a.get_typ_display }} · {{ a.datum|date:"d.m.Y H:i" }}
+                        {% if a.erledigt %}· <span class="badge text-bg-success">erledigt</span>{% endif %}
+                    </div>
                 </li>
                 {% empty %}
                 <li class="list-group-item text-muted">Keine Aktivitäten hinterlegt.</li>

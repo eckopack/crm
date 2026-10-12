@@ -1,0 +1,22 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}{{ packschein.nummer }} als versendet markieren{% endblock %}
+{% block content %}
+<h2 class="mb-3">{{ packschein.nummer }} als versendet markieren</h2>
+<p class="text-muted">
+    Trackingnummer vom Versanddienstleister eintragen (z. B. von DHL/Post nach der
+    Paketaufgabe). Bei einem Musterversand wird danach automatisch die
+    Bestätigungsmail an den Lead verschickt und die wöchentliche Nachfass-Erinnerung
+    angelegt.
+</p>
+
+<form method="post">
+    {% csrf_token %}
+    <div class="card mb-3" style="max-width: 500px;">
+        <div class="card-body">
+            {% include "vertrieb/_form_fields.html" %}
+        </div>
+    </div>
+    <button type="submit" class="btn btn-success">Als versendet markieren</button>
+    <a href="{{ packschein.get_absolute_url }}" class="btn btn-outline-secondary">Abbrechen</a>
+</form>
+{% endblock %}

@@ -118,16 +118,38 @@ AngebotPositionFormSet = inlineformset_factory(
 class PackscheinForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Packschein
-        fields = ["deal", "angebot", "datum", "kommissionierer", "status", "notizen"]
+        fields = [
+            "deal", "angebot", "datum", "kommissionierer", "status", "notizen",
+            "ist_musterversand", "versanddienstleister", "trackingnummer", "versendet_am",
+        ]
         widgets = {
             "notizen": forms.Textarea(attrs={"rows": 3}),
             "datum": forms.DateInput(attrs={"type": "date"}),
+            "versendet_am": forms.DateInput(attrs={"type": "date"}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._bootstrapify()
         self.fields["angebot"].required = False
+        self.fields["versanddienstleister"].required = False
+        self.fields["trackingnummer"].required = False
+        self.fields["versendet_am"].required = False
+
+
+class PackscheinVersandForm(BootstrapFormMixin, forms.ModelForm):
+    """Schlanke Form für die Schnellaktion 'Als versendet markieren' auf der
+    Packschein-Detailseite – nur die Versanddaten, nicht die ganze Bearbeiten-Form."""
+
+    class Meta:
+        model = Packschein
+        fields = ["versanddienstleister", "trackingnummer", "versendet_am"]
+        widgets = {"versendet_am": forms.DateInput(attrs={"type": "date"})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()
+        self.fields["versanddienstleister"].required = False
 
 
 class PackscheinPositionForm(BootstrapFormMixin, forms.ModelForm):

@@ -1,22 +1,26 @@
+import os
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.management import call_command
 from django.db.models import Sum
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
 
-from . import pdf
+from . import nurture, pdf
 from .forms import (
     AktivitaetForm, AngebotForm, AngebotPositionFormSet, DealForm, FirmaForm, KontaktForm,
-    PackscheinForm, PackscheinPositionFormSet,
+    PackscheinForm, PackscheinPositionFormSet, PackscheinVersandForm,
     LieferscheinForm, LieferscheinPositionFormSet, RechnungForm, RechnungPositionFormSet,
 )
 from .models import (
     DEAL_PHASE_CHOICES, PHASE_STANDARD_WAHRSCHEINLICHKEIT,
-    Aktivitaet, Angebot, Deal, Firma, Kontakt, Packschein, Lieferschein, Rechnung,
+    Aktivitaet, Angebot, Deal, Firma, Kontakt, Packschein, PackscheinPosition, Lieferschein, Rechnung,
 )
 from django.forms import inlineformset_factory
 
@@ -89,6 +93,24 @@ def deal_phase_setzen(request, pk):
             deal.wahrscheinlichkeit = PHASE_STANDARD_WAHRSCHEINLICHKEIT.get(neue_phase, deal.wahrscheinlichkeit)
             deal.save()
     return redirect("vertrieb:pipeline")
+
+
+@csrf_exempt
+def interner_nachfass_cron(request):
+    """Endpoint für den externen Render-Cron-Job (siehe render.yaml).
+
+    Der Cron-Job selbst hat keinen Zugriff auf die SQLite-Datei auf der Disk (die ist
+    nur an den Web-Service gebunden) – er ruft deshalb stattdessen diese URL per HTTPS
+    auf, und die eigentliche Prüfung läuft hier, im Web-Prozess, mit normalem
+    Datenbankzugriff. Schutz über ein geteiltes Secret im Header statt Login, weil hier
+    kein Mensch eingeloggt ist.
+    """
+    erwartet = os.environ.get("NACHFASS_CRON_SECRET", "")
+    erhalten = request.headers.get("X-Cron-Secret", "")
+    if not erwartet or erhalten != erwartet:
+        return HttpResponseForbidden("Ungueltiges oder fehlendes Secret.")
+    call_command("nachfass_pruefen")
+    return HttpResponse("OK")
 
 
 # ---------------------------------------------------------------------------
@@ -200,6 +222,42 @@ class DealDetailView(LoginRequiredMixin, DetailView):
     model = Deal
     template_name = "vertrieb/deal_detail.html"
     context_object_name = "deal"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["musterversand"] = (
+            self.object.packscheine.filter(ist_musterversand=True).order_by("-erstellt_am").first()
+        )
+        return context
+
+
+@login_required
+def musterkarton_anfordern(request, pk):
+    """Schnellaktion auf der Deal-Detailseite: legt für einen Lead einen
+    Musterkarton-Packschein an (Position 'Musterkarton', 1 Stück). Der eigentliche
+    Versand (Trackingnummer, Bestätigungsmail, Nachfass-Automatik) läuft über
+    'Als versendet markieren' auf der Packschein-Detailseite."""
+    deal = get_object_or_404(Deal, pk=pk)
+    if request.method != "POST":
+        return redirect(deal.get_absolute_url())
+
+    offener_musterversand = deal.packscheine.filter(ist_musterversand=True).exclude(status="versendet").first()
+    if offener_musterversand:
+        messages.info(
+            request,
+            f"Für diesen Deal läuft bereits ein Musterversand ({offener_musterversand.nummer}).",
+        )
+        return redirect(offener_musterversand.get_absolute_url())
+
+    packschein = Packschein.objects.create(
+        deal=deal, datum=timezone.now().date(), status="offen", ist_musterversand=True,
+        notizen="Automatisch angelegt über 'Musterkarton anfordern'.",
+    )
+    PackscheinPosition.objects.create(
+        packschein=packschein, position=1, bezeichnung="Musterkarton", menge=1, einheit="stk",
+    )
+    messages.success(request, f"Packschein {packschein.nummer} für Musterkarton-Versand angelegt.")
+    return redirect(packschein.get_absolute_url())
 
 
 class DealCreateView(LoginRequiredMixin, CreateView):
@@ -437,6 +495,29 @@ def packschein_bearbeiten(request, pk):
     return render(request, "vertrieb/packschein_form.html", {
         "form": form, "formset": formset, "packschein": packschein,
     })
+
+
+@login_required
+def packschein_versand_bestaetigen(request, pk):
+    """Trackingnummer eintragen und Packschein auf 'versendet' setzen. Bei einem
+    Musterversand löst das zusätzlich die Bestätigungsmail an den Lead und die erste
+    wöchentliche Nachfass-Aktivität aus (siehe vertrieb/nurture.py)."""
+    packschein = get_object_or_404(Packschein, pk=pk)
+    if request.method == "POST":
+        form = PackscheinVersandForm(request.POST, instance=packschein)
+        if form.is_valid():
+            packschein = form.save(commit=False)
+            packschein.status = "versendet"
+            if not packschein.versendet_am:
+                packschein.versendet_am = timezone.now().date()
+            packschein.save()
+            if packschein.ist_musterversand:
+                nurture.musterversand_abgeschlossen(packschein)
+            messages.success(request, f"Packschein {packschein.nummer} als versendet markiert.")
+            return redirect(packschein.get_absolute_url())
+    else:
+        form = PackscheinVersandForm(instance=packschein, initial={"versendet_am": timezone.now().date()})
+    return render(request, "vertrieb/packschein_versand_form.html", {"form": form, "packschein": packschein})
 
 
 class PackscheinDeleteView(LoginRequiredMixin, DeleteView):

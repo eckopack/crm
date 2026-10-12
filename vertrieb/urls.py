@@ -8,6 +8,7 @@ urlpatterns = [
     path("", views.dashboard, name="dashboard"),
     path("pipeline/", views.pipeline_kanban, name="pipeline"),
     path("pipeline/<int:pk>/phase/", views.deal_phase_setzen, name="deal_phase_setzen"),
+    path("interna/nachfass-cron/", views.interner_nachfass_cron, name="interner_nachfass_cron"),
 
     path("firmen/", views.FirmaListView.as_view(), name="firma_list"),
     path("firmen/neu/", views.FirmaCreateView.as_view(), name="firma_create"),
@@ -24,6 +25,7 @@ urlpatterns = [
     path("deals/", views.DealListView.as_view(), name="deal_list"),
     path("deals/neu/", views.DealCreateView.as_view(), name="deal_create"),
     path("deals/<int:pk>/", views.DealDetailView.as_view(), name="deal_detail"),
+    path("deals/<int:pk>/musterkarton/", views.musterkarton_anfordern, name="musterkarton_anfordern"),
     path("deals/<int:pk>/bearbeiten/", views.DealUpdateView.as_view(), name="deal_update"),
     path("deals/<int:pk>/loeschen/", views.DealDeleteView.as_view(), name="deal_delete"),
 
@@ -45,6 +47,7 @@ urlpatterns = [
     path("packscheine/neu/", views.packschein_erstellen, name="packschein_create"),
     path("packscheine/<int:pk>/", views.PackscheinDetailView.as_view(), name="packschein_detail"),
     path("packscheine/<int:pk>/bearbeiten/", views.packschein_bearbeiten, name="packschein_update"),
+    path("packscheine/<int:pk>/versand/", views.packschein_versand_bestaetigen, name="packschein_versand"),
     path("packscheine/<int:pk>/loeschen/", views.PackscheinDeleteView.as_view(), name="packschein_delete"),
     path("packscheine/<int:pk>/pdf/", views.packschein_pdf_download, name="packschein_pdf"),
 

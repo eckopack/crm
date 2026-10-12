@@ -44,6 +44,26 @@
 # Firmen-Zeilen (Praefix FIRMA_ROW:) waren in der Render-Log-Oberflaeche nicht
 # mehr scrollbar erreichbar - deshalb hier als eigener, kleinerer Nachtrag
 # wiederholt. Nach Auslesen wieder entfernen.
+#
+# NACHFASS-CRON (12.10.2026, neu): Der zweite Service unten (eckopack-crm-nachfass)
+# ist bewusst KEIN "cron"-Service-Typ mit eigenem manage.py-Aufruf, sondern ruft per
+# curl nur eine URL auf dem laufenden Web-Service auf. Grund: Render-Disks sind laut
+# Render-Doku jeweils nur an GENAU EINEN Service gebunden - ein separater Cron-Job-
+# Service könnte die SQLite-Datei auf /var/data gar nicht sehen/beschreiben, selbst
+# wenn er denselben Disk-Namen referenziert. Die eigentliche Pruefung (management
+# command nachfass_pruefen) läuft deshalb weiterhin im Web-Prozess, der die Disk
+# ohnehin schon gemountet hat; der Cron-Job braucht dafür nur ausgehende HTTPS-
+# Verbindungen, keine eigene Disk und keinen eigenen Datenbankzugriff. Schutz über
+# das gemeinsame Secret NACHFASS_CRON_SECRET (muss bei beiden Services identisch
+# gesetzt werden - in der Render-Oberfläche einmal von Hand eintragen, nicht
+# generateValue, damit beide Services denselben Wert bekommen).
+#
+# PRUEFEN VOR AKTIVIERUNG: Plan/Preis für einen Render-"Cron Job"-Service bitte im
+# eigenen Dashboard bestätigen, bevor dieser Service dort angelegt wird - das habe
+# ich nicht zuverlässig recherchieren können (Websuche in dieser Session deaktiviert).
+# Ebenso: E-Mail-Versand (DJANGO_EMAIL_HOST etc. unten) läuft erst, wenn echte SMTP-
+# Zugangsdaten eines Transaktions-Mailanbieters eingetragen sind - ohne das schreibt
+# die App E-Mails nur ins Render-Log (Konsolen-Backend), verschickt aber nichts.
 
 services:
   - type: web
@@ -60,7 +80,6 @@ services:
     startCommand: >
       python manage.py migrate &&
       python manage.py beispieldaten &&
-      python manage.py shell -c "import json; from vertrieb.models import Firma; [print('FIRMA_ROW:' + json.dumps({'externe_id': f.externe_id, 'name': f.name, 'geschaeftsbereich': f.geschaeftsbereich, 'status': f.status, 'branche_kunde': f.branche_kunde, 'website': f.website, 'telefon': f.telefon, 'email': f.email, 'strasse': f.strasse, 'plz': f.plz, 'ort': f.ort, 'land': f.land, 'zustaendiger': (f.zustaendiger.username if f.zustaendiger_id else ''), 'notizen': f.notizen})) for f in Firma.objects.all().order_by('externe_id')]" &&
       gunicorn eckopack_crm.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: DJANGO_SECRET_KEY
@@ -69,3 +88,33 @@ services:
         value: "False"
       - key: DJANGO_SQLITE_PATH
         value: /var/data/db.sqlite3
+      - key: NACHFASS_CRON_SECRET
+        sync: false
+      - key: DJANGO_EMAIL_HOST
+        sync: false
+      - key: DJANGO_EMAIL_PORT
+        sync: false
+      - key: DJANGO_EMAIL_HOST_USER
+        sync: false
+      - key: DJANGO_EMAIL_HOST_PASSWORD
+        sync: false
+      - key: DJANGO_EMAIL_USE_TLS
+        sync: false
+      - key: DJANGO_DEFAULT_FROM_EMAIL
+        sync: false
+
+  # Woechentlicher Anstoss der Nachfass-Pruefung fuer Musterversand-Leads (siehe
+  # Kommentar "NACHFASS-CRON" oben). Braucht keine Disk und keinen DB-Zugriff, nur
+  # ausgehende HTTPS-Verbindungen zum eigenen Web-Service.
+  - type: cron
+    name: eckopack-crm-nachfass
+    runtime: python
+    plan: starter
+    schedule: "0 7 * * 1"
+    buildCommand: "true"
+    startCommand: >
+      curl -fsS -X POST -H "X-Cron-Secret: $NACHFASS_CRON_SECRET"
+      "https://eckopack-crm.onrender.com/interna/nachfass-cron/"
+    envVars:
+      - key: NACHFASS_CRON_SECRET
+        sync: false

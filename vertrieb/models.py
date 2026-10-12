@@ -50,6 +50,7 @@ AKTIVITAET_TYP_CHOICES = [
     ("meeting", "Meeting"),
     ("aufgabe", "Aufgabe"),
     ("notiz", "Notiz"),
+    ("nachfass", "Nachfass (automatisch)"),
 ]
 
 ANGEBOT_STATUS_CHOICES = [
@@ -75,6 +76,16 @@ PACKSCHEIN_STATUS_CHOICES = [
     ("offen", "Offen"),
     ("in_arbeit", "In Bearbeitung"),
     ("fertig", "Fertig gepackt"),
+    ("versendet", "Versendet"),
+]
+
+VERSANDDIENSTLEISTER_CHOICES = [
+    ("dhl", "DHL"),
+    ("gls", "GLS"),
+    ("ups", "UPS"),
+    ("post", "Deutsche Post"),
+    ("abholung", "Selbstabholung"),
+    ("sonstiges", "Sonstiges"),
 ]
 
 LIEFERSCHEIN_STATUS_CHOICES = [
@@ -330,6 +341,21 @@ class Packschein(models.Model):
     kommissionierer = models.CharField("Kommissioniert von", max_length=150, blank=True)
     status = models.CharField("Status", max_length=20, choices=PACKSCHEIN_STATUS_CHOICES, default="offen")
     notizen = models.TextField("Notizen (z. B. Lagerplatz, Besonderheiten)", blank=True)
+    ist_musterversand = models.BooleanField(
+        "Musterversand", default=False,
+        help_text=(
+            "Markiert diesen Packschein als automatisierten Musterkarton-Versand an einen Lead "
+            "(löst beim Versand die Bestätigungsmail und die wöchentliche Nachfass-Automatik aus)."
+        ),
+    )
+    versanddienstleister = models.CharField(
+        "Versanddienstleister", max_length=20, choices=VERSANDDIENSTLEISTER_CHOICES, blank=True
+    )
+    trackingnummer = models.CharField("Trackingnummer", max_length=50, blank=True)
+    versendet_am = models.DateField("Versendet am", null=True, blank=True)
+    bestaetigungsmail_gesendet_am = models.DateTimeField(
+        "Bestätigungsmail gesendet am", null=True, blank=True
+    )
     erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
 
     class Meta:

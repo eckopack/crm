@@ -13,8 +13,14 @@
         {% if packschein.vollstaendig_gepackt %}
         <span class="badge text-bg-success">Alle Positionen gepackt</span>
         {% endif %}
+        {% if packschein.ist_musterversand %}
+        <span class="badge text-bg-primary">Musterversand</span>
+        {% endif %}
     </div>
     <div class="d-print-none">
+        {% if packschein.status != "versendet" %}
+        <a href="{% url 'vertrieb:packschein_versand' packschein.pk %}" class="btn btn-success">Als versendet markieren</a>
+        {% endif %}
         <a href="{% url 'vertrieb:lieferschein_create' %}?packschein={{ packschein.pk }}" class="btn btn-primary">Lieferschein erstellen</a>
         <a href="{% url 'vertrieb:packschein_pdf' packschein.pk %}" target="_blank" class="btn btn-outline-primary">PDF</a>
         <a href="{% url 'vertrieb:packschein_update' packschein.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
@@ -26,6 +32,23 @@
     <ul class="list-group list-group-flush">
         <li class="list-group-item"><strong>Kommissionierdatum:</strong> {{ packschein.datum|date:"d.m.Y" }}</li>
         <li class="list-group-item"><strong>Kommissioniert von:</strong> {{ packschein.kommissionierer|default:"–" }}</li>
+        {% if packschein.status == "versendet" %}
+        <li class="list-group-item"><strong>Versendet am:</strong> {{ packschein.versendet_am|date:"d.m.Y" }}</li>
+        <li class="list-group-item">
+            <strong>Tracking:</strong>
+            {{ packschein.get_versanddienstleister_display|default:"–" }}
+            {{ packschein.trackingnummer|default:"" }}
+        </li>
+        {% if packschein.ist_musterversand %}
+        <li class="list-group-item small text-muted">
+            {% if packschein.bestaetigungsmail_gesendet_am %}
+            Bestätigungsmail an Lead gesendet am {{ packschein.bestaetigungsmail_gesendet_am|date:"d.m.Y H:i" }}.
+            {% else %}
+            Bestätigungsmail konnte nicht gesendet werden oder ist noch nicht konfiguriert.
+            {% endif %}
+        </li>
+        {% endif %}
+        {% endif %}
     </ul>
 </div>
 

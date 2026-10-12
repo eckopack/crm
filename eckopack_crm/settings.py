@@ -163,6 +163,26 @@ LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "vertrieb:dashboard"
 LOGOUT_REDIRECT_URL = "login"
 
+# E-Mail-Versand (Musterversand-Bestätigung, wöchentliche Nachfass-Erinnerungen, siehe
+# vertrieb/nurture.py und das management command nachfass_pruefen).
+#
+# Ohne gesetzte Umgebungsvariable DJANGO_EMAIL_HOST läuft der Konsolen-Backend-Modus:
+# E-Mails werden NICHT verschickt, sondern nur ins Log geschrieben (Render-Logs bzw.
+# Terminal). Das verhindert, dass eine fehlende/falsche Konfiguration den Packvorgang
+# blockiert - die Funktion läuft einfach "stumm", bis die SMTP-Daten eines Anbieters
+# (z. B. Resend, Mailgun, Postmark - alle unterstützen klassisches SMTP) hier über die
+# Render-Umgebungsvariablen eingetragen werden. Kein zusätzliches Python-Paket nötig.
+if os.environ.get("DJANGO_EMAIL_HOST"):
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_HOST = os.environ.get("DJANGO_EMAIL_HOST")
+    EMAIL_PORT = int(os.environ.get("DJANGO_EMAIL_PORT", "587"))
+    EMAIL_HOST_USER = os.environ.get("DJANGO_EMAIL_HOST_USER", "")
+    EMAIL_HOST_PASSWORD = os.environ.get("DJANGO_EMAIL_HOST_PASSWORD", "")
+    EMAIL_USE_TLS = os.environ.get("DJANGO_EMAIL_USE_TLS", "True") == "True"
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+DEFAULT_FROM_EMAIL = os.environ.get("DJANGO_DEFAULT_FROM_EMAIL", "vertrieb@ecko-pack.de")
+
 # Produktion: hinter Reverse-Proxy (Nginx) läuft die App i.d.R. nur über HTTPS.
 # Diese Werte werden über Umgebungsvariablen aktiviert, sobald ein echtes
 # TLS-Zertifikat vorhanden ist (siehe README.md, Abschnitt Deployment).
