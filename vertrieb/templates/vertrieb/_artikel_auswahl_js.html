@@ -1,0 +1,51 @@
+<script>
+// Füllt bei Auswahl eines Artikels (oder Änderung der Menge) automatisch Bezeichnung/
+// Einheit/Einzelpreis/USt-Satz der jeweiligen Positionszeile - rein als Vorschlag, alle
+// Felder bleiben danach frei überschreibbar. Fehlt ein Feld in der Zeile (z. B. kein
+// Einzelpreis bei Packschein/Lieferschein), wird es einfach übersprungen.
+document.addEventListener('DOMContentLoaded', function () {
+    function feldFuerZeile(select, feld) {
+        var match = select.id.match(/^id_(.+)-artikel$/);
+        if (!match) return null;
+        return document.getElementById('id_' + match[1] + '-' + feld);
+    }
+
+    function aktualisiereZeile(select) {
+        var artikelId = select.value;
+        var hinweisFeld = document.getElementById(select.id + '-hinweis');
+        if (!artikelId) {
+            if (hinweisFeld) hinweisFeld.textContent = '';
+            return;
+        }
+        var mengeFeld = feldFuerZeile(select, 'menge');
+        var menge = mengeFeld ? mengeFeld.value : '';
+        var url = '/artikel/' + encodeURIComponent(artikelId) + '/daten.json'
+            + (menge ? ('?menge=' + encodeURIComponent(menge)) : '');
+        fetch(url).then(function (r) { return r.ok ? r.json() : null; }).then(function (daten) {
+            if (!daten) return;
+            var bezeichnungFeld = feldFuerZeile(select, 'bezeichnung');
+            if (bezeichnungFeld) bezeichnungFeld.value = daten.bezeichnung;
+            var einheitFeld = feldFuerZeile(select, 'einheit');
+            if (einheitFeld) einheitFeld.value = daten.einheit;
+            var preisFeld = feldFuerZeile(select, 'einzelpreis');
+            if (preisFeld && daten.einzelpreis !== null) preisFeld.value = daten.einzelpreis;
+            var steuerFeld = feldFuerZeile(select, 'steuersatz');
+            if (steuerFeld && daten.steuersatz !== null) steuerFeld.value = daten.steuersatz;
+            if (hinweisFeld) {
+                var teile = [];
+                if (daten.status) teile.push(daten.status);
+                if (daten.lagerbestand_aktuell !== null) {
+                    teile.push('Lager: ' + daten.lagerbestand_aktuell + (daten.unter_mindestbestand ? ' ⚠ unter Meldebestand' : ''));
+                }
+                hinweisFeld.textContent = teile.join(' · ');
+            }
+        });
+    }
+
+    document.querySelectorAll('select.artikel-auswahl').forEach(function (select) {
+        select.addEventListener('change', function () { aktualisiereZeile(select); });
+        var mengeFeld = feldFuerZeile(select, 'menge');
+        if (mengeFeld) mengeFeld.addEventListener('change', function () { aktualisiereZeile(select); });
+    });
+});
+</script>

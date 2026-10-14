@@ -64,4 +64,11 @@ urlpatterns = [
     path("rechnungen/<int:pk>/bearbeiten/", views.rechnung_bearbeiten, name="rechnung_update"),
     path("rechnungen/<int:pk>/loeschen/", views.RechnungDeleteView.as_view(), name="rechnung_delete"),
     path("rechnungen/<int:pk>/pdf/", views.rechnung_pdf_download, name="rechnung_pdf"),
+
+    path("artikel/", views.ArtikelListView.as_view(), name="artikel_list"),
+    path("artikel/neu/", views.ArtikelCreateView.as_view(), name="artikel_create"),
+    path("artikel/<int:pk>/", views.ArtikelDetailView.as_view(), name="artikel_detail"),
+    path("artikel/<int:pk>/bearbeiten/", views.ArtikelUpdateView.as_view(), name="artikel_update"),
+    path("artikel/<int:pk>/loeschen/", views.ArtikelDeleteView.as_view(), name="artikel_delete"),
+    path("artikel/<int:pk>/daten.json", views.artikel_daten_json, name="artikel_daten_json"),
 ]

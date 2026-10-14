@@ -26,7 +26,7 @@
             <table class="table" id="positionen-tabelle">
                 <thead>
                 <tr>
-                    <th>Pos.</th><th>Bezeichnung</th><th>Menge</th><th>Einheit</th>
+                    <th>Pos.</th><th>Artikel</th><th>Bezeichnung</th><th>Menge</th><th>Einheit</th>
                     {% if formset.can_delete %}<th>Löschen</th>{% endif %}
                 </tr>
                 </thead>
@@ -35,13 +35,17 @@
                 <tr>
                     {% for hidden in pform.hidden_fields %}{{ hidden }}{% endfor %}
                     <td>{{ pform.position }}</td>
+                    <td>
+                        {{ pform.artikel }}
+                        <div class="small text-muted" id="{{ pform.artikel.id_for_label }}-hinweis"></div>
+                    </td>
                     <td>{{ pform.bezeichnung }}</td>
                     <td>{{ pform.menge }}</td>
                     <td>{{ pform.einheit }}</td>
                     {% if formset.can_delete %}<td>{{ pform.DELETE }}</td>{% endif %}
                 </tr>
                 {% for field in pform %}{% for error in field.errors %}
-                <tr><td colspan="5" class="text-danger small">{{ field.label }}: {{ error }}</td></tr>
+                <tr><td colspan="6" class="text-danger small">{{ field.label }}: {{ error }}</td></tr>
                 {% endfor %}{% endfor %}
                 {% endfor %}
                 </tbody>
@@ -53,3 +57,4 @@
     <a href="{% url 'vertrieb:lieferschein_list' %}" class="btn btn-outline-secondary">Abbrechen</a>
 </form>
 {% endblock %}
+{% block extra_js %}{% include "vertrieb/_artikel_auswahl_js.html" %}{% endblock %}

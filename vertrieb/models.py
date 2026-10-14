@@ -63,6 +63,7 @@ ANGEBOT_STATUS_CHOICES = [
 
 EINHEIT_CHOICES = [
     ("stk", "Stück"),
+    ("karton", "Karton"),
     ("std", "Stunde"),
     ("tag", "Tag"),
     ("monat", "Monat"),
@@ -104,6 +105,13 @@ STEUERSATZ_CHOICES = [
     (Decimal("19.00"), "19 %"),
     (Decimal("7.00"), "7 %"),
     (Decimal("0.00"), "0 % (steuerfrei)"),
+]
+
+ARTIKEL_STATUS_CHOICES = [
+    ("in_vorbereitung", "In Vorbereitung"),
+    ("aktiv", "Aktiv"),
+    ("auslaufend", "Auslaufend"),
+    ("gesperrt", "Gesperrt"),
 ]
 
 
@@ -304,11 +312,19 @@ class Angebot(models.Model):
 
 class AngebotPosition(models.Model):
     angebot = models.ForeignKey(Angebot, on_delete=models.CASCADE, related_name="positionen")
+    artikel = models.ForeignKey(
+        "Artikel", verbose_name="Artikel", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="angebotpositionen",
+    )
     position = models.PositiveIntegerField("Pos.", default=1)
     bezeichnung = models.CharField("Bezeichnung", max_length=300)
     menge = models.DecimalField("Menge", max_digits=10, decimal_places=2, default=1)
     einheit = models.CharField("Einheit", max_length=10, choices=EINHEIT_CHOICES, default="stk")
-    einzelpreis = models.DecimalField("Einzelpreis (EUR)", max_digits=12, decimal_places=2, default=0)
+    # decimal_places=5, nicht 2: bei Stückgut-Artikeln (z. B. Trinkhalme) liegt der
+    # Nettopreis je Stück im Bruchteilscent-Bereich (z. B. 0,01298 EUR) - bei nur 2
+    # Nachkommastellen würde der Gesamtpreis bei großen Mengen spürbar verfälscht
+    # (300.000 Stk * gerundet 0,01 statt 0,01298 EUR = 3.000 statt 3.894 EUR).
+    einzelpreis = models.DecimalField("Einzelpreis (EUR, netto)", max_digits=14, decimal_places=5, default=0)
 
     class Meta:
         verbose_name = "Angebotsposition"
@@ -388,6 +404,10 @@ class Packschein(models.Model):
 
 class PackscheinPosition(models.Model):
     packschein = models.ForeignKey(Packschein, on_delete=models.CASCADE, related_name="positionen")
+    artikel = models.ForeignKey(
+        "Artikel", verbose_name="Artikel", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="packscheinpositionen",
+    )
     position = models.PositiveIntegerField("Pos.", default=1)
     bezeichnung = models.CharField("Bezeichnung", max_length=300)
     menge = models.DecimalField("Menge", max_digits=10, decimal_places=2, default=1)
@@ -444,6 +464,10 @@ class Lieferschein(models.Model):
 
 class LieferscheinPosition(models.Model):
     lieferschein = models.ForeignKey(Lieferschein, on_delete=models.CASCADE, related_name="positionen")
+    artikel = models.ForeignKey(
+        "Artikel", verbose_name="Artikel", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="lieferscheinpositionen",
+    )
     position = models.PositiveIntegerField("Pos.", default=1)
     bezeichnung = models.CharField("Bezeichnung", max_length=300)
     menge = models.DecimalField("Menge", max_digits=10, decimal_places=2, default=1)
@@ -536,11 +560,16 @@ class Rechnung(models.Model):
 
 class RechnungPosition(models.Model):
     rechnung = models.ForeignKey(Rechnung, on_delete=models.CASCADE, related_name="positionen")
+    artikel = models.ForeignKey(
+        "Artikel", verbose_name="Artikel", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="rechnungpositionen",
+    )
     position = models.PositiveIntegerField("Pos.", default=1)
     bezeichnung = models.CharField("Bezeichnung", max_length=300)
     menge = models.DecimalField("Menge", max_digits=10, decimal_places=2, default=1)
     einheit = models.CharField("Einheit", max_length=10, choices=EINHEIT_CHOICES, default="stk")
-    einzelpreis = models.DecimalField("Einzelpreis (EUR, netto)", max_digits=12, decimal_places=2, default=0)
+    # decimal_places=5: siehe Kommentar bei AngebotPosition.einzelpreis.
+    einzelpreis = models.DecimalField("Einzelpreis (EUR, netto)", max_digits=14, decimal_places=5, default=0)
     steuersatz = models.DecimalField(
         "USt-Satz (%)", max_digits=4, decimal_places=2, choices=STEUERSATZ_CHOICES, default=Decimal("19.00")
     )
@@ -564,3 +593,103 @@ class RechnungPosition(models.Model):
     @property
     def bruttobetrag(self):
         return self.nettobetrag + self.steuerbetrag
+
+
+class Artikel(models.Model):
+    """Artikelstamm: ein Eintrag je verkauftem/gelagertem Artikel.
+
+    Wird bei Angeboten, Packscheinen, Lieferscheinen und Rechnungen als Positionsquelle
+    genutzt (Bezeichnung/Einheit/Preis werden beim Auswählen übernommen, bleiben aber je
+    Position frei überschreibbar) und zeigt den Lagerbestand im CRM an.
+
+    Mengenstaffelpreise (z. B. "ab 10.000 Stück günstigerer Preis je Stück") werden NICHT
+    hier auf dem Artikel selbst gepflegt, sondern als separate Preisstaffel-Einträge
+    (siehe unten) - ein Artikel kann 0 bis n Staffeln haben. Gibt es keine Staffel für die
+    bestellte Menge, gilt der Flatrate-Preis in `verkaufspreis`.
+    """
+    artikelnummer = models.CharField("Artikelnummer", max_length=50, unique=True)
+    bezeichnung = models.CharField("Bezeichnung", max_length=300)
+    beschreibung = models.TextField("Beschreibung", blank=True)
+    geschaeftsbereich = models.CharField(
+        "Geschäftsbereich (ECKO-PACK)", max_length=30, choices=GESCHAEFTSBEREICH_CHOICES,
+        default="einweg_serviceprodukte",
+    )
+    warengruppe = models.CharField(
+        "Warengruppe/Serie", max_length=100, blank=True,
+        help_text="Feinere Produktkategorie innerhalb des Geschäftsbereichs, z. B. "
+                   "\"Trinkhalme\", \"Großbesteck\", \"Kleinbesteck\", \"Muster\".",
+    )
+    einheit = models.CharField("Einheit", max_length=10, choices=EINHEIT_CHOICES, default="stk")
+    verkaufspreis = models.DecimalField(
+        "Verkaufspreis (EUR, netto)", max_digits=14, decimal_places=5, null=True, blank=True,
+        help_text="Flatrate-Preis je Einheit. Pflicht, falls keine Preisstaffeln hinterlegt sind.",
+    )
+    ust_satz = models.DecimalField(
+        "USt-Satz (%)", max_digits=4, decimal_places=2, choices=STEUERSATZ_CHOICES, default=Decimal("19.00")
+    )
+    einkaufspreis = models.DecimalField(
+        "Einkaufspreis (EUR, netto)", max_digits=14, decimal_places=5, null=True, blank=True,
+        help_text="Optional, aber Voraussetzung für Rohertrag/Deckungsbeitrag je Artikel.",
+    )
+    lagerbestand_aktuell = models.DecimalField(
+        "Lagerbestand aktuell", max_digits=12, decimal_places=2, null=True, blank=True
+    )
+    mindestbestand = models.DecimalField(
+        "Mindestbestand (Meldebestand)", max_digits=12, decimal_places=2, null=True, blank=True
+    )
+    verpackungseinheit_stk = models.PositiveIntegerField(
+        "Verpackungseinheit (Stück je Gebinde)", null=True, blank=True,
+        help_text="Z. B. 500 bei einem 500er-Schlauchbeutel oder 150 bei einem 150er-Karton.",
+    )
+    lagerort = models.CharField("Lagerort", max_length=100, blank=True)
+    lieferant = models.CharField("Lieferant", max_length=200, blank=True)
+    status = models.CharField(
+        "Status", max_length=30, choices=ARTIKEL_STATUS_CHOICES, default="in_vorbereitung", blank=True,
+        help_text="Rein informativ - verhindert aktuell NICHT die Verwendung in Angeboten/Packscheinen.",
+    )
+    notizen = models.TextField("Notizen", blank=True)
+    erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
+    aktualisiert_am = models.DateTimeField("Zuletzt aktualisiert", auto_now=True)
+
+    class Meta:
+        verbose_name = "Artikel"
+        verbose_name_plural = "Artikel"
+        ordering = ["artikelnummer"]
+
+    def __str__(self):
+        return f"{self.artikelnummer} – {self.bezeichnung}"
+
+    def get_absolute_url(self):
+        return reverse("vertrieb:artikel_detail", args=[self.pk])
+
+    @property
+    def unter_mindestbestand(self):
+        if self.lagerbestand_aktuell is None or self.mindestbestand is None:
+            return False
+        return self.lagerbestand_aktuell < self.mindestbestand
+
+    def preis_fuer_menge(self, menge):
+        """Liefert den Nettopreis je Einheit für eine bestellte Menge: die höchste
+        Preisstaffel, deren Mindestmenge die bestellte Menge nicht übersteigt - sonst
+        der Flatrate-Verkaufspreis."""
+        if menge is not None:
+            staffel = self.preisstaffeln.filter(ab_menge__lte=menge).order_by("-ab_menge").first()
+            if staffel is not None:
+                return staffel.preis_netto
+        return self.verkaufspreis
+
+
+class Preisstaffel(models.Model):
+    """Eine Mengenstaffel-Preisstufe eines Artikels (z. B. "ab 10.000 Stück: 0,045 EUR/Stk")."""
+    artikel = models.ForeignKey(Artikel, on_delete=models.CASCADE, related_name="preisstaffeln")
+    ab_menge = models.PositiveIntegerField("Ab Menge (Stück/Einheit)")
+    preis_netto = models.DecimalField("Preis je Einheit (EUR, netto)", max_digits=14, decimal_places=5)
+
+    class Meta:
+        verbose_name = "Preisstaffel"
+        verbose_name_plural = "Preisstaffeln"
+        ordering = ["-ab_menge"]
+        unique_together = [("artikel", "ab_menge")]
+
+    def __str__(self):
+        return f"{self.artikel.artikelnummer}: ab {self.ab_menge} → {self.preis_netto} €"

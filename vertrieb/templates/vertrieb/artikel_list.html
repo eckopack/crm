@@ -1,0 +1,58 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Artikel – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Artikel</h2>
+    <a href="{% url 'vertrieb:artikel_create' %}" class="btn btn-primary">+ Neuer Artikel</a>
+</div>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-auto">
+        <input type="text" name="q" value="{{ request.GET.q|default:'' }}" class="form-control" placeholder="Suche nach Artikelnummer/Bezeichnung...">
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-secondary">Suchen</button>
+    </div>
+</form>
+
+<div class="card">
+    <table class="table table-hover mb-0">
+        <thead>
+        <tr>
+            <th>Artikelnummer</th>
+            <th>Bezeichnung</th>
+            <th>Warengruppe</th>
+            <th>Einheit</th>
+            <th>Preis</th>
+            <th>Lagerbestand</th>
+            <th>Status</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for artikel in artikel_liste %}
+        <tr onclick="window.location='{{ artikel.get_absolute_url }}'" style="cursor:pointer;">
+            <td>{{ artikel.artikelnummer }}</td>
+            <td>{{ artikel.bezeichnung }}</td>
+            <td>{{ artikel.warengruppe|default:"–" }}</td>
+            <td>{{ artikel.get_einheit_display }}</td>
+            <td>
+                {% if artikel.verkaufspreis %}{{ artikel.verkaufspreis }} €{% else %}–{% endif %}
+                {% if artikel.preisstaffeln.exists %}<span class="badge text-bg-light border">Staffelpreise</span>{% endif %}
+            </td>
+            <td>
+                {% if artikel.lagerbestand_aktuell is not None %}
+                    {{ artikel.lagerbestand_aktuell }}
+                    {% if artikel.unter_mindestbestand %}<span class="badge text-bg-danger">unter Meldebestand</span>{% endif %}
+                {% else %}–{% endif %}
+            </td>
+            <td><span class="badge text-bg-light border">{{ artikel.get_status_display }}</span></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-muted text-center py-3">Noch keine Artikel angelegt.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% include "vertrieb/_pagination.html" %}
+{% endblock %}

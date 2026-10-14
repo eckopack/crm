@@ -1,0 +1,36 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Artikel {% if object %}bearbeiten{% else %}anlegen{% endif %}{% endblock %}
+{% block content %}
+<h2 class="mb-3">Artikel {% if object %}bearbeiten{% else %}anlegen{% endif %}</h2>
+<div class="card" style="max-width: 700px;">
+    <div class="card-body">
+        <form method="post">
+            {% csrf_token %}
+            {% include "vertrieb/_form_fields.html" %}
+            <button type="submit" class="btn btn-primary">Speichern</button>
+            <a href="{% url 'vertrieb:artikel_list' %}" class="btn btn-outline-secondary">Abbrechen</a>
+        </form>
+    </div>
+</div>
+{% if object %}
+<div class="card mt-3" style="max-width: 700px;">
+    <div class="card-header fw-semibold">Preisstaffeln</div>
+    <div class="card-body">
+        <p class="text-muted small">
+            Mengenstaffel-Preise werden aktuell nur über den Import gepflegt, nicht über
+            dieses Formular. Bei Bedarf über die Admin-Oberfläche (/admin/) anpassen.
+        </p>
+        <table class="table table-sm mb-0">
+            <thead><tr><th>Ab Menge</th><th>Preis je Einheit (netto)</th></tr></thead>
+            <tbody>
+            {% for staffel in object.preisstaffeln.all %}
+            <tr><td>{{ staffel.ab_menge }}</td><td>{{ staffel.preis_netto }} €</td></tr>
+            {% empty %}
+            <tr><td colspan="2" class="text-muted">Keine Preisstaffeln hinterlegt – es gilt der Flatrate-Verkaufspreis.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

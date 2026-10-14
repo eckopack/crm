@@ -40,7 +40,7 @@
             <td>{{ p.bezeichnung }}</td>
             <td>{{ p.menge }}</td>
             <td>{{ p.get_einheit_display }}</td>
-            <td>{{ p.einzelpreis|floatformat:2 }} €</td>
+            <td>{{ p.einzelpreis|floatformat:-5 }} €</td>
             <td>{{ p.gesamtpreis|floatformat:2 }} €</td>
         </tr>
         {% empty %}

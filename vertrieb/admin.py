@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Aktivitaet, Angebot, AngebotPosition, Deal, Firma, Kontakt
+from .models import Aktivitaet, Angebot, AngebotPosition, Artikel, Deal, Firma, Kontakt, Preisstaffel
 
 
 class KontaktInline(admin.TabularInline):
@@ -48,3 +48,20 @@ class AngebotAdmin(admin.ModelAdmin):
     list_filter = ("status",)
     search_fields = ("nummer",)
     inlines = [AngebotPositionInline]
+
+
+class PreisstaffelInline(admin.TabularInline):
+    model = Preisstaffel
+    extra = 1
+    ordering = ["-ab_menge"]
+
+
+@admin.register(Artikel)
+class ArtikelAdmin(admin.ModelAdmin):
+    list_display = (
+        "artikelnummer", "bezeichnung", "geschaeftsbereich", "warengruppe",
+        "verkaufspreis", "lagerbestand_aktuell", "status", "aktualisiert_am",
+    )
+    list_filter = ("geschaeftsbereich", "warengruppe", "status")
+    search_fields = ("artikelnummer", "bezeichnung")
+    inlines = [PreisstaffelInline]

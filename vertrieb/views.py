@@ -1,11 +1,13 @@
 import os
+from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.management import call_command
+from django.db import models
 from django.db.models import Sum
-from django.http import HttpResponse, HttpResponseForbidden
+from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.utils import timezone
@@ -14,13 +16,13 @@ from django.views.generic import CreateView, DeleteView, DetailView, ListView, U
 
 from . import nurture, pdf
 from .forms import (
-    AktivitaetForm, AngebotForm, AngebotPositionFormSet, DealForm, FirmaForm, KontaktForm,
+    AktivitaetForm, AngebotForm, AngebotPositionFormSet, ArtikelForm, DealForm, FirmaForm, KontaktForm,
     PackscheinForm, PackscheinPositionFormSet, PackscheinVersandForm,
     LieferscheinForm, LieferscheinPositionFormSet, RechnungForm, RechnungPositionFormSet,
 )
 from .models import (
     DEAL_PHASE_CHOICES, PHASE_STANDARD_WAHRSCHEINLICHKEIT,
-    Aktivitaet, Angebot, Deal, Firma, Kontakt, Packschein, PackscheinPosition, Lieferschein, Rechnung,
+    Aktivitaet, Angebot, Artikel, Deal, Firma, Kontakt, Packschein, PackscheinPosition, Lieferschein, Rechnung,
 )
 from django.forms import inlineformset_factory
 
@@ -768,3 +770,76 @@ def rechnung_pdf_download(request, pk):
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
     response["Content-Disposition"] = f'inline; filename="{rechnung.nummer}.pdf"'
     return response
+
+
+# ---------------------------------------------------------------------------
+# Artikel (Artikelstamm)
+# ---------------------------------------------------------------------------
+
+class ArtikelListView(LoginRequiredMixin, ListView):
+    model = Artikel
+    template_name = "vertrieb/artikel_list.html"
+    context_object_name = "artikel_liste"
+    paginate_by = 50
+
+    def get_queryset(self):
+        qs = Artikel.objects.all()
+        suche = self.request.GET.get("q")
+        if suche:
+            qs = qs.filter(models.Q(artikelnummer__icontains=suche) | models.Q(bezeichnung__icontains=suche))
+        return qs
+
+
+class ArtikelDetailView(LoginRequiredMixin, DetailView):
+    model = Artikel
+    template_name = "vertrieb/artikel_detail.html"
+    context_object_name = "artikel"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["preisstaffeln"] = self.object.preisstaffeln.all()
+        return context
+
+
+class ArtikelCreateView(LoginRequiredMixin, CreateView):
+    model = Artikel
+    form_class = ArtikelForm
+    template_name = "vertrieb/artikel_form.html"
+
+
+class ArtikelUpdateView(LoginRequiredMixin, UpdateView):
+    model = Artikel
+    form_class = ArtikelForm
+    template_name = "vertrieb/artikel_form.html"
+
+
+class ArtikelDeleteView(LoginRequiredMixin, DeleteView):
+    model = Artikel
+    template_name = "vertrieb/confirm_delete.html"
+    success_url = reverse_lazy("vertrieb:artikel_list")
+
+
+@login_required
+def artikel_daten_json(request, pk):
+    """Liefert Bezeichnung/Einheit/Preis/Lagerbestand eines Artikels als JSON - genutzt
+    von der Artikelauswahl in den Positionsformularen (Angebot/Packschein/Lieferschein/
+    Rechnung), um die übrigen Felder der Zeile per JavaScript automatisch zu befüllen,
+    ohne die Seite neu zu laden. Die Felder bleiben danach für den Nutzer frei editierbar -
+    das hier ist nur ein Ausfüll-Vorschlag, keine Festschreibung."""
+    artikel = get_object_or_404(Artikel, pk=pk)
+    menge = request.GET.get("menge")
+    try:
+        menge_dec = Decimal(menge) if menge not in (None, "") else None
+    except InvalidOperation:
+        menge_dec = None
+    preis = artikel.preis_fuer_menge(menge_dec)
+    return JsonResponse({
+        "bezeichnung": artikel.bezeichnung,
+        "einheit": artikel.einheit,
+        "einzelpreis": str(preis) if preis is not None else None,
+        "steuersatz": str(artikel.ust_satz),
+        "lagerbestand_aktuell": str(artikel.lagerbestand_aktuell) if artikel.lagerbestand_aktuell is not None else None,
+        "mindestbestand": str(artikel.mindestbestand) if artikel.mindestbestand is not None else None,
+        "unter_mindestbestand": artikel.unter_mindestbestand,
+        "status": artikel.get_status_display() if artikel.status else "",
+    })

@@ -45,7 +45,7 @@
             <td>{{ p.bezeichnung }}</td>
             <td>{{ p.menge }}</td>
             <td>{{ p.get_einheit_display }}</td>
-            <td>{{ p.einzelpreis|floatformat:2 }} €</td>
+            <td>{{ p.einzelpreis|floatformat:-5 }} €</td>
             <td>{{ p.steuersatz|floatformat:0 }} %</td>
             <td>{{ p.nettobetrag|floatformat:2 }} €</td>
         </tr>

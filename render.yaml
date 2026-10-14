@@ -64,6 +64,15 @@
 # Ebenso: E-Mail-Versand (DJANGO_EMAIL_HOST etc. unten) läuft erst, wenn echte SMTP-
 # Zugangsdaten eines Transaktions-Mailanbieters eingetragen sind - ohne das schreibt
 # die App E-Mails nur ins Render-Log (Konsolen-Backend), verschickt aber nichts.
+#
+# ARTIKELSTAMM-IMPORT (14.10.2026, neu): Anders als import_leadliste läuft
+# import_artikelstamm bewusst DAUERHAFT bei jedem Deploy mit (nicht nur einmalig) -
+# die Datei data/20261014_LUAMO_Masterartikelstamm.xlsx ist als "lebende Masterdatei"
+# gedacht: Zeile in der Datei ändern, committen, pushen, beim nächsten Deploy zieht
+# der Import automatisch nach. Der Befehl ist idempotent (Abgleich über
+# Artikelnummer) und legt bei 16 Artikelzeilen keine spürbare Startzeit-Verzögerung
+# hin. Details/Annahmen zum Import siehe Docstring in
+# vertrieb/management/commands/import_artikelstamm.py.
 
 services:
   - type: web
@@ -80,6 +89,7 @@ services:
     startCommand: >
       python manage.py migrate &&
       python manage.py beispieldaten &&
+      python manage.py import_artikelstamm data/20261014_LUAMO_Masterartikelstamm.xlsx &&
       gunicorn eckopack_crm.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: DJANGO_SECRET_KEY

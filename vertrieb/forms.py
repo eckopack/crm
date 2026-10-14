@@ -2,7 +2,7 @@ from django import forms
 from django.forms import inlineformset_factory
 
 from .models import (
-    Aktivitaet, Angebot, AngebotPosition, Deal, Firma, Kontakt,
+    Aktivitaet, Angebot, AngebotPosition, Artikel, Deal, Firma, Kontakt,
     Packschein, PackscheinPosition, Lieferschein, LieferscheinPosition,
     Rechnung, RechnungPosition,
 )
@@ -103,11 +103,15 @@ class AngebotForm(BootstrapFormMixin, forms.ModelForm):
 class AngebotPositionForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = AngebotPosition
-        fields = ["position", "bezeichnung", "menge", "einheit", "einzelpreis"]
+        fields = ["artikel", "position", "bezeichnung", "menge", "einheit", "einzelpreis"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._bootstrapify()
+        self.fields["artikel"].required = False
+        self.fields["artikel"].widget.attrs["class"] = (
+            self.fields["artikel"].widget.attrs.get("class", "") + " artikel-auswahl"
+        )
 
 
 AngebotPositionFormSet = inlineformset_factory(
@@ -155,11 +159,15 @@ class PackscheinVersandForm(BootstrapFormMixin, forms.ModelForm):
 class PackscheinPositionForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = PackscheinPosition
-        fields = ["position", "bezeichnung", "menge", "einheit", "gepackt"]
+        fields = ["artikel", "position", "bezeichnung", "menge", "einheit", "gepackt"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._bootstrapify()
+        self.fields["artikel"].required = False
+        self.fields["artikel"].widget.attrs["class"] = (
+            self.fields["artikel"].widget.attrs.get("class", "") + " artikel-auswahl"
+        )
 
 
 PackscheinPositionFormSet = inlineformset_factory(
@@ -186,11 +194,15 @@ class LieferscheinForm(BootstrapFormMixin, forms.ModelForm):
 class LieferscheinPositionForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = LieferscheinPosition
-        fields = ["position", "bezeichnung", "menge", "einheit"]
+        fields = ["artikel", "position", "bezeichnung", "menge", "einheit"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._bootstrapify()
+        self.fields["artikel"].required = False
+        self.fields["artikel"].widget.attrs["class"] = (
+            self.fields["artikel"].widget.attrs.get("class", "") + " artikel-auswahl"
+        )
 
 
 LieferscheinPositionFormSet = inlineformset_factory(
@@ -221,13 +233,35 @@ class RechnungForm(BootstrapFormMixin, forms.ModelForm):
 class RechnungPositionForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = RechnungPosition
-        fields = ["position", "bezeichnung", "menge", "einheit", "einzelpreis", "steuersatz"]
+        fields = ["artikel", "position", "bezeichnung", "menge", "einheit", "einzelpreis", "steuersatz"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._bootstrapify()
+        self.fields["artikel"].required = False
+        self.fields["artikel"].widget.attrs["class"] = (
+            self.fields["artikel"].widget.attrs.get("class", "") + " artikel-auswahl"
+        )
 
 
 RechnungPositionFormSet = inlineformset_factory(
     Rechnung, RechnungPosition, form=RechnungPositionForm, extra=1, can_delete=True
 )
+
+
+class ArtikelForm(BootstrapFormMixin, forms.ModelForm):
+    class Meta:
+        model = Artikel
+        fields = [
+            "artikelnummer", "bezeichnung", "beschreibung", "geschaeftsbereich", "warengruppe",
+            "einheit", "verkaufspreis", "ust_satz", "einkaufspreis", "lagerbestand_aktuell",
+            "mindestbestand", "verpackungseinheit_stk", "lagerort", "lieferant", "status", "notizen",
+        ]
+        widgets = {
+            "beschreibung": forms.Textarea(attrs={"rows": 3}),
+            "notizen": forms.Textarea(attrs={"rows": 3}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()

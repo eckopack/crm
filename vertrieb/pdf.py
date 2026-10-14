@@ -45,6 +45,23 @@ def _eur(betrag):
     return f"{text} €"
 
 
+def _eur_praezise(betrag):
+    """Wie _eur(), aber mit bis zu 5 statt 2 Nachkommastellen (mindestens 2).
+
+    Für Einzelpreise von Stückgut-Artikeln mit Bruchteilscent-Preisen (z. B. 0,01298 €
+    je Trinkhalm, siehe Artikel-/Preisstaffel-Import): die Positionssumme wird intern mit
+    voller Präzision berechnet, aber bei der normalen 2-Nachkommastellen-Anzeige würde der
+    Einzelpreis auf 0,01 € gerundet erscheinen - wer das von Hand nachrechnet, käme auf
+    ein falsches Ergebnis, obwohl die gedruckte Summe stimmt."""
+    text = f"{betrag:,.5f}"
+    text = text.replace(",", "X").replace(".", ",").replace("X", ".")
+    ganzzahl, dezimal = text.split(",")
+    dezimal = dezimal.rstrip("0")
+    if len(dezimal) < 2:
+        dezimal = dezimal.ljust(2, "0")
+    return f"{ganzzahl},{dezimal} €"
+
+
 def _menge(wert):
     wert = Decimal(wert)
     if wert == wert.to_integral_value():
@@ -353,7 +370,7 @@ def angebot_pdf_erzeugen(angebot):
     zeilen = []
     for p in angebot.positionen.all():
         zeilen.append([p.position, p.bezeichnung, _menge(p.menge), p.get_einheit_display(),
-                        _eur(p.einzelpreis), _eur(p.gesamtpreis)])
+                        _eur_praezise(p.einzelpreis), _eur(p.gesamtpreis)])
     summenzeilen = [("Gesamtsumme (netto, zzgl. gesetzl. USt.)", _eur(angebot.gesamtsumme))]
     return _dokument_pdf_bytes(
         titel="ANGEBOT", nummer=angebot.nummer, empfaenger_zeilen=empfaenger_zeilen,
@@ -406,7 +423,7 @@ def rechnung_pdf_erzeugen(rechnung):
     for p in rechnung.positionen.all():
         zeilen.append([
             p.position, p.bezeichnung, _menge(p.menge), p.get_einheit_display(),
-            _eur(p.einzelpreis), _satz_text(p.steuersatz), _eur(p.nettobetrag),
+            _eur_praezise(p.einzelpreis), _satz_text(p.steuersatz), _eur(p.nettobetrag),
         ])
 
     summenzeilen = [("Nettosumme", _eur(rechnung.nettosumme))]
