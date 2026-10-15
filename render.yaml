@@ -73,6 +73,25 @@
 # Artikelnummer) und legt bei 16 Artikelzeilen keine spürbare Startzeit-Verzögerung
 # hin. Details/Annahmen zum Import siehe Docstring in
 # vertrieb/management/commands/import_artikelstamm.py.
+#
+# ARTIKELSTAMM-IMPORT, STAND 15.10.2026 (von Björn im Chat ausdrücklich freigegeben:
+# "die zuletzt erstellte artikelliste komplett einspielen ... ist hiermit bestätigt!
+# die artikel die jetzt im CRM sind, werden bitte überschrieben!"): Neue Masterdatei
+# data/20261015_LUAMO_Masterartikelstamm.xlsx ersetzt die alte als Importquelle
+# (36 statt 16 Zeilen: 16 bestehende Artikel werden zweisprachig DE/EN umgestellt,
+# 4 neue Einlage-/Flyer-Artikel und 16 neue reine Englisch-Artikel fürs E-Commerce/
+# Amazon-Listing kommen hinzu - Details siehe Reconciliation-Dokument). Gleichzeitig
+# wurde import_artikelstamm.py umgebaut: Mindestmengen-Preisstaffeln kommen jetzt
+# paarweise direkt aus der Datei (Spalten "Mindestmenge i (Stk)"/"VK i (€/Stk)" statt
+# der alten festen Warengruppen-Tabelle im Code), und die Spalte "Einspielfreigabe
+# (Ja/Nein)" wird ab jetzt ECHT serverseitig geprüft (Zeilen mit "Nein" werden beim
+# Import übersprungen) - vorher war diese Spalte rein kosmetisch. Lokal gegen eine
+# Kopie der echten Produktionsdaten (16 Artikel/109 Preisstaffeln) verifiziert:
+# Ergebnis exakt "20 neu, 16 aktualisiert, 0 übersprungen, 0 ohne Einspielfreigabe",
+# bestehende Preisstaffeln byte-identisch erhalten, keine Duplikate. EMPFEHLUNG:
+# vor diesem Deploy einen Export der aktuellen Artikel/Preisstaffeln-Tabellen ziehen
+# (z. B. "python manage.py dumpdata vertrieb.Artikel vertrieb.Preisstaffel" über die
+# Render-Shell), da dies der erste Produktiv-Lauf des neuen Import-Codes ist.
 
 services:
   - type: web
@@ -89,7 +108,7 @@ services:
     startCommand: >
       python manage.py migrate &&
       python manage.py beispieldaten &&
-      python manage.py import_artikelstamm data/20261014_LUAMO_Masterartikelstamm.xlsx &&
+      python manage.py import_artikelstamm data/20261015_LUAMO_Masterartikelstamm.xlsx &&
       gunicorn eckopack_crm.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: DJANGO_SECRET_KEY

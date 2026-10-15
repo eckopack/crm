@@ -1,59 +1,50 @@
 """
 Management-Command zum Import des Artikelstamms (Blatt "Artikel") aus der
-ECKO-PACK/LUAMO-Artikelstamm-Excel-Datei in das CRM.
+ECKO-PACK-Artikel-Schnittstelle (Excel) in das CRM.
 
 Nutzung:
     python manage.py import_artikelstamm /pfad/zur/Datei.xlsx
     python manage.py import_artikelstamm /pfad/zur/Datei.xlsx --dry-run
 
 Der Import ist idempotent: Artikel werden über das Feld "Artikelnummer" erkannt und bei
-einem erneuten Import aktualisiert statt dupliziert (genau wie Firmen/Kontakte/Deals über
-externe_id beim Leadlisten-Import). Preisstaffeln eines Artikels werden bei jedem Import
-komplett neu aus der Datei geschrieben (alte Staffeln dieses Artikels werden vorher
-gelöscht) - so bleibt die Datei eine lebende Masterdatei: Zeile ändern, neu importieren.
+einem erneuten Import aktualisiert statt dupliziert. Preisstaffeln eines Artikels werden
+bei jedem Import komplett neu aus der Datei geschrieben (alte Staffeln dieses Artikels
+werden vorher gelöscht) - so bleibt die Datei eine lebende Masterdatei: Zeile ändern,
+neu importieren.
 
-Annahmen (siehe Chat mit Björn vom 14.10.2026, Datei
-"LUAMO_Masterartikelstamm_DE_EN_mit_Musterbeilegern.xlsx"):
+Stand 15.10.2026 (Björns Entscheidungen, siehe Doku-Dokument "LUAMO Artikelstamm -
+Abgleich Excel ↔ CRM" und Chat-Verlauf):
 
-- Das Blatt "Artikel" ist führend (Björns Entscheidung). Das Blatt "Stammdaten NEU"
-  enthält dieselben Artikelnummern mit teils zusätzlichen Logistikfeldern (Umkarton-VE,
-  Paletten), wird hier aber NICHT ausgelesen - falls diese Felder später gebraucht
-  werden, müsste das Modell und dieser Import erweitert werden.
+- Format seit 15.10.: pro VK-Stufe gibt es zwei Spalten nebeneinander, "Mindestmenge i
+  (Stk)" und "VK i (€/Stk)" - die Mindestmenge steht jetzt direkt und real in der Datei
+  (warengruppenabhängig von Björn gepflegt), NICHT mehr als hart im Code hinterlegte
+  Tabelle. Eine Preisstaffel wird nur angelegt, wenn BEIDE Zellen eines Paares gefüllt
+  sind; leere Paare (z. B. Großbesteck/Kleinbesteck ohne 9. Stufe, oder Artikel ohne
+  jede Mengenstaffel wie Muster/Verpackung-Marketing) werden einfach übersprungen.
+
+- Spalte "Einspielfreigabe (Ja/Nein)" ist ab jetzt ein ECHTES Gate, kein reiner
+  Excel-Hinweis mehr: nur Zeilen mit "Ja" (Groß-/Kleinschreibung egal) werden
+  importiert. Alles andere (leer, "Nein", Tippfehler) wird übersprungen und separat
+  gezählt. Vorher stand das nur als Konvention in der Anleitung, ohne Durchsetzung im
+  Code - genau das sollte diese Spalte eigentlich schon immer tun.
+
+- Bezeichnung/Beschreibung können zweizeilig sein (1. Zeile Deutsch, 2. Zeile Englisch,
+  per Zeilenumbruch in derselben Zelle) - wird unverändert als Text übernommen,
+  Artikel.bezeichnung (CharField) toleriert eingebettete Zeilenumbrüche.
 
 - Die Spalte "Geschäftsbereich *" in der Datei enthält KEINE der fünf ECKO-PACK-
-  Unternehmensbereiche, sondern eine feinere Produktkategorie (hier: "Einweg-/
-  Serviceprodukte" [Trinkhalme], "Großbesteck", "Kleinbesteck", "Muster"). Dieser Text
-  wird deshalb in das neue Feld Artikel.warengruppe geschrieben; Artikel.geschaeftsbereich
-  (der Unternehmensbereich) wird für ALLE importierten Zeilen fest auf
-  "einweg_serviceprodukte" gesetzt, da alle vier Kategorien dort einsortiert sind.
-
-- Mengenstaffelpreise (Spalten "VK 1: 300.000 Stk" ... "VK 9: 50 Stk"): Die Spalten-
-  überschriften sind nur Richtwerte und gelten NICHT wörtlich für alle Warengruppen -
-  laut den Blättern "VK-Staffeln" (Trinkhalme) und "Besteck-Staffeln" (Groß-/
-  Kleinbesteck) haben Großbesteck und Kleinbesteck eigene, leicht abweichende
-  Mindestmengen je Stufe (z. B. Großbesteck VK2 ab 200.100 Stk statt 200.000). Dieser
-  Import nutzt deshalb pro Warengruppe eine eigene, hier hart hinterlegte Mindestmengen-
-  Tabelle (siehe ABMENGE_JE_WARENGRUPPE) statt die Spaltenüberschriften zu interpretieren.
-  Für eine unbekannte Warengruppe werden befüllte VK-Spalten NICHT importiert, sondern
-  nur als Warnung gemeldet - das verhindert falsche Mindestmengen für künftige, anders
-  strukturierte Produktlinien. Für "Muster" sind in der Datei ohnehin keine VK-Spalten
-  befüllt (nur der Flatrate-Verkaufspreis).
-
-- Achtung (an Björn kommuniziert, nicht Teil dieses Imports): Mehrere Preisstaffeln bei
-  Großbesteck/Kleinbesteck sind laut dem Blatt "Besteck-Staffeln" noch "Vorschlag", nicht
-  "bestätigt" (nur Großbesteck VK1 und Kleinbesteck-Pommespicker VK1 sind als bestätigt
-  vermerkt). Dieser Import übernimmt trotzdem alle Werte unverändert - die fachliche
-  Freigabe der Preise bleibt Björns Aufgabe, bevor ein Angebot mit diesen Preisen
-  rausgeht.
+  Unternehmensbereiche, sondern eine feinere Produktkategorie (z. B. "Einweg-/
+  Serviceprodukte", "Großbesteck", "Kleinbesteck", "Muster", "Verpackung/Marketing").
+  Dieser Text wird deshalb in das Feld Artikel.warengruppe geschrieben;
+  Artikel.geschaeftsbereich (der Unternehmensbereich) wird für ALLE importierten Zeilen
+  fest auf "einweg_serviceprodukte" gesetzt, da alle Kategorien dort einsortiert sind.
 
 - Artikel ohne jeden Preis (weder Flatrate-Verkaufspreis noch eine Preisstaffel) werden
   TROTZDEM angelegt (Stammdaten/Lagerbestand sind auch ohne Preis nützlich), aber mit
-  einer Warnung gemeldet - entsprechend Björns Entscheidung, offene/unfertige Artikel
-  nicht zu sperren, sondern nur sichtbar zu machen.
+  einer Warnung gemeldet.
 
-- Status (Spalte "Status", z. B. "In Vorbereitung", "Entwurf"): wird informativ in
-  Artikel.status übernommen (keine Sperre für Angebote/Packscheine), unbekannte Texte
-  fallen auf "in_vorbereitung" zurück.
+- Status (Spalte "Status"): wird informativ in Artikel.status übernommen (keine Sperre
+  für Angebote/Packscheine), unbekannte Texte fallen auf "in_vorbereitung" zurück.
 """
 from decimal import Decimal, InvalidOperation
 
@@ -65,21 +56,6 @@ from vertrieb.models import Artikel, EINHEIT_CHOICES, Preisstaffel
 
 GESCHAEFTSBEREICH_IMPORT = "einweg_serviceprodukte"
 
-# Spaltenreihenfolge der neun VK-Staffel-Spalten im Blatt "Artikel", in dieser Reihenfolge.
-VK_SPALTEN = [
-    "VK 1: 300.000 Stk", "VK 2: 200.000 Stk", "VK 3: 100.000 Stk", "VK 4: 50.000 Stk",
-    "VK 5: 10.000 Stk", "VK 6: 3.000 Stk", "VK 7: 1.000 Stk", "VK 8: 100 / 150 / 500 Stk",
-    "VK 9: 50 Stk",
-]
-
-# Echte Mindestmengen je Warengruppe (siehe Blätter "VK-Staffeln" / "Besteck-Staffeln"),
-# NICHT identisch mit den generischen Spaltenüberschriften oben - siehe Docstring.
-ABMENGE_JE_WARENGRUPPE = {
-    "Einweg-/Serviceprodukte": [300000, 200000, 100000, 50000, 10000, 3000, 1000, 100, 50],
-    "Großbesteck": [300000, 200100, 100050, 50100, 10050, 3000, 1050, 150],
-    "Kleinbesteck": [300000, 200000, 100000, 50000, 10000, 3000, 1000, 500],
-}
-
 STATUS_MAPPING = {
     "in vorbereitung": "in_vorbereitung",
     "entwurf": "in_vorbereitung",
@@ -90,11 +66,26 @@ STATUS_MAPPING = {
 
 _EINHEIT_LABEL_ZU_KEY = {label.lower(): key for key, label in EINHEIT_CHOICES}
 
+# Spaltennamen-Präfixe der neun Mindestmenge/VK-Paare, so wie build_interface.py
+# (Artikel-Schnittstelle) sie erzeugt: Header "Mindestmenge i\n(Stk)" / "VK i\n(€/Stk)".
+# Zeilenumbrüche in Headern werden beim Einlesen normalisiert (siehe _header_name),
+# deshalb hier ohne \n gesucht.
+STAFFEL_SPALTEN = [(f"Mindestmenge {i} (Stk)", f"VK {i} (€/Stk)") for i in range(1, 10)]
+
 
 def _s(value):
     if value is None:
         return ""
     return str(value).strip()
+
+
+def _header_name(value):
+    """Normalisiert eine Header-Zelle: Zeilenumbrüche (wrap_text) werden zu Leerzeichen,
+    doppelte Leerzeichen zusammengefasst - "Mindestmenge 1\\n(Stk)" wird so zu
+    "Mindestmenge 1 (Stk)", unabhängig davon, ob Excel den Umbruch als \\n oder \\r\\n
+    gespeichert hat."""
+    text = _s(value)
+    return " ".join(text.split())
 
 
 def _dec(value):
@@ -116,7 +107,7 @@ def _int(value):
 
 
 class Command(BaseCommand):
-    help = "Importiert den Artikelstamm (Blatt 'Artikel') aus der Artikelstamm-Excel-Datei."
+    help = "Importiert den Artikelstamm (Blatt 'Artikel') aus der Artikel-Schnittstelle (Excel)."
 
     def add_arguments(self, parser):
         parser.add_argument("pfad", type=str, help="Pfad zur .xlsx-Datei")
@@ -138,19 +129,34 @@ class Command(BaseCommand):
             raise CommandError("Blatt 'Artikel' fehlt in der Datei - Import abgebrochen.")
 
         ws = wb["Artikel"]
-        header = [_s(c.value) for c in ws[1]]
+        header = [_header_name(c.value) for c in ws[1]]
         spalte = {name: idx for idx, name in enumerate(header) if name}
 
-        pflicht = ["Artikelnummer *", "Bezeichnung *", "Geschäftsbereich *", "Einheit *", "USt-Satz (%) *"]
+        # "Bezeichnung *"/"Beschreibung" tragen in der aktuellen Datei den Zusatz
+        # "(DE / EN)" im Header - beide Schreibweisen akzeptieren, damit ältere und
+        # neuere Dateien funktionieren.
+        bezeichnung_spalte = next(
+            (n for n in ("Bezeichnung * (DE / EN)", "Bezeichnung *") if n in spalte), None
+        )
+        beschreibung_spalte = next(
+            (n for n in ("Beschreibung (DE / EN)", "Beschreibung") if n in spalte), None
+        )
+
+        pflicht = ["Artikelnummer *", "Geschäftsbereich *", "Einheit *", "USt-Satz (%) *"]
         fehlend = [p for p in pflicht if p not in spalte]
+        if not bezeichnung_spalte:
+            fehlend.append("Bezeichnung *")
         if fehlend:
             raise CommandError(f"Pflichtspalte(n) fehlen im Blatt 'Artikel': {', '.join(fehlend)}")
+
+        einspielfreigabe_spalte = "Einspielfreigabe (Ja/Nein)"
+        hat_freigabe_spalte = einspielfreigabe_spalte in spalte
 
         def wert(row, name):
             idx = spalte.get(name)
             return row[idx] if idx is not None else None
 
-        stats = {"neu": 0, "aktualisiert": 0, "uebersprungen": 0, "warnungen": []}
+        stats = {"neu": 0, "aktualisiert": 0, "uebersprungen": 0, "nicht_freigegeben": 0, "warnungen": []}
 
         with transaction.atomic():
             for row in ws.iter_rows(min_row=2, values_only=True):
@@ -158,7 +164,13 @@ class Command(BaseCommand):
                 if not artikelnummer:
                     continue
 
-                bezeichnung = _s(wert(row, "Bezeichnung *"))
+                if hat_freigabe_spalte:
+                    freigabe = _s(wert(row, einspielfreigabe_spalte)).lower()
+                    if freigabe != "ja":
+                        stats["nicht_freigegeben"] += 1
+                        continue
+
+                bezeichnung = _s(wert(row, bezeichnung_spalte))
                 if not bezeichnung:
                     stats["warnungen"].append(f"{artikelnummer}: keine Bezeichnung - übersprungen.")
                     stats["uebersprungen"] += 1
@@ -187,8 +199,8 @@ class Command(BaseCommand):
                 status = STATUS_MAPPING.get(status_text, "in_vorbereitung")
 
                 defaults = {
-                    "bezeichnung": bezeichnung,
-                    "beschreibung": _s(wert(row, "Beschreibung")),
+                    "bezeichnung": bezeichnung[:300],
+                    "beschreibung": _s(wert(row, beschreibung_spalte)) if beschreibung_spalte else "",
                     "geschaeftsbereich": GESCHAEFTSBEREICH_IMPORT,
                     "warengruppe": warengruppe,
                     "einheit": einheit,
@@ -213,22 +225,22 @@ class Command(BaseCommand):
                     obj.save()
                     stats["aktualisiert"] += 1
 
-                # Preisstaffeln: je Import komplett neu schreiben (siehe Docstring).
-                abmengen = ABMENGE_JE_WARENGRUPPE.get(warengruppe)
+                # Preisstaffeln: je Import komplett neu schreiben, direkt aus den
+                # Mindestmenge/VK-Spaltenpaaren dieser Zeile (siehe Docstring) - keine
+                # warengruppenabhängige Tabelle mehr im Code nötig.
                 neue_staffeln = []
-                if abmengen is not None:
-                    for spalten_name, ab_menge in zip(VK_SPALTEN, abmengen):
-                        preis = _dec(wert(row, spalten_name))
-                        if preis is not None:
-                            neue_staffeln.append(Preisstaffel(artikel=obj, ab_menge=ab_menge, preis_netto=preis))
-                else:
-                    for spalten_name in VK_SPALTEN:
-                        if wert(row, spalten_name) not in (None, ""):
-                            stats["warnungen"].append(
-                                f"{artikelnummer}: Warengruppe '{warengruppe}' hat keine hinterlegte "
-                                f"Mindestmengen-Tabelle - Spalte '{spalten_name}' NICHT importiert."
-                            )
-                            break
+                for mindestmenge_spalte, vk_spalte in STAFFEL_SPALTEN:
+                    if mindestmenge_spalte not in spalte or vk_spalte not in spalte:
+                        continue
+                    ab_menge = _int(wert(row, mindestmenge_spalte))
+                    preis = _dec(wert(row, vk_spalte))
+                    if ab_menge is not None and preis is not None:
+                        neue_staffeln.append(Preisstaffel(artikel=obj, ab_menge=ab_menge, preis_netto=preis))
+                    elif ab_menge is not None or preis is not None:
+                        stats["warnungen"].append(
+                            f"{artikelnummer}: {mindestmenge_spalte}/{vk_spalte} nur teilweise befüllt - "
+                            f"Stufe übersprungen (beide Zellen müssen gefüllt sein)."
+                        )
 
                 if not dry_run:
                     obj.preisstaffeln.all().delete()
@@ -244,7 +256,7 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(
             f"Artikel: {stats['neu']} neu, {stats['aktualisiert']} aktualisiert, "
-            f"{stats['uebersprungen']} übersprungen"
+            f"{stats['uebersprungen']} übersprungen, {stats['nicht_freigegeben']} ohne Einspielfreigabe"
         ))
         if stats["warnungen"]:
             self.stdout.write(self.style.WARNING(f"\n{len(stats['warnungen'])} Warnung(en):"))

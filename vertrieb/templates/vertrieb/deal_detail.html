@@ -17,9 +17,18 @@
             Musterversand: {{ musterversand.get_status_display }}
         </a>
         {% elif deal.ist_offen %}
-        <form method="post" action="{% url 'vertrieb:musterkarton_anfordern' deal.pk %}" class="d-inline">
+        <form method="post" action="{% url 'vertrieb:musterkarton_anfordern' deal.pk %}"
+              class="d-inline-flex align-items-center gap-1">
             {% csrf_token %}
-            <button type="submit" class="btn btn-outline-primary"
+            <select name="art" class="form-select form-select-sm" style="width:auto;" required>
+                <option value="besteck">Besteck</option>
+                <option value="trinkhalm">Trinkhalme</option>
+            </select>
+            <select name="sprache" class="form-select form-select-sm" style="width:auto;" required>
+                <option value="de">Deutsch</option>
+                <option value="en">Englisch</option>
+            </select>
+            <button type="submit" class="btn btn-outline-primary btn-sm"
                     onclick="return confirm('Musterkarton-Packschein für diesen Lead anlegen?');">
                 Musterkarton anfordern
             </button>

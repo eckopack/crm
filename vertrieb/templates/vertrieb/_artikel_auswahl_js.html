@@ -3,6 +3,13 @@
 // Einheit/Einzelpreis/USt-Satz der jeweiligen Positionszeile - rein als Vorschlag, alle
 // Felder bleiben danach frei überschreibbar. Fehlt ein Feld in der Zeile (z. B. kein
 // Einzelpreis bei Packschein/Lieferschein), wird es einfach übersprungen.
+//
+// Zusätzlich: hat der gewählte Artikel Preisstaffeln (Mengenrabatt-Stufen), wird ein
+// Auswahlfeld mit allen Stufen ("ab X Stk – Y €") eingeblendet, damit man die gesamte
+// Staffel auf einen Blick sieht statt sie durch Ausprobieren verschiedener Mengen zu
+// erraten. Eine gewählte Stufe setzt Menge und Einzelpreis auf diese Stufe; die Menge
+// bleibt danach frei nach oben (oder unten, in eine andere Stufe) anpassbar - ändert man
+// sie manuell, greift wie gehabt die normale Mengen→Preis-Zuordnung oben.
 document.addEventListener('DOMContentLoaded', function () {
     function feldFuerZeile(select, feld) {
         var match = select.id.match(/^id_(.+)-artikel$/);
@@ -10,11 +17,41 @@ document.addEventListener('DOMContentLoaded', function () {
         return document.getElementById('id_' + match[1] + '-' + feld);
     }
 
+    function aktualisiereStaffelAuswahl(select, daten) {
+        var staffelFeld = document.getElementById(select.id + '-staffeln');
+        if (!staffelFeld) return;
+        staffelFeld.innerHTML = '';
+        var staffeln = (daten && daten.preisstaffeln) ? daten.preisstaffeln : [];
+        if (!staffeln.length) {
+            staffelFeld.style.display = 'none';
+            return;
+        }
+        var platzhalter = document.createElement('option');
+        platzhalter.value = '';
+        platzhalter.textContent = 'Preisstaffel wählen …';
+        staffelFeld.appendChild(platzhalter);
+        staffeln.forEach(function (s) {
+            var opt = document.createElement('option');
+            opt.value = s.ab_menge + '|' + s.preis_netto;
+            opt.textContent = 'ab ' + s.ab_menge + ' Stk – ' + s.preis_netto + ' €/Stk';
+            staffelFeld.appendChild(opt);
+        });
+        if (daten.verkaufspreis_flatrate !== null) {
+            var flat = document.createElement('option');
+            flat.value = '0|' + daten.verkaufspreis_flatrate;
+            flat.textContent = 'Flatrate (unter kleinster Staffel) – ' + daten.verkaufspreis_flatrate + ' €/Stk';
+            staffelFeld.appendChild(flat);
+        }
+        staffelFeld.style.display = '';
+    }
+
     function aktualisiereZeile(select) {
         var artikelId = select.value;
         var hinweisFeld = document.getElementById(select.id + '-hinweis');
+        var staffelFeld = document.getElementById(select.id + '-staffeln');
         if (!artikelId) {
             if (hinweisFeld) hinweisFeld.textContent = '';
+            if (staffelFeld) { staffelFeld.style.display = 'none'; staffelFeld.innerHTML = ''; }
             return;
         }
         var mengeFeld = feldFuerZeile(select, 'menge');
@@ -39,6 +76,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 hinweisFeld.textContent = teile.join(' · ');
             }
+            aktualisiereStaffelAuswahl(select, daten);
         });
     }
 
@@ -46,6 +84,19 @@ document.addEventListener('DOMContentLoaded', function () {
         select.addEventListener('change', function () { aktualisiereZeile(select); });
         var mengeFeld = feldFuerZeile(select, 'menge');
         if (mengeFeld) mengeFeld.addEventListener('change', function () { aktualisiereZeile(select); });
+
+        var staffelFeld = document.getElementById(select.id + '-staffeln');
+        if (staffelFeld) {
+            staffelFeld.addEventListener('change', function () {
+                if (!staffelFeld.value) return;
+                var teile = staffelFeld.value.split('|');
+                var abMenge = teile[0], preis = teile[1];
+                var mFeld = feldFuerZeile(select, 'menge');
+                if (mFeld && abMenge !== '0') mFeld.value = abMenge;
+                var pFeld = feldFuerZeile(select, 'einzelpreis');
+                if (pFeld) pFeld.value = preis;
+            });
+        }
     });
 });
 </script>

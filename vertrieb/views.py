@@ -233,12 +233,34 @@ class DealDetailView(LoginRequiredMixin, DetailView):
         return context
 
 
+# Artikelnummern-Konvention aus der Artikelstamm-Schnittstelle (siehe Doku-Dokument
+# "LUAMO Artikelstamm – Abgleich Excel ↔ CRM"). Die Beileger/Flyer sind bewusst je
+# Sprache getrennte Artikel (physisch unterschiedliche Druckstücke), der Musterkarton
+# selbst ist ein einziger, zweisprachig bedruckter Artikel - die Sprachauswahl hier
+# entscheidet nur, welcher Beileger mitgepackt wird, nicht welcher Musterkarton.
+MUSTERKARTON_ARTIKELNUMMER = {
+    "besteck": "LUA-MUSTER-BESTECK",
+    "trinkhalm": "LUA-MUSTER-STROH",
+}
+BEILEGER_ARTIKELNUMMER = {
+    ("besteck", "de"): "LUA-EINL-BESTECK-DE",
+    ("besteck", "en"): "LUA-EINL-BESTECK-EN",
+    ("trinkhalm", "de"): "LUA-FLYER-STROH-DE",
+    ("trinkhalm", "en"): "LUA-FLYER-STROH-EN",
+}
+
+
 @login_required
 def musterkarton_anfordern(request, pk):
     """Schnellaktion auf der Deal-Detailseite: legt für einen Lead einen
-    Musterkarton-Packschein an (Position 'Musterkarton', 1 Stück). Der eigentliche
-    Versand (Trackingnummer, Bestätigungsmail, Nachfass-Automatik) läuft über
-    'Als versendet markieren' auf der Packschein-Detailseite."""
+    Musterkarton-Packschein an - mit der gewählten Art (Besteck/Trinkhalme) als
+    Musterkarton-Position UND, direkt darunter, dem dazu passenden Beileger/Flyer in
+    der gewählten Sprache als eigene Position, damit er beim Packen nicht vergessen
+    wird. Existiert einer der beiden Artikel noch nicht im Artikelstamm (z. B. weil die
+    Beileger-Artikel noch nicht importiert sind), wird die Position trotzdem mit einem
+    Hinweistext angelegt statt den Packschein gar nicht erst zu erstellen. Der
+    eigentliche Versand (Trackingnummer, Bestätigungsmail, Nachfass-Automatik) läuft
+    weiterhin über 'Als versendet markieren' auf der Packschein-Detailseite."""
     deal = get_object_or_404(Deal, pk=pk)
     if request.method != "POST":
         return redirect(deal.get_absolute_url())
@@ -251,14 +273,43 @@ def musterkarton_anfordern(request, pk):
         )
         return redirect(offener_musterversand.get_absolute_url())
 
+    art = request.POST.get("art")
+    sprache = request.POST.get("sprache")
+    musterkarton_nr = MUSTERKARTON_ARTIKELNUMMER.get(art)
+    beileger_nr = BEILEGER_ARTIKELNUMMER.get((art, sprache))
+    if not musterkarton_nr or not beileger_nr:
+        messages.error(request, "Bitte Art (Besteck/Trinkhalme) und Sprache (Deutsch/Englisch) auswählen.")
+        return redirect(deal.get_absolute_url())
+
+    musterkarton_artikel = Artikel.objects.filter(artikelnummer=musterkarton_nr).first()
+    beileger_artikel = Artikel.objects.filter(artikelnummer=beileger_nr).first()
+
     packschein = Packschein.objects.create(
         deal=deal, datum=timezone.now().date(), status="offen", ist_musterversand=True,
         notizen="Automatisch angelegt über 'Musterkarton anfordern'.",
     )
     PackscheinPosition.objects.create(
-        packschein=packschein, position=1, bezeichnung="Musterkarton", menge=1, einheit="stk",
+        packschein=packschein, artikel=musterkarton_artikel, position=1,
+        bezeichnung=(musterkarton_artikel.bezeichnung if musterkarton_artikel
+                     else f"Musterkarton – ACHTUNG: Artikel {musterkarton_nr} fehlt im Artikelstamm"),
+        menge=1, einheit="stk",
     )
-    messages.success(request, f"Packschein {packschein.nummer} für Musterkarton-Versand angelegt.")
+    PackscheinPosition.objects.create(
+        packschein=packschein, artikel=beileger_artikel, position=2,
+        bezeichnung=(beileger_artikel.bezeichnung if beileger_artikel
+                     else f"Beileger/Flyer ({sprache}) – ACHTUNG: Artikel {beileger_nr} fehlt im "
+                          f"Artikelstamm, bitte manuell beilegen und Position ergänzen"),
+        menge=1, einheit="stk",
+    )
+    if not musterkarton_artikel or not beileger_artikel:
+        messages.warning(
+            request,
+            "Nicht alle Artikel sind im Artikelstamm angelegt (siehe Hinweistext in den Positionen) – "
+            "Packschein bitte vor dem Versand prüfen.",
+        )
+    messages.success(
+        request, f"Packschein {packschein.nummer} für Musterkarton-Versand angelegt, inkl. passendem Beileger."
+    )
     return redirect(packschein.get_absolute_url())
 
 
@@ -833,11 +884,17 @@ def artikel_daten_json(request, pk):
     except InvalidOperation:
         menge_dec = None
     preis = artikel.preis_fuer_menge(menge_dec)
+    staffeln = [
+        {"ab_menge": s.ab_menge, "preis_netto": str(s.preis_netto)}
+        for s in artikel.preisstaffeln.all()
+    ]
     return JsonResponse({
         "bezeichnung": artikel.bezeichnung,
         "einheit": artikel.einheit,
         "einzelpreis": str(preis) if preis is not None else None,
         "steuersatz": str(artikel.ust_satz),
+        "verkaufspreis_flatrate": str(artikel.verkaufspreis) if artikel.verkaufspreis is not None else None,
+        "preisstaffeln": staffeln,
         "lagerbestand_aktuell": str(artikel.lagerbestand_aktuell) if artikel.lagerbestand_aktuell is not None else None,
         "mindestbestand": str(artikel.mindestbestand) if artikel.mindestbestand is not None else None,
         "unter_mindestbestand": artikel.unter_mindestbestand,
