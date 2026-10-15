@@ -21,10 +21,13 @@
               class="d-inline-flex align-items-center gap-1">
             {% csrf_token %}
             <select name="art" class="form-select form-select-sm" style="width:auto;" required>
+                <option value="" selected disabled>Art wählen …</option>
                 <option value="besteck">Besteck</option>
                 <option value="trinkhalm">Trinkhalme</option>
+                <option value="beide">Beides</option>
             </select>
             <select name="sprache" class="form-select form-select-sm" style="width:auto;" required>
+                <option value="" selected disabled>Sprache wählen …</option>
                 <option value="de">Deutsch</option>
                 <option value="en">Englisch</option>
             </select>

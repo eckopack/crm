@@ -253,14 +253,23 @@ BEILEGER_ARTIKELNUMMER = {
 @login_required
 def musterkarton_anfordern(request, pk):
     """Schnellaktion auf der Deal-Detailseite: legt für einen Lead einen
-    Musterkarton-Packschein an - mit der gewählten Art (Besteck/Trinkhalme) als
-    Musterkarton-Position UND, direkt darunter, dem dazu passenden Beileger/Flyer in
-    der gewählten Sprache als eigene Position, damit er beim Packen nicht vergessen
-    wird. Existiert einer der beiden Artikel noch nicht im Artikelstamm (z. B. weil die
-    Beileger-Artikel noch nicht importiert sind), wird die Position trotzdem mit einem
-    Hinweistext angelegt statt den Packschein gar nicht erst zu erstellen. Der
-    eigentliche Versand (Trackingnummer, Bestätigungsmail, Nachfass-Automatik) läuft
-    weiterhin über 'Als versendet markieren' auf der Packschein-Detailseite."""
+    Musterkarton-Packschein an - mit der gewählten Art (Besteck/Trinkhalme/Beides) als
+    Musterkarton-Position(en) UND, direkt darunter, dem/den dazu passenden Beileger(n)/
+    Flyer(n) in der gewählten Sprache als eigene Position, damit er beim Packen nicht
+    vergessen wird. Bei "Beides" entstehen vier Positionen (Musterkarton Besteck,
+    Beileger Besteck, Musterkarton Trinkhalm, Beileger Trinkhalm) in einem einzigen
+    Packschein/einer Sendung. Existiert einer der Artikel noch nicht im Artikelstamm
+    (z. B. weil die Beileger-Artikel noch nicht importiert sind), wird die Position
+    trotzdem mit einem Hinweistext angelegt statt den Packschein gar nicht erst zu
+    erstellen. Der eigentliche Versand (Trackingnummer, Bestätigungsmail,
+    Nachfass-Automatik) läuft weiterhin über 'Als versendet markieren' auf der
+    Packschein-Detailseite.
+
+    Wichtig (behoben 15.10.): Die beiden Auswahlfelder im Formular hatten früher keinen
+    neutralen Startwert - das erste Dropdown-Element (Besteck) war automatisch
+    vorausgewählt, sodass ein Klick auf den Button ohne bewusste Auswahl immer
+    "Besteck" anlegte. Die Felder haben jetzt eine deaktivierte Platzhalter-Option
+    ("... wählen"), sodass eine echte Auswahl Pflicht ist."""
     deal = get_object_or_404(Deal, pk=pk)
     if request.method != "POST":
         return redirect(deal.get_absolute_url())
@@ -275,40 +284,51 @@ def musterkarton_anfordern(request, pk):
 
     art = request.POST.get("art")
     sprache = request.POST.get("sprache")
-    musterkarton_nr = MUSTERKARTON_ARTIKELNUMMER.get(art)
-    beileger_nr = BEILEGER_ARTIKELNUMMER.get((art, sprache))
-    if not musterkarton_nr or not beileger_nr:
-        messages.error(request, "Bitte Art (Besteck/Trinkhalme) und Sprache (Deutsch/Englisch) auswählen.")
+    arten = ["besteck", "trinkhalm"] if art == "beide" else [art]
+    if art not in ("besteck", "trinkhalm", "beide") or sprache not in ("de", "en"):
+        messages.error(request, "Bitte Art (Besteck/Trinkhalme/Beides) und Sprache (Deutsch/Englisch) auswählen.")
         return redirect(deal.get_absolute_url())
-
-    musterkarton_artikel = Artikel.objects.filter(artikelnummer=musterkarton_nr).first()
-    beileger_artikel = Artikel.objects.filter(artikelnummer=beileger_nr).first()
 
     packschein = Packschein.objects.create(
         deal=deal, datum=timezone.now().date(), status="offen", ist_musterversand=True,
         notizen="Automatisch angelegt über 'Musterkarton anfordern'.",
     )
-    PackscheinPosition.objects.create(
-        packschein=packschein, artikel=musterkarton_artikel, position=1,
-        bezeichnung=(musterkarton_artikel.bezeichnung if musterkarton_artikel
-                     else f"Musterkarton – ACHTUNG: Artikel {musterkarton_nr} fehlt im Artikelstamm"),
-        menge=1, einheit="stk",
-    )
-    PackscheinPosition.objects.create(
-        packschein=packschein, artikel=beileger_artikel, position=2,
-        bezeichnung=(beileger_artikel.bezeichnung if beileger_artikel
-                     else f"Beileger/Flyer ({sprache}) – ACHTUNG: Artikel {beileger_nr} fehlt im "
-                          f"Artikelstamm, bitte manuell beilegen und Position ergänzen"),
-        menge=1, einheit="stk",
-    )
-    if not musterkarton_artikel or not beileger_artikel:
+    position = 1
+    fehlende_artikel = False
+    for einzelart in arten:
+        musterkarton_nr = MUSTERKARTON_ARTIKELNUMMER[einzelart]
+        beileger_nr = BEILEGER_ARTIKELNUMMER[(einzelart, sprache)]
+        musterkarton_artikel = Artikel.objects.filter(artikelnummer=musterkarton_nr).first()
+        beileger_artikel = Artikel.objects.filter(artikelnummer=beileger_nr).first()
+
+        PackscheinPosition.objects.create(
+            packschein=packschein, artikel=musterkarton_artikel, position=position,
+            bezeichnung=(musterkarton_artikel.bezeichnung if musterkarton_artikel
+                         else f"Musterkarton – ACHTUNG: Artikel {musterkarton_nr} fehlt im Artikelstamm"),
+            menge=1, einheit="stk",
+        )
+        position += 1
+        PackscheinPosition.objects.create(
+            packschein=packschein, artikel=beileger_artikel, position=position,
+            bezeichnung=(beileger_artikel.bezeichnung if beileger_artikel
+                         else f"Beileger/Flyer ({sprache}) – ACHTUNG: Artikel {beileger_nr} fehlt im "
+                              f"Artikelstamm, bitte manuell beilegen und Position ergänzen"),
+            menge=1, einheit="stk",
+        )
+        position += 1
+        if not musterkarton_artikel or not beileger_artikel:
+            fehlende_artikel = True
+
+    if fehlende_artikel:
         messages.warning(
             request,
             "Nicht alle Artikel sind im Artikelstamm angelegt (siehe Hinweistext in den Positionen) – "
             "Packschein bitte vor dem Versand prüfen.",
         )
+    art_text = {"besteck": "Besteck", "trinkhalm": "Trinkhalme", "beide": "Besteck und Trinkhalme"}[art]
     messages.success(
-        request, f"Packschein {packschein.nummer} für Musterkarton-Versand angelegt, inkl. passendem Beileger."
+        request,
+        f"Packschein {packschein.nummer} für Musterkarton-Versand ({art_text}) angelegt, inkl. passendem Beileger.",
     )
     return redirect(packschein.get_absolute_url())
 
