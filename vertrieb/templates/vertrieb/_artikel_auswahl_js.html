@@ -10,6 +10,14 @@
 // erraten. Eine gewählte Stufe setzt Menge und Einzelpreis auf diese Stufe; die Menge
 // bleibt danach frei nach oben (oder unten, in eine andere Stufe) anpassbar - ändert man
 // sie manuell, greift wie gehabt die normale Mengen→Preis-Zuordnung oben.
+//
+// Außerdem (15.10.2026, Fix: vorher ließ sich beim Neuanlegen nur eine einzige Position
+// eingeben - weitere Zeilen gingen erst nach dem Speichern per "Bearbeiten"): der Button
+// "+ Position hinzufügen" klont die serverseitig gerenderte Leerzeile aus
+// <template id="leere-position-vorlage">, ersetzt darin den Platzhalter-Index __prefix__
+// durch die nächste freie Formset-Nummer, hängt die Zeile unten an die Tabelle an und
+// verdrahtet sie genauso wie die beim Laden vorhandenen Zeilen. Das Template gibt es nur,
+// wenn das jeweilige *_form.html es einbindet - ohne Template/Button passiert hier nichts.
 document.addEventListener('DOMContentLoaded', function () {
     function feldFuerZeile(select, feld) {
         var match = select.id.match(/^id_(.+)-artikel$/);
@@ -80,7 +88,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    document.querySelectorAll('select.artikel-auswahl').forEach(function (select) {
+    function wireArtikelAuswahlZeile(select) {
         select.addEventListener('change', function () { aktualisiereZeile(select); });
         var mengeFeld = feldFuerZeile(select, 'menge');
         if (mengeFeld) mengeFeld.addEventListener('change', function () { aktualisiereZeile(select); });
@@ -97,6 +105,44 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (pFeld) pFeld.value = preis;
             });
         }
-    });
+    }
+
+    document.querySelectorAll('select.artikel-auswahl').forEach(wireArtikelAuswahlZeile);
+
+    var hinzufuegenBtn = document.getElementById('position-hinzufuegen-btn');
+    var vorlage = document.getElementById('leere-position-vorlage');
+    var tabelle = document.getElementById('positionen-tabelle');
+    if (hinzufuegenBtn && vorlage && tabelle) {
+        hinzufuegenBtn.addEventListener('click', function () {
+            // Bewusst ohne festen Formset-Präfix ("form", "positionen" o. ä.) gesucht - der
+            // Präfix ist bei inlineformset_factory der related_name der Positionen (z. B.
+            // "positionen"), nicht das Django-Standardwort "form". Es gibt pro Seite genau
+            // ein Management-Formular, deshalb reicht die Suche über das Feldnamen-Suffix.
+            var totalFormsFeld = document.querySelector('input[name$="-TOTAL_FORMS"]');
+            if (!totalFormsFeld) return;
+            var naechsterIndex = parseInt(totalFormsFeld.value, 10);
+            if (isNaN(naechsterIndex)) return;
+            var tbody = tabelle.querySelector('tbody');
+            if (!tbody) return;
+            var vorhandeneZeilen = tbody.querySelectorAll('tr').length;
+
+            var html = vorlage.innerHTML.split('__prefix__').join(String(naechsterIndex));
+            var wrapper = document.createElement('tbody');
+            wrapper.innerHTML = html;
+            var neueZeile = wrapper.querySelector('tr');
+            if (!neueZeile) return;
+            tbody.appendChild(neueZeile);
+
+            totalFormsFeld.value = String(naechsterIndex + 1);
+
+            var neuesSelect = neueZeile.querySelector('select.artikel-auswahl');
+            if (neuesSelect) wireArtikelAuswahlZeile(neuesSelect);
+
+            var positionFeld = neueZeile.querySelector('input[name$="-position"]');
+            if (positionFeld && !positionFeld.value) positionFeld.value = String(vorhandeneZeilen + 1);
+
+            neueZeile.scrollIntoView({ block: 'nearest' });
+        });
+    }
 });
 </script>
