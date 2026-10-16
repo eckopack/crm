@@ -18,7 +18,17 @@ BRIEFPAPIER_PFAD = os.path.join(settings.BASE_DIR, "vertrieb", "pdf_assets", "br
 
 SEITENBREITE, SEITENHOEHE = A4
 
-RAND_LINKS = 56
+# RAND_LINKS war bisher 56pt und damit ~15,5pt weiter links als die im Briefpapier-
+# Hintergrundbild (briefpapier.png) fest eingebrannte Adresszeile ("ECKO-PACK GMBH ·
+# Wasbeker Straße 324 · ..."), die bei ca. x=198px/200dpi = 71,5pt beginnt (per Pixel-
+# analyse des Bilds gemessen, 16.10.2026, Björns Rückmeldung anhand eines PDF-Screenshots:
+# Empfänger-Adresse/Titel/Tabelle saßen sichtbar links versetzt zur Kopfzeile). RAND_LINKS
+# jetzt auf diesen Wert gesetzt, damit Empfängeradresse, Titel, Trennlinie und Tabelle auf
+# allen vier Dokumenttypen (Angebot/Packschein/Lieferschein/Rechnung) exakt unter der
+# Kopfzeile starten. Die Positionstabellen-Spaltenbreiten (Bezeichnung-Spalte je Dokument)
+# wurden um das Delta (15,5pt) reduziert, damit die Tabelle bei schmalerem Inhaltsbereich
+# nicht in den rechten Rand hineinragt.
+RAND_LINKS = 71.5
 RAND_RECHTS = 56
 INHALT_BREITE = SEITENBREITE - RAND_LINKS - RAND_RECHTS
 
@@ -318,7 +328,7 @@ def packschein_pdf_erzeugen(packschein):
         ("Bezug Angebot", packschein.angebot.nummer if packschein.angebot_id else "–"),
     ]
     spalten = [
-        ("Pos.", 32, "l"), ("Bezeichnung", 265, "l"), ("Menge", 70, "r"),
+        ("Pos.", 32, "l"), ("Bezeichnung", 249.5, "l"), ("Menge", 70, "r"),
         ("Einheit", 70, "r"), ("Gepackt", 46, "r"),
     ]
     zeilen = []
@@ -364,7 +374,7 @@ def angebot_pdf_erzeugen(angebot):
         ("Gültig bis", _datum(angebot.gueltig_bis)),
     ]
     spalten = [
-        ("Pos.", 32, "l"), ("Bezeichnung", 203, "l"), ("Menge", 55, "r"),
+        ("Pos.", 32, "l"), ("Bezeichnung", 187.5, "l"), ("Menge", 55, "r"),
         ("Einheit", 55, "r"), ("Einzelpreis", 70, "r"), ("Gesamt", 68, "r"),
     ]
     zeilen = []
@@ -389,7 +399,7 @@ def lieferschein_pdf_erzeugen(lieferschein):
         ("Bezug Angebot", lieferschein.angebot.nummer if lieferschein.angebot_id else "–"),
     ]
     spalten = [
-        ("Pos.", 36, "l"), ("Bezeichnung", 297, "l"), ("Menge", 75, "r"), ("Einheit", 75, "r"),
+        ("Pos.", 36, "l"), ("Bezeichnung", 281.5, "l"), ("Menge", 75, "r"), ("Einheit", 75, "r"),
     ]
     zeilen = []
     for p in lieferschein.positionen.all():
@@ -416,7 +426,7 @@ def rechnung_pdf_erzeugen(rechnung):
         ("Fällig am", _datum(rechnung.faelligkeitsdatum)),
     ]
     spalten = [
-        ("Pos.", 30, "l"), ("Bezeichnung", 168, "l"), ("Menge", 45, "r"), ("Einheit", 45, "r"),
+        ("Pos.", 30, "l"), ("Bezeichnung", 152.5, "l"), ("Menge", 45, "r"), ("Einheit", 45, "r"),
         ("Einzelpreis", 60, "r"), ("USt.", 40, "r"), ("Gesamt (netto)", 95, "r"),
     ]
     zeilen = []
