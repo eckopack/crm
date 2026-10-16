@@ -47,6 +47,23 @@
                 {% endfor %}
                 </tbody>
             </table>
+            <button type="button" id="position-hinzufuegen-btn" class="btn btn-outline-secondary btn-sm">+ Position hinzufügen</button>
+            <template id="leere-position-vorlage">
+                <tr>
+                    {% for hidden in formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}
+                    <td>{{ formset.empty_form.position }}</td>
+                    <td>
+                        {{ formset.empty_form.artikel }}
+                        <div class="small text-muted" id="{{ formset.empty_form.artikel.id_for_label }}-hinweis"></div>
+                        <select class="form-select form-select-sm mt-1 vk-staffel-auswahl" id="{{ formset.empty_form.artikel.id_for_label }}-staffeln" style="display:none;"></select>
+                    </td>
+                    <td>{{ formset.empty_form.bezeichnung }}</td>
+                    <td>{{ formset.empty_form.menge }}</td>
+                    <td>{{ formset.empty_form.einheit }}</td>
+                    <td>{{ formset.empty_form.einzelpreis }}</td>
+                    {% if formset.can_delete %}<td>{{ formset.empty_form.DELETE }}</td>{% endif %}
+                </tr>
+            </template>
         </div>
     </div>
 
