@@ -22,6 +22,18 @@ class BootstrapFormMixin:
                 widget.attrs.setdefault("class", "form-control")
 
 
+def date_input():
+    """DateInput für <input type="date">-Felder - braucht zwingend format="%Y-%m-%d",
+    sonst rendert Django den Wert im lokalisierten Format (bei LANGUAGE_CODE "de-de"
+    z. B. "16.10.2026"). Das HTML5-Datumsfeld erkennt nur das ISO-Format und zeigt bei
+    jedem anderen einfach gar nichts an - ein vorbelegter oder beim Bearbeiten bereits
+    gespeicherter Wert erscheint dann als leeres Feld, obwohl der Wert im HTML steht
+    und beim erneuten Speichern (ohne Änderung) sogar erhalten bliebe. Eine eigene
+    Funktion statt einer geteilten Instanz, weil Widgets zustandsbehaftet sind und
+    nicht von mehreren Feldern gleichzeitig verwendet werden sollten."""
+    return forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d")
+
+
 class FirmaForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Firma
@@ -61,7 +73,7 @@ class DealForm(BootstrapFormMixin, forms.ModelForm):
         ]
         widgets = {
             "notizen": forms.Textarea(attrs={"rows": 4}),
-            "erwartetes_abschlussdatum": forms.DateInput(attrs={"type": "date"}),
+            "erwartetes_abschlussdatum": date_input(),
         }
 
     def __init__(self, *args, **kwargs):
@@ -91,8 +103,8 @@ class AngebotForm(BootstrapFormMixin, forms.ModelForm):
         fields = ["deal", "datum", "gueltig_bis", "status", "notizen"]
         widgets = {
             "notizen": forms.Textarea(attrs={"rows": 3}),
-            "datum": forms.DateInput(attrs={"type": "date"}),
-            "gueltig_bis": forms.DateInput(attrs={"type": "date"}),
+            "datum": date_input(),
+            "gueltig_bis": date_input(),
         }
 
     def __init__(self, *args, **kwargs):
@@ -128,8 +140,8 @@ class PackscheinForm(BootstrapFormMixin, forms.ModelForm):
         ]
         widgets = {
             "notizen": forms.Textarea(attrs={"rows": 3}),
-            "datum": forms.DateInput(attrs={"type": "date"}),
-            "versendet_am": forms.DateInput(attrs={"type": "date"}),
+            "datum": date_input(),
+            "versendet_am": date_input(),
         }
 
     def __init__(self, *args, **kwargs):
@@ -148,7 +160,7 @@ class PackscheinVersandForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Packschein
         fields = ["versanddienstleister", "trackingnummer", "versendet_am"]
-        widgets = {"versendet_am": forms.DateInput(attrs={"type": "date"})}
+        widgets = {"versendet_am": date_input()}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -181,7 +193,7 @@ class LieferscheinForm(BootstrapFormMixin, forms.ModelForm):
         fields = ["deal", "angebot", "packschein", "datum", "status", "notizen"]
         widgets = {
             "notizen": forms.Textarea(attrs={"rows": 3}),
-            "datum": forms.DateInput(attrs={"type": "date"}),
+            "datum": date_input(),
         }
 
     def __init__(self, *args, **kwargs):
@@ -219,8 +231,8 @@ class RechnungForm(BootstrapFormMixin, forms.ModelForm):
         ]
         widgets = {
             "notizen": forms.Textarea(attrs={"rows": 3}),
-            "rechnungsdatum": forms.DateInput(attrs={"type": "date"}),
-            "leistungsdatum": forms.DateInput(attrs={"type": "date"}),
+            "rechnungsdatum": date_input(),
+            "leistungsdatum": date_input(),
         }
 
     def __init__(self, *args, **kwargs):
