@@ -595,12 +595,29 @@ class RechnungPosition(models.Model):
         return self.nettobetrag + self.steuerbetrag
 
 
+MATERIALTYP_CHOICES = [
+    ("handelsware", "Handelsware (zugekauft, keine eigene Produktion)"),
+    ("rohmaterial", "Rohmaterial"),
+    ("fertigware", "Fertigware (Eigenproduktion)"),
+]
+
+
 class Artikel(models.Model):
     """Artikelstamm: ein Eintrag je verkauftem/gelagertem Artikel.
 
     Wird bei Angeboten, Packscheinen, Lieferscheinen und Rechnungen als Positionsquelle
     genutzt (Bezeichnung/Einheit/Preis werden beim Auswählen übernommen, bleiben aber je
     Position frei überschreibbar) und zeigt den Lagerbestand im CRM an.
+
+    Materialwirtschaft (16.10.2026, Phase A - reines Datenmodell, siehe Rezeptur/Charge/
+    Lagerbewegung unten): materialtyp unterscheidet, ob ein Artikel eine zugekaufte
+    Handelsware ist (Default - trifft heute auf praktisch alle importierten LUAMO-Artikel
+    zu, die über einen Lieferanten bezogen werden), ein Rohmaterial, oder eine im eigenen
+    Betrieb aus Rohmaterial gefertigte Fertigware. lagerbestand_aktuell bleibt in dieser
+    Phase bewusst unverändert (weiterhin frei editierbar / aus dem Excel-Import gesetzt) -
+    die Umstellung auf eine aus Lagerbewegungen berechnete Zahl ist ein späterer,
+    eigenständiger Schritt, sobald Bewegungen für die betroffenen Artikel tatsächlich
+    produktiv erfasst werden.
 
     Mengenstaffelpreise (z. B. "ab 10.000 Stück günstigerer Preis je Stück") werden NICHT
     hier auf dem Artikel selbst gepflegt, sondern als separate Preisstaffel-Einträge
@@ -618,6 +635,12 @@ class Artikel(models.Model):
         "Warengruppe/Serie", max_length=100, blank=True,
         help_text="Feinere Produktkategorie innerhalb des Geschäftsbereichs, z. B. "
                    "\"Trinkhalme\", \"Großbesteck\", \"Kleinbesteck\", \"Muster\".",
+    )
+    materialtyp = models.CharField(
+        "Materialtyp", max_length=20, choices=MATERIALTYP_CHOICES, default="handelsware",
+        help_text="Für Rezeptur und Lagerbewegungen (Materialwirtschaft) relevant bei "
+                   "Rohmaterial/Fertigware; Handelsware wird weiterhin nur über den "
+                   "Lagerbestand-Wert geführt.",
     )
     einheit = models.CharField("Einheit", max_length=10, choices=EINHEIT_CHOICES, default="stk")
     verkaufspreis = models.DecimalField(
@@ -693,3 +716,153 @@ class Preisstaffel(models.Model):
 
     def __str__(self):
         return f"{self.artikel.artikelnummer}: ab {self.ab_menge} → {self.preis_netto} €"
+
+
+# ---------------------------------------------------------------------------
+# Materialwirtschaft (16.10.2026, Phase A)
+#
+# Umfang laut Björns Vorgaben vom 16.10.2026: Rohmaterial/Fertigprodukt-Beziehung ist
+# überwiegend einfach (1:1 oder nah dran) - Rezeptur bildet trotzdem mehrere Zeilen pro
+# Fertigprodukt ab, falls doch mal mehr als ein Rohmaterial hineinfließt. Ein zentrales
+# Lager (keine Mehrstandort-Bestände nötig). Chargen-/MHD-Pflicht JA, deshalb eigenes
+# Charge-Modell statt einer reinen Mengenbuchung. Lagerbewegung ist ein Journal: wird nie
+# editiert oder gelöscht (dieselbe Überlegung wie bei Rechnungen/GoBD, siehe Chat-Verlauf
+# 16.10.2026) - Korrekturen entstehen durch eine neue, gegenläufige Buchung, nicht durch
+# Ändern einer bestehenden Zeile. Phase A legt nur das Datenmodell + Admin an, ohne eigene
+# Bedienoberfläche - Wareneingang-Erfassung (Phase B), Produktionsbuchung (Phase C) und
+# automatische Buchung beim Lieferschein-Versand (Phase D) folgen als eigene Schritte.
+# ---------------------------------------------------------------------------
+
+class Rezeptur(models.Model):
+    """Verknüpft ein Fertigprodukt mit dem/den Rohmaterial(ien), aus dem es entsteht,
+    plus Umrechnungsfaktor (z. B. "1 Stück Fertigprodukt verbraucht 0,05 kg Rohmaterial
+    X"). Bewusst als Zeilen-Tabelle (nicht ein einzelnes FK-Feld am Artikel), damit auch
+    ein Fertigprodukt mit mehr als einem Rohmaterial abbildbar ist, auch wenn das laut
+    Björn aktuell der Ausnahmefall ist."""
+    fertigprodukt = models.ForeignKey(
+        Artikel, verbose_name="Fertigprodukt", on_delete=models.CASCADE,
+        related_name="rezeptur_zeilen", limit_choices_to={"materialtyp": "fertigware"},
+    )
+    rohmaterial = models.ForeignKey(
+        Artikel, verbose_name="Rohmaterial", on_delete=models.PROTECT,
+        related_name="verwendet_in_rezepturen", limit_choices_to={"materialtyp": "rohmaterial"},
+    )
+    menge_je_einheit = models.DecimalField(
+        "Menge Rohmaterial je Einheit Fertigprodukt", max_digits=12, decimal_places=5,
+        help_text="In der Einheit des Rohmaterials, je einer Einheit des Fertigprodukts.",
+    )
+    notizen = models.CharField("Notizen", max_length=300, blank=True)
+
+    class Meta:
+        verbose_name = "Rezeptur-Zeile"
+        verbose_name_plural = "Rezeptur-Zeilen"
+        ordering = ["fertigprodukt__artikelnummer", "rohmaterial__artikelnummer"]
+        unique_together = [("fertigprodukt", "rohmaterial")]
+
+    def __str__(self):
+        return (f"{self.fertigprodukt.artikelnummer}: {self.menge_je_einheit} × "
+                f"{self.rohmaterial.artikelnummer}")
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.fertigprodukt_id and self.rohmaterial_id and self.fertigprodukt_id == self.rohmaterial_id:
+            raise ValidationError("Ein Artikel kann nicht sein eigenes Rohmaterial sein.")
+
+
+class Charge(models.Model):
+    """Eine konkrete Wareneingangs-Charge eines Artikels (Rohmaterial oder Fertigware) mit
+    eigenem Mindesthaltbarkeitsdatum und eigenem Restbestand. Lagerbewegungen verbrauchen
+    Chargen in der Reihenfolge der Meta.ordering (älteste zuerst = FIFO)."""
+    artikel = models.ForeignKey(Artikel, verbose_name="Artikel", on_delete=models.PROTECT, related_name="chargen")
+    chargennummer = models.CharField("Chargennummer", max_length=100, blank=True)
+    wareneingang_datum = models.DateField("Wareneingangsdatum", default=timezone.now)
+    mindesthaltbarkeitsdatum = models.DateField("Mindesthaltbarkeitsdatum (MHD)", null=True, blank=True)
+    lieferant = models.CharField("Lieferant", max_length=200, blank=True)
+    menge_eingang = models.DecimalField(
+        "Menge bei Wareneingang", max_digits=14, decimal_places=3,
+        help_text="Historischer Wert, ändert sich nie - nur zur Dokumentation der Ursprungsmenge.",
+    )
+    bestand_aktuell = models.DecimalField(
+        "Restbestand dieser Charge", max_digits=14, decimal_places=3, default=Decimal("0"),
+        help_text="Startet bei 0 und wird ausschließlich durch Lagerbewegungen fortgeschrieben "
+                   "(siehe Lagerbewegung.save()) - nicht von Hand pflegen. Die erste Buchung auf "
+                   "eine neue Charge ist üblicherweise eine 'wareneingang'-Bewegung in Höhe von "
+                   "menge_eingang; Charge und Bewegung getrennt zu halten verhindert Doppelzählung.",
+    )
+    notizen = models.TextField("Notizen", blank=True)
+    erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Charge"
+        verbose_name_plural = "Chargen"
+        ordering = ["wareneingang_datum", "erstellt_am"]
+
+    def __str__(self):
+        bezeichnung = self.chargennummer or f"Charge #{self.pk}"
+        return f"{self.artikel.artikelnummer} – {bezeichnung}"
+
+    @property
+    def abgelaufen(self):
+        if not self.mindesthaltbarkeitsdatum:
+            return False
+        return self.mindesthaltbarkeitsdatum < timezone.now().date()
+
+
+BEWEGUNGSTYP_CHOICES = [
+    ("wareneingang", "Wareneingang"),
+    ("produktion_verbrauch", "Materialverbrauch (Produktion)"),
+    ("produktion_zugang", "Fertigwarenzugang (Produktion)"),
+    ("warenausgang", "Warenausgang (Versand)"),
+    ("ruecklieferung", "Rücklieferung/Retoure"),
+    ("korrektur", "Korrektur/Inventur"),
+]
+
+
+class Lagerbewegung(models.Model):
+    """Unveränderliches Bewegungsjournal für Materialwirtschaft. Wird NIE nachträglich
+    editiert oder gelöscht (siehe Moduldoku oben) - im Admin deshalb nur lesbar/anlegbar,
+    keine Änderung/Löschung bestehender Zeilen. Jede Bewegung aktualisiert beim Anlegen
+    (siehe save()) den Restbestand der zugehörigen Charge, falls eine angegeben ist."""
+    artikel = models.ForeignKey(Artikel, verbose_name="Artikel", on_delete=models.PROTECT, related_name="bewegungen")
+    charge = models.ForeignKey(
+        Charge, verbose_name="Charge", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="bewegungen", help_text="Optional - z. B. für Korrekturen ohne Chargenbezug leer lassen.",
+    )
+    bewegungstyp = models.CharField("Bewegungstyp", max_length=30, choices=BEWEGUNGSTYP_CHOICES)
+    menge = models.DecimalField(
+        "Menge", max_digits=14, decimal_places=3,
+        help_text="Positiv = Zugang, negativ = Abgang.",
+    )
+    lieferschein = models.ForeignKey(
+        Lieferschein, verbose_name="Lieferschein (bei Warenausgang)", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="lagerbewegungen",
+    )
+    erstellt_von = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="Erfasst von", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="+",
+    )
+    datum = models.DateTimeField("Datum/Zeit", auto_now_add=True)
+    notizen = models.TextField("Notizen", blank=True)
+
+    class Meta:
+        verbose_name = "Lagerbewegung"
+        verbose_name_plural = "Lagerbewegungen"
+        ordering = ["-datum", "-pk"]
+
+    def __str__(self):
+        vorzeichen = "+" if self.menge >= 0 else ""
+        return f"{self.artikel.artikelnummer}: {vorzeichen}{self.menge} ({self.get_bewegungstyp_display()})"
+
+    def save(self, *args, **kwargs):
+        ist_neu = self._state.adding
+        super().save(*args, **kwargs)
+        if ist_neu and self.charge_id:
+            Charge.objects.filter(pk=self.charge_id).update(
+                bestand_aktuell=models.F("bestand_aktuell") + self.menge
+            )
+
+    def delete(self, *args, **kwargs):
+        raise NotImplementedError(
+            "Lagerbewegungen werden nie gelöscht - für Korrekturen eine neue, "
+            "gegenläufige Lagerbewegung anlegen."
+        )
