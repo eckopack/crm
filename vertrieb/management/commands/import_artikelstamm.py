@@ -29,8 +29,10 @@ Abgleich Excel ↔ CRM" und Chat-Verlauf):
   Code - genau das sollte diese Spalte eigentlich schon immer tun.
 
 - Bezeichnung/Beschreibung können zweizeilig sein (1. Zeile Deutsch, 2. Zeile Englisch,
-  per Zeilenumbruch in derselben Zelle) - wird unverändert als Text übernommen,
-  Artikel.bezeichnung (CharField) toleriert eingebettete Zeilenumbrüche.
+  per Zeilenumbruch in derselben Zelle). Seit 16.10.2026 wird der Zeilenumbruch beim
+  Import durch " // " ersetzt (siehe _mehrsprachig) statt unverändert übernommen zu
+  werden - ein reiner \n verschwindet beim Anzeigen in einzeiligen <input>-Feldern und
+  in der Artikel-Dropdown-Liste spurlos, sodass DE und EN ohne Trennung aneinanderkleben.
 
 - Die Spalte "Geschäftsbereich *" in der Datei enthält KEINE der fünf ECKO-PACK-
   Unternehmensbereiche, sondern eine feinere Produktkategorie (z. B. "Einweg-/
@@ -77,6 +79,22 @@ def _s(value):
     if value is None:
         return ""
     return str(value).strip()
+
+
+def _mehrsprachig(text):
+    """Baut aus einer ggf. zweizeiligen Zelle (1. Zeile Deutsch, 2. Zeile Englisch, per
+    Zeilenumbruch in derselben Zelle - siehe Docstring oben) einen einzeiligen Text mit
+    " // " als Trenner zwischen den Zeilen.
+
+    Hintergrund (Björns Rückmeldung 16.10.2026): der reine Zeilenumbruch kam zwar
+    unverändert in Artikel.bezeichnung an, verschwindet aber beim Anzeigen in einzeiligen
+    <input>-Feldern (Autofill der Positionszeile) und in der Artikel-Dropdown-Liste
+    spurlos - DE und EN kleben dann ohne jede Trennung aneinander (z. B. "... 500er-
+    KartonLUAMO Fry Fork ..."). " // " bleibt dagegen in jeder Darstellung sichtbar.
+    Zeilen werden einzeln getrimmt, leere Zeilen (z. B. ein überflüssiger Umbruch am
+    Ende der Zelle) herausgefiltert; ein Text ohne jeden Zeilenumbruch bleibt unverändert."""
+    zeilen = [z.strip() for z in text.splitlines() if z.strip()]
+    return " // ".join(zeilen)
 
 
 def _header_name(value):
@@ -170,7 +188,7 @@ class Command(BaseCommand):
                         stats["nicht_freigegeben"] += 1
                         continue
 
-                bezeichnung = _s(wert(row, bezeichnung_spalte))
+                bezeichnung = _mehrsprachig(_s(wert(row, bezeichnung_spalte)))
                 if not bezeichnung:
                     stats["warnungen"].append(f"{artikelnummer}: keine Bezeichnung - übersprungen.")
                     stats["uebersprungen"] += 1
@@ -200,7 +218,7 @@ class Command(BaseCommand):
 
                 defaults = {
                     "bezeichnung": bezeichnung[:300],
-                    "beschreibung": _s(wert(row, beschreibung_spalte)) if beschreibung_spalte else "",
+                    "beschreibung": _mehrsprachig(_s(wert(row, beschreibung_spalte))) if beschreibung_spalte else "",
                     "geschaeftsbereich": GESCHAEFTSBEREICH_IMPORT,
                     "warengruppe": warengruppe,
                     "einheit": einheit,
