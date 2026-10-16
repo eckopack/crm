@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
@@ -449,7 +450,11 @@ def angebot_erstellen(request):
         else:
             formset = AngebotPositionFormSet(request.POST)
     else:
-        initial = {}
+        heute = timezone.now().date()
+        # Datum/Gültig-bis vorschlagen (15.10.2026, Björns Wunsch: nicht manuell
+        # auswählen müssen) - Angebotsdatum = heute, Gültigkeit standardmäßig 4
+        # Wochen. Reiner Vorschlag, beide Felder bleiben frei überschreibbar.
+        initial = {"datum": heute, "gueltig_bis": heute + timedelta(weeks=4)}
         deal_id = request.GET.get("deal")
         if deal_id:
             initial["deal"] = deal_id
