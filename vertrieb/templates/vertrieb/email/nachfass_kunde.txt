@@ -1,0 +1,6 @@
+Guten Tag{% if ansprechpartner %} {{ ansprechpartner.vorname }} {{ ansprechpartner.nachname }}{% endif %},
+
+{{ nachricht_text }}
+
+Mit freundlichen Grüßen
+Ihr ECKO-PACK Team
