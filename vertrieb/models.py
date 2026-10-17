@@ -916,36 +916,45 @@ class Lagerbewegung(models.Model):
         )
 
 
-class NachfassKundenmailVorlage(models.Model):
-    """Singleton (immer nur ein Datensatz, erzwungen über save()): Inhalt der wöchentlichen
-    Nachfass-Mail an den Kunden (siehe management/commands/nachfass_pruefen.py und
-    nurture.nachfass_kundenmail_senden). Bewusst als Admin-Datensatz statt fest im Code
-    hinterlegt, damit Björn/Vertrieb Betreff und Text jederzeit selbst im Django-Admin
-    anpassen können, ohne dass dafür ein Deploy nötig ist (auf Wunsch von Björn, 18.10.2026).
+MUSTERBOX_NACHFASS_WOCHEN = 8
 
-    Anrede, Logo-Kopfzeile und Fußzeile sind fest in den E-Mail-Vorlagen vorgegeben (gleiche
-    Gestaltung wie die Versand-Bestätigungsmail, siehe templates/vertrieb/email/). Hier wird
-    nur der eigentliche Nachrichtentext gepflegt. Platzhalter im Text werden als Django-
-    Template ausgewertet, verfügbar sind: {{ vorname }}, {{ nachname }}, {{ firma }},
-    {{ deal_titel }}."""
+MUSTERBOX_NACHFASS_ENDE_CHOICES = [
+    ("angebot", "Deal erreichte die Angebotsphase (oder weiter)"),
+    ("abgelaufen", "8 Wochen ohne Reaktion"),
+    ("verloren", "Deal als verloren markiert"),
+]
 
+
+class MusterboxNachfassVorlage(models.Model):
+    """Fester Satz von genau 8 Vorlagen (eine je Woche) für die Musterbox-Nachfasskette an
+    den Kunden (siehe nurture.musterbox_nachfass_senden und
+    management/commands/nachfass_pruefen.py). Ersetzt die frühere, einzelne, immer gleiche
+    NachfassKundenmailVorlage (bis 18.10.2026) - auf Wunsch von Björn (18.10.2026) gibt es
+    jetzt acht unterschiedliche, aufeinander aufbauende Inhalte statt eines einzigen,
+    wiederholten Texts. Diese Mail geht AUSSCHLIESSLICH an Deals, die tatsächlich einen
+    Musterversand erhalten haben (siehe MusterboxNachfassStatus unten) - für alle anderen
+    Deals gibt es seit diesem Wechsel keinen automatischen Kunden-Mailkontakt mehr.
+
+    Anrede, Logo-Kopfzeile, Unterschrift (Björn persönlich) und Fußzeile sind fest in der
+    E-Mail-Vorlage vorgegeben (templates/vertrieb/email/musterbox_nachfass.html/.txt). Hier
+    wird nur der eigentliche Nachrichtentext der jeweiligen Woche gepflegt. Platzhalter im
+    Text werden als Django-Template ausgewertet, verfügbar sind: {{ vorname }}, {{ nachname }},
+    {{ firma }}, {{ deal_titel }}, {{ artikel }} (die beim Musterversand bestellte Artikelart,
+    z.B. "Besteck" bzw. "Trinkhalme" - aus den Packschein-Positionen abgeleitet, da es dafür
+    kein eigenes Feld gibt; siehe nurture._musterversand_artikel_text)."""
+
+    woche = models.PositiveSmallIntegerField("Woche", unique=True)
     betreff = models.CharField(
-        "Betreff", max_length=200, default="Kurze Rückfrage zu unserem Angebot – ECKO-PACK",
-        help_text="Platzhalter möglich: {{ firma }}, {{ deal_titel }}.",
+        "Betreff", max_length=200,
+        help_text="Platzhalter möglich: {{ firma }}, {{ deal_titel }}, {{ artikel }}.",
     )
     text = models.TextField(
         "Nachrichtentext",
-        default=(
-            "wir wollten kurz nachfragen, ob unser Angebot bei Ihnen angekommen ist und ob "
-            "von Ihrer Seite noch Fragen offen sind.\n\n"
-            "Gerne unterstützen wir Sie bei der Entscheidung oder passen das Angebot nochmal "
-            "an Ihre Anforderungen an – sprechen Sie uns einfach an."
-        ),
         help_text=(
-            "Nur der Nachrichtentext - Anrede ('Guten Tag ...') und Grußformel stehen fest "
-            "im Vorlagen-Rahmen und müssen hier nicht wiederholt werden. Platzhalter: "
-            "{{ vorname }}, {{ nachname }}, {{ firma }}, {{ deal_titel }}. Leerzeilen werden "
-            "als eigene Absätze dargestellt."
+            "Nur der Nachrichtentext - Anrede ('Guten Tag ...') und Grußformel/Unterschrift "
+            "stehen fest im Vorlagen-Rahmen und müssen hier nicht wiederholt werden. "
+            "Platzhalter: {{ vorname }}, {{ nachname }}, {{ firma }}, {{ deal_titel }}, "
+            "{{ artikel }}. Leerzeilen werden als eigene Absätze dargestellt."
         ),
     )
     aktualisiert_am = models.DateTimeField("Zuletzt geändert am", auto_now=True)
@@ -955,22 +964,55 @@ class NachfassKundenmailVorlage(models.Model):
     )
 
     class Meta:
-        verbose_name = "Nachfass-Mail an Kunden (Vorlage)"
-        verbose_name_plural = "Nachfass-Mail an Kunden (Vorlage)"
+        verbose_name = "Musterbox-Nachfassmail (Vorlage je Woche)"
+        verbose_name_plural = "Musterbox-Nachfassmails (Vorlagen je Woche)"
+        ordering = ["woche"]
 
     def __str__(self):
-        return "Nachfass-Mail an Kunden (Vorlage)"
-
-    def save(self, *args, **kwargs):
-        self.pk = 1  # erzwingt den Singleton - es gibt nie mehr als diesen einen Datensatz
-        super().save(*args, **kwargs)
-
-    def delete(self, *args, **kwargs):
-        raise NotImplementedError(
-            "Die Nachfass-Vorlage kann nicht gelöscht werden, nur bearbeitet."
-        )
+        return f"Woche {self.woche}: {self.betreff}"
 
     @classmethod
-    def aktuelle(cls):
-        obj, _ = cls.objects.get_or_create(pk=1)
-        return obj
+    def fuer_woche(cls, woche):
+        return cls.objects.filter(woche=woche).first()
+
+
+class MusterboxNachfassStatus(models.Model):
+    """Führt pro Deal Buch darüber, in welcher Woche der 8-wöchigen Musterbox-Nachfasskette
+    an den Kunden (siehe MusterboxNachfassVorlage oben) sich der Deal gerade befindet. Wird
+    einmalig angelegt, sobald der zugehörige Musterversand-Packschein als versendet markiert
+    wird (siehe nurture.musterversand_abgeschlossen) - bewusst GETRENNT von der bestehenden,
+    länger laufenden internen Nachfass-Aktivität (Aktivitaet, typ='nachfass'), die weiterhin
+    unverändert bis zum echten Versand oder 'verloren' läuft (siehe nachfass_pruefen.py) und
+    NICHT Teil dieser Kette ist - das ist weiterhin die interne Erinnerung an den
+    zuständigen Mitarbeiter, unabhängig vom Deal-Fortschritt.
+
+    Pro Lauf des wöchentlichen Crons (siehe management/commands/nachfass_pruefen.py) wird
+    höchstens EINE Mail verschickt (Woche naechste_woche), danach entweder naechste_woche um
+    1 erhöht, oder - nach Woche 8 - die Kette beendet und eine interne Aktivität für den
+    zuständigen Mitarbeiter angelegt ("Lead ausgelaufen nach 8 Wochen, bitte manuell
+    prüfen"). Die Kette endet vorher, OHNE weitere Mail, sobald der Deal die Phase
+    'lead'/'qualifiziert' verlässt (auf Wunsch von Björn, 18.10.2026: eine Reaktion -
+    Angebot, Verhandlung, Gewonnen - beendet die automatische Werbung sofort) oder als
+    'verloren' markiert wird."""
+
+    deal = models.OneToOneField(
+        Deal, verbose_name="Deal", on_delete=models.CASCADE, related_name="musterbox_nachfass_status",
+    )
+    naechste_woche = models.PositiveSmallIntegerField("Nächste Woche", default=1)
+    naechster_versand_am = models.DateTimeField("Nächster Versand fällig am", default=timezone.now)
+    aktiv = models.BooleanField("Aktiv", default=True)
+    beendet_am = models.DateTimeField("Beendet am", null=True, blank=True)
+    beendet_grund = models.CharField(
+        "Beendet, weil", max_length=20, choices=MUSTERBOX_NACHFASS_ENDE_CHOICES, blank=True,
+    )
+    erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Musterbox-Nachfass-Status"
+        verbose_name_plural = "Musterbox-Nachfass-Status"
+        ordering = ["-aktiv", "naechster_versand_am"]
+
+    def __str__(self):
+        if self.aktiv:
+            return f"{self.deal}: Woche {self.naechste_woche} fällig {self.naechster_versand_am:%d.%m.%Y}"
+        return f"{self.deal}: beendet ({self.get_beendet_grund_display()})"

@@ -1,10 +1,8 @@
 from django.contrib import admin
-from django.http import HttpResponseRedirect
-from django.urls import reverse
 
 from .models import (
     Aktivitaet, Angebot, AngebotPosition, Artikel, Charge, Deal, Firma, Kontakt,
-    Lagerbewegung, NachfassKundenmailVorlage, Preisstaffel, Rezeptur,
+    Lagerbewegung, MusterboxNachfassStatus, MusterboxNachfassVorlage, Preisstaffel, Rezeptur,
 )
 
 
@@ -117,29 +115,40 @@ class ChargeAdmin(admin.ModelAdmin):
             )
 
 
-@admin.register(NachfassKundenmailVorlage)
-class NachfassKundenmailVorlageAdmin(admin.ModelAdmin):
-    """Singleton-Admin: es gibt nur einen Datensatz (siehe Model.save()). 'Hinzufügen' ist
-    gesperrt, sobald er existiert, und die Übersichtsseite springt direkt zur Bearbeitung -
-    Björn/Vertrieb muss also nie auswählen, welchen Datensatz er meint, sondern landet beim
-    Klick auf den Admin-Link sofort im Bearbeitungsformular."""
-    list_display = ("betreff", "aktualisiert_am", "aktualisiert_von")
-    readonly_fields = ("aktualisiert_am", "aktualisiert_von")
+@admin.register(MusterboxNachfassVorlage)
+class MusterboxNachfassVorlageAdmin(admin.ModelAdmin):
+    """Admin für die acht festen Wochen-Vorlagen der Musterbox-Nachfasskette (siehe
+    Model-Doku): weder neue Zeilen hinzufügen noch bestehende löschen - die acht Wochen sind
+    ein fester Rahmen, der per Datenmigration angelegt wird. Nur Betreff/Text je Woche sind
+    bearbeitbar."""
+    list_display = ("woche", "betreff", "aktualisiert_am", "aktualisiert_von")
+    ordering = ["woche"]
+    readonly_fields = ("woche", "aktualisiert_am", "aktualisiert_von")
 
     def has_add_permission(self, request):
-        return not NachfassKundenmailVorlage.objects.exists()
+        return False
 
     def has_delete_permission(self, request, obj=None):
         return False
 
-    def changelist_view(self, request, extra_context=None):
-        vorlage = NachfassKundenmailVorlage.aktuelle()
-        url = reverse("admin:vertrieb_nachfasskundenmailvorlage_change", args=[vorlage.pk])
-        return HttpResponseRedirect(url)
-
     def save_model(self, request, obj, form, change):
         obj.aktualisiert_von = request.user
         super().save_model(request, obj, form, change)
+
+
+@admin.register(MusterboxNachfassStatus)
+class MusterboxNachfassStatusAdmin(admin.ModelAdmin):
+    """Rein informativ zur Nachverfolgung, mit der Möglichkeit, eine einzelne Kette manuell
+    zu pausieren/beenden (z.B. aktiv=False setzen) - Zeilen selbst werden ausschließlich
+    automatisch angelegt (siehe nurture.musterversand_abgeschlossen), daher kein manuelles
+    Hinzufügen."""
+    list_display = ("deal", "naechste_woche", "naechster_versand_am", "aktiv", "beendet_grund")
+    list_filter = ("aktiv", "beendet_grund")
+    search_fields = ("deal__titel", "deal__firma__name")
+    readonly_fields = ("deal", "erstellt_am")
+
+    def has_add_permission(self, request):
+        return False
 
 
 @admin.register(Lagerbewegung)

@@ -14,17 +14,20 @@ siehe Lieferschein.tatsaechlich_versendet / views.lieferschein_versand_bestaetig
 "Rechnung erzeugt" o.ae. zu pruefen waere zu frueh, weil die Rechnung selbst erst NACH dem
 Versand erzeugt werden darf (siehe views.rechnung_erstellen).
 
-AENDERUNG 18.10.2026 (auf Wunsch von Björn): Zusaetzlich zur bisherigen internen Erinnerung an
-den zustaendigen Mitarbeiter verschickt jeder Lauf jetzt auch eine eigene Nachfass-Mail direkt
-an den Kunden (vertrieb.nurture.nachfass_kundenmail_senden). Betreff/Text dieser Kundenmail
-sind KEIN Code, sondern ein Datensatz (models.NachfassKundenmailVorlage), den Björn/Vertrieb
-jederzeit selbst im Django-Admin aendern koennen, ohne Deploy. Ein Fehler beim Kundenmail-Versand
-(z.B. keine E-Mail-Adresse hinterlegt) wird nur geloggt und blockiert weder die interne
-Erinnerung noch die Verlaengerung der Nachfass-Kette - anders als beim direkten Versand-Button
-(views.lieferschein_versand_bestaetigen), der ein sofort sichtbares UI-Feedback hat, laeuft
-dieser Cron unbeaufsichtigt. Hinweis: die Kundenmail geht bei jeder Verlaengerung raus, also
-potenziell woechentlich mit demselben Text, solange ein Deal offen bleibt - falls das zu haeufig
-wirkt, kann Björn den Text anpassen oder uns bitten, eine Haeufigkeitsbegrenzung einzubauen."""
+AENDERUNG 18.10.2026 (auf Wunsch von Björn, zweimal an diesem Tag überarbeitet): Dieser Befehl
+verlaengert NACH WIE VOR ausschliesslich die interne Erinnerungs-Aktivitaet an den zustaendigen
+Mitarbeiter (oben unveraendert) - das ist eine eigene, laenger laufende Kette, die bewusst nicht
+an die Deal-Phase gekoppelt ist (siehe AENDERUNG 17.10.2026 oben). NEU dazugekommen ist ein
+ZWEITER, komplett unabhaengiger Durchlauf (unten): die 8-woechige Musterbox-Nachfasskette an den
+KUNDEN (vertrieb.nurture.musterbox_nachfass_senden, gesteuert über models.MusterboxNachfassStatus).
+Diese Kette existiert NUR fuer Deals mit einem Musterversand-Packschein (dort angelegt, siehe
+nurture.musterversand_abgeschlossen) und endet - anders als die interne Erinnerung oben -
+GENAU DANN ohne weitere Mail, wenn der Deal die Phase lead/qualifiziert verlaesst (Angebot
+o.ae. = Reaktion da) oder als verloren markiert wird, bzw. automatisch nach der 8. Mail; dann
+wird zusaetzlich eine interne Aufgabe fuer den zustaendigen Mitarbeiter angelegt. Die zuvor
+hier verschickte generische, immer gleiche Kundenmail (models.NachfassKundenmailVorlage) wurde
+dafuer ersatzlos entfernt - Deals ohne Musterversand-Historie bekommen seitdem gar keine
+automatische Kundenmail mehr."""
 
 import logging
 from datetime import timedelta
@@ -35,18 +38,20 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from vertrieb import nurture
-from vertrieb.models import Aktivitaet
+from vertrieb.models import Aktivitaet, MusterboxNachfassStatus
 
 NACHFASS_INTERVALL_TAGE = 7
+MUSTERBOX_NACHFASS_WOCHEN = 8
+MUSTERBOX_NACHFASS_INTERVALL_TAGE = 7
 logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
     help = (
-        "Verlaengert ueberfaellige Nachfass-Aktivitaeten um eine weitere Woche, erinnert "
-        "den zustaendigen Mitarbeiter per E-Mail und verschickt eine Nachfass-Mail an den "
-        "Kunden, bis der zugehoerige Deal entweder verloren ist oder einen tatsaechlich "
-        "versendeten Lieferschein hat."
+        "Verlaengert ueberfaellige interne Nachfass-Erinnerungen um eine weitere Woche und "
+        "verschickt daneben, unabhaengig davon, die faellige Woche der 8-woechigen Musterbox-"
+        "Nachfasskette an Kunden mit Musterversand-Historie - bis der Deal die Phase lead/"
+        "qualifiziert verlaesst, verloren ist, oder die 8 Wochen ohne Reaktion ablaufen."
     )
 
     def handle(self, *args, **options):
@@ -57,8 +62,6 @@ class Command(BaseCommand):
 
         verlaengert = 0
         beendet = 0
-        kundenmail_versendet = 0
-        kundenmail_fehlgeschlagen = 0
 
         for aktivitaet in ueberfaellige:
             deal = aktivitaet.deal
@@ -103,19 +106,77 @@ class Command(BaseCommand):
                 except Exception:
                     pass
 
+        # --- Musterbox-Nachfasskette an den Kunden (komplett unabhaengig von der internen
+        # Erinnerung oben - siehe Moduldoku) --------------------------------------------
+        musterbox_versendet = 0
+        musterbox_fehlgeschlagen = 0
+        musterbox_beendet_reaktion = 0
+        musterbox_beendet_abgelaufen = 0
+
+        musterbox_faellige = MusterboxNachfassStatus.objects.filter(
+            aktiv=True, naechster_versand_am__lt=jetzt,
+        ).select_related("deal", "deal__firma", "deal__zustaendiger", "deal__kontakt")
+
+        for status in musterbox_faellige:
+            deal = status.deal
+
+            if deal.phase not in ("lead", "qualifiziert"):
+                # Reaktion da (Angebot/Verhandlung/Gewonnen) oder Deal verloren - die Kette
+                # endet hier sofort, OHNE weitere Mail (auf Wunsch von Björn, 18.10.2026).
+                status.aktiv = False
+                status.beendet_am = jetzt
+                status.beendet_grund = "verloren" if deal.phase == "verloren" else "angebot"
+                status.save(update_fields=["aktiv", "beendet_am", "beendet_grund"])
+                musterbox_beendet_reaktion += 1
+                continue
+
             try:
-                kundenmail_erfolg, _fehlermeldung = nurture.nachfass_kundenmail_senden(deal)
+                musterbox_erfolg, _fehlermeldung = nurture.musterbox_nachfass_senden(deal, status)
             except Exception:
                 logger.exception(
-                    "Unerwarteter Fehler beim Versand der Nachfass-Kundenmail (Deal %s)", deal.pk,
+                    "Unerwarteter Fehler bei der Musterbox-Nachfassmail (Deal %s, Woche %s)",
+                    deal.pk, status.naechste_woche,
                 )
-                kundenmail_erfolg = False
-            if kundenmail_erfolg:
-                kundenmail_versendet += 1
+                musterbox_erfolg = False
+
+            if musterbox_erfolg:
+                musterbox_versendet += 1
             else:
-                kundenmail_fehlgeschlagen += 1
+                musterbox_fehlgeschlagen += 1
+
+            if status.naechste_woche >= MUSTERBOX_NACHFASS_WOCHEN:
+                status.aktiv = False
+                status.beendet_am = jetzt
+                status.beendet_grund = "abgelaufen"
+                status.save(update_fields=["aktiv", "beendet_am", "beendet_grund"])
+                musterbox_beendet_abgelaufen += 1
+
+                Aktivitaet.objects.create(
+                    typ="aufgabe",
+                    betreff=f"Lead ausgelaufen nach 8 Wochen, bitte manuell prüfen: {deal.firma.name}",
+                    beschreibung=(
+                        f"Die automatische 8-woechige Musterbox-Nachfasskette fuer folgenden Deal "
+                        f"ist ohne Reaktion ausgelaufen. Bitte manuell pruefen und ggf. persoenlich "
+                        f"nachfassen.\n\n"
+                        f"Deal: {deal.titel}\n"
+                        f"Firma: {deal.firma.name}\n"
+                        f"Phase: {deal.get_phase_display()}\n"
+                        f"Link: {nurture.SITE_URL}{deal.get_absolute_url()}"
+                    ),
+                    datum=jetzt,
+                    firma=deal.firma,
+                    kontakt=deal.kontakt,
+                    deal=deal,
+                    zustaendiger=deal.zustaendiger,
+                )
+            else:
+                status.naechste_woche += 1
+                status.naechster_versand_am = jetzt + timedelta(days=MUSTERBOX_NACHFASS_INTERVALL_TAGE)
+                status.save(update_fields=["naechste_woche", "naechster_versand_am"])
 
         self.stdout.write(self.style.SUCCESS(
-            f"Nachfass-Pruefung abgeschlossen: {verlaengert} verlaengert, {beendet} beendet, "
-            f"{kundenmail_versendet} Kundenmails versendet, {kundenmail_fehlgeschlagen} fehlgeschlagen."
+            f"Nachfass-Pruefung abgeschlossen: {verlaengert} interne Erinnerung(en) verlaengert, "
+            f"{beendet} beendet. Musterbox-Kette: {musterbox_versendet} Kundenmail(s) versendet, "
+            f"{musterbox_fehlgeschlagen} fehlgeschlagen, {musterbox_beendet_reaktion} wegen "
+            f"Reaktion/verloren beendet, {musterbox_beendet_abgelaufen} nach 8 Wochen abgelaufen."
         ))
