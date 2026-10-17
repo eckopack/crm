@@ -1,8 +1,10 @@
 from django.contrib import admin
+from django.http import HttpResponseRedirect
+from django.urls import reverse
 
 from .models import (
     Aktivitaet, Angebot, AngebotPosition, Artikel, Charge, Deal, Firma, Kontakt,
-    Lagerbewegung, Preisstaffel, Rezeptur,
+    Lagerbewegung, NachfassKundenmailVorlage, Preisstaffel, Rezeptur,
 )
 
 
@@ -113,6 +115,31 @@ class ChargeAdmin(admin.ModelAdmin):
                 artikel=obj.artikel, charge=obj, bewegungstyp="wareneingang",
                 menge=obj.menge_eingang, erstellt_von=request.user,
             )
+
+
+@admin.register(NachfassKundenmailVorlage)
+class NachfassKundenmailVorlageAdmin(admin.ModelAdmin):
+    """Singleton-Admin: es gibt nur einen Datensatz (siehe Model.save()). 'Hinzufügen' ist
+    gesperrt, sobald er existiert, und die Übersichtsseite springt direkt zur Bearbeitung -
+    Björn/Vertrieb muss also nie auswählen, welchen Datensatz er meint, sondern landet beim
+    Klick auf den Admin-Link sofort im Bearbeitungsformular."""
+    list_display = ("betreff", "aktualisiert_am", "aktualisiert_von")
+    readonly_fields = ("aktualisiert_am", "aktualisiert_von")
+
+    def has_add_permission(self, request):
+        return not NachfassKundenmailVorlage.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def changelist_view(self, request, extra_context=None):
+        vorlage = NachfassKundenmailVorlage.aktuelle()
+        url = reverse("admin:vertrieb_nachfasskundenmailvorlage_change", args=[vorlage.pk])
+        return HttpResponseRedirect(url)
+
+    def save_model(self, request, obj, form, change):
+        obj.aktualisiert_von = request.user
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(Lagerbewegung)

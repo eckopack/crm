@@ -18,6 +18,13 @@ Versand-Bestätigungsmail an den Kunden, der Lieferschein selbst wird dabei als 
 Anders als bei Teil 1 wird hier KEINE neue Nachfass-Aktivität angelegt - der echte Versand ist
 stattdessen das Ende der Nachfass-Kette (siehe nachfass_pruefen.py: eine bestehende Kette wird
 nicht mehr verlängert, sobald irgendein Lieferschein des Deals eine Trackingnummer hat).
+
+Teil 3 (neu, 18.10.2026, auf Wunsch von Björn): nachfass_kundenmail_senden() verschickt bei
+jeder Verlängerung der Nachfass-Kette (siehe management/commands/nachfass_pruefen.py) zusätzlich
+zur bisherigen internen Erinnerungsmail an den zuständigen Mitarbeiter eine eigene Nachfass-Mail
+direkt an den Kunden. Betreff und Nachrichtentext kommen NICHT aus dem Code, sondern aus
+models.NachfassKundenmailVorlage - einem einzelnen Admin-Datensatz, den Björn/Vertrieb jederzeit
+selbst im Django-Admin ändern können, ohne dass dafür ein Deploy nötig wäre.
 """
 
 import logging
@@ -25,11 +32,12 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives, send_mail
+from django.template import Context, Template
 from django.template.loader import render_to_string
 from django.utils import timezone
 
 from . import pdf
-from .models import Aktivitaet
+from .models import Aktivitaet, NachfassKundenmailVorlage
 
 logger = logging.getLogger(__name__)
 
@@ -152,4 +160,66 @@ def lieferschein_versand_abgeschlossen(lieferschein):
 
     lieferschein.bestaetigungsmail_gesendet_am = timezone.now()
     lieferschein.save(update_fields=["bestaetigungsmail_gesendet_am"])
+    return True, None
+
+
+def nachfass_kundenmail_senden(deal):
+    """Verschickt die (im Django-Admin editierbare, siehe NachfassKundenmailVorlage)
+    wöchentliche Nachfass-Mail direkt an den Kunden - zusätzlich zur bestehenden internen
+    Erinnerungsmail an den zuständigen Mitarbeiter (siehe nachfass_pruefen.py).
+
+    Best effort, bewusst anders als lieferschein_versand_abgeschlossen() oben: ein Fehler hier
+    (z.B. keine E-Mail-Adresse hinterlegt) wird nur geloggt und blockiert weder die interne
+    Erinnerung noch die Verlängerung der Nachfass-Kette, da dieser Lauf unbeaufsichtigt im
+    wöchentlichen Cron passiert und niemand da ist, der eine UI-Fehlermeldung sehen könnte.
+
+    Gibt (erfolg: bool, fehlermeldung: str|None) zurück, damit der aufrufende Cron-Befehl
+    zählen kann, wie viele Kundenmails pro Lauf tatsächlich rausgegangen sind."""
+    empfaenger = _empfaenger_email(deal)
+
+    if not empfaenger:
+        meldung = "keine E-Mail-Adresse für Firma/Ansprechpartner hinterlegt"
+        logger.warning(
+            "Kein Empfaenger (E-Mail) fuer Nachfass-Kundenmail gefunden (Deal %s)", deal.pk,
+        )
+        return False, meldung
+
+    vorlage = NachfassKundenmailVorlage.aktuelle()
+    ansprechpartner = deal.kontakt
+    platzhalter = Context({
+        "vorname": ansprechpartner.vorname if ansprechpartner else "",
+        "nachname": ansprechpartner.nachname if ansprechpartner else "",
+        "firma": deal.firma.name,
+        "deal_titel": deal.titel,
+    })
+    try:
+        betreff = Template(vorlage.betreff).render(platzhalter)
+        nachricht_text = Template(vorlage.text).render(platzhalter)
+    except Exception as exc:
+        logger.exception(
+            "Nachfass-Kundenmail-Vorlage konnte nicht gerendert werden (Deal %s) - "
+            "vermutlich ein Tippfehler in einem {{ Platzhalter }} im Admin",
+            deal.pk,
+        )
+        return False, str(exc)
+
+    kontext = {
+        "ansprechpartner": ansprechpartner,
+        "nachricht_text": nachricht_text,
+        "site_url": SITE_URL,
+        "logo_url": f"{SITE_URL}/static/img/eckopack-logo.png",
+    }
+    text_body = render_to_string("vertrieb/email/nachfass_kunde.txt", kontext)
+    html_body = render_to_string("vertrieb/email/nachfass_kunde.html", kontext)
+
+    try:
+        mail = EmailMultiAlternatives(betreff, text_body, settings.DEFAULT_FROM_EMAIL, [empfaenger])
+        mail.attach_alternative(html_body, "text/html")
+        mail.send(fail_silently=False)
+    except Exception as exc:
+        logger.exception(
+            "Nachfass-Kundenmail konnte nicht gesendet werden (Deal %s)", deal.pk,
+        )
+        return False, str(exc)
+
     return True, None
