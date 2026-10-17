@@ -55,6 +55,7 @@ urlpatterns = [
     path("lieferscheine/neu/", views.lieferschein_erstellen, name="lieferschein_create"),
     path("lieferscheine/<int:pk>/", views.LieferscheinDetailView.as_view(), name="lieferschein_detail"),
     path("lieferscheine/<int:pk>/bearbeiten/", views.lieferschein_bearbeiten, name="lieferschein_update"),
+    path("lieferscheine/<int:pk>/versand/", views.lieferschein_versand_bestaetigen, name="lieferschein_versand"),
     path("lieferscheine/<int:pk>/loeschen/", views.LieferscheinDeleteView.as_view(), name="lieferschein_delete"),
     path("lieferscheine/<int:pk>/pdf/", views.lieferschein_pdf_download, name="lieferschein_pdf"),
 

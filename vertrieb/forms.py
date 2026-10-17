@@ -203,6 +203,25 @@ class LieferscheinForm(BootstrapFormMixin, forms.ModelForm):
         self.fields["packschein"].required = False
 
 
+class LieferscheinVersandForm(BootstrapFormMixin, forms.ModelForm):
+    """Schlanke Form für die Schnellaktion 'Als versendet markieren' auf der
+    Lieferschein-Detailseite - analog zu PackscheinVersandForm. Die Eingabe der
+    Trackingnummer hier löst die Versand-Bestätigungsmail an den Kunden aus und
+    schaltet die Rechnungserstellung zu diesem Lieferschein frei (siehe
+    views.lieferschein_versand_bestaetigen / views.rechnung_erstellen)."""
+
+    class Meta:
+        model = Lieferschein
+        fields = ["versanddienstleister", "trackingnummer", "versendet_am"]
+        widgets = {"versendet_am": date_input()}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()
+        self.fields["versanddienstleister"].required = True
+        self.fields["trackingnummer"].required = True
+
+
 class LieferscheinPositionForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = LieferscheinPosition

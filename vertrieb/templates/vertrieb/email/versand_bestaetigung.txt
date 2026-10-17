@@ -1,0 +1,13 @@
+Guten Tag{% if ansprechpartner %} {{ ansprechpartner.vorname }} {{ ansprechpartner.nachname }}{% endif %},
+
+Ihre Bestellung bei ECKO-PACK ist unterwegs zu Ihnen.
+
+Lieferschein: {{ lieferschein.nummer }}
+{% if lieferschein.get_versanddienstleister_display %}Versanddienstleister: {{ lieferschein.get_versanddienstleister_display }}
+{% endif %}{% if lieferschein.trackingnummer %}Sendungsnummer: {{ lieferschein.trackingnummer }}
+{% endif %}{% if lieferschein.tracking_url %}Sendungsverfolgung: {{ lieferschein.tracking_url }}
+{% endif %}
+Bei Fragen zu Ihrer Lieferung melden Sie sich jederzeit gerne bei uns.
+
+Mit freundlichen Grüßen
+Ihr ECKO-PACK Team

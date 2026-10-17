@@ -13,7 +13,12 @@
         <span class="badge text-bg-light border">{{ lieferschein.get_status_display }}</span>
     </div>
     <div class="d-print-none">
+        {% if lieferschein.tatsaechlich_versendet %}
         <a href="{% url 'vertrieb:rechnung_create' %}?lieferschein={{ lieferschein.pk }}" class="btn btn-primary">Rechnung erstellen</a>
+        {% else %}
+        <a href="{% url 'vertrieb:lieferschein_versand' lieferschein.pk %}" class="btn btn-success">Als versendet markieren</a>
+        <button type="button" class="btn btn-primary" disabled title="Erst nach Eingabe der Trackingnummer möglich">Rechnung erstellen</button>
+        {% endif %}
         <a href="{% url 'vertrieb:lieferschein_pdf' lieferschein.pk %}" target="_blank" class="btn btn-outline-primary">PDF</a>
         <a href="{% url 'vertrieb:lieferschein_update' lieferschein.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
         <a href="{% url 'vertrieb:lieferschein_delete' lieferschein.pk %}" class="btn btn-outline-danger">Löschen</a>
@@ -23,6 +28,21 @@
 <div class="card mb-3" style="max-width:300px;">
     <ul class="list-group list-group-flush">
         <li class="list-group-item"><strong>Lieferdatum:</strong> {{ lieferschein.datum|date:"d.m.Y" }}</li>
+        {% if lieferschein.tatsaechlich_versendet %}
+        <li class="list-group-item"><strong>Versendet am:</strong> {{ lieferschein.versendet_am|date:"d.m.Y" }}</li>
+        <li class="list-group-item">
+            <strong>Tracking:</strong>
+            {{ lieferschein.get_versanddienstleister_display|default:"–" }}
+            {{ lieferschein.trackingnummer }}
+        </li>
+        <li class="list-group-item small text-muted">
+            {% if lieferschein.bestaetigungsmail_gesendet_am %}
+            Versand-Bestätigungsmail an Kunde gesendet am {{ lieferschein.bestaetigungsmail_gesendet_am|date:"d.m.Y H:i" }}.
+            {% else %}
+            Versand-Bestätigungsmail konnte nicht gesendet werden – bitte Kunden ggf. manuell informieren.
+            {% endif %}
+        </li>
+        {% endif %}
     </ul>
 </div>
 
