@@ -4,7 +4,15 @@ Wird nicht direkt per Cron gegen die SQLite-Datei aufgerufen (die liegt nur auf 
 Disk des Web-Service), sondern ueber den internen HTTP-Endpoint
 vertrieb.views.interner_nachfass_cron, den ein separater Render-Cron-Job per HTTPS
 anstoesst. So braucht der Cron-Job selbst keinen Datenbankzugriff.
-"""
+
+AENDERUNG 17.10.2026 (auf Wunsch von Björn): Die Kette lief bisher nur, solange der Deal noch
+in Phase "lead"/"qualifiziert" war, und endete automatisch, sobald ein Angebot erstellt wurde.
+Das stoppte das Nachfassen genau dann, wenn es am wichtigsten waere (Angebot raus, aber noch
+keine Reaktion). Jetzt läuft die Kette durch alle Phasen weiter (ausser "verloren") und endet
+erst, wenn der Deal tatsaechlich einen versendeten Lieferschein hat (Trackingnummer gesetzt,
+siehe Lieferschein.tatsaechlich_versendet / views.lieferschein_versand_bestaetigen) - vorher
+"Rechnung erzeugt" o.ae. zu pruefen waere zu frueh, weil die Rechnung selbst erst NACH dem
+Versand erzeugt werden darf (siehe views.rechnung_erstellen)."""
 
 from datetime import timedelta
 
@@ -20,9 +28,9 @@ NACHFASS_INTERVALL_TAGE = 7
 
 class Command(BaseCommand):
     help = (
-        "Verlaengert ueberfaellige Musterversand-Nachfass-Aktivitaeten um eine weitere "
-        "Woche und erinnert den zustaendigen Mitarbeiter per E-Mail, solange der "
-        "zugehoerige Deal die Angebotsphase noch nicht erreicht hat."
+        "Verlaengert ueberfaellige Nachfass-Aktivitaeten um eine weitere Woche und erinnert "
+        "den zustaendigen Mitarbeiter per E-Mail, bis der zugehoerige Deal entweder verloren "
+        "ist oder einen tatsaechlich versendeten Lieferschein hat."
     )
 
     def handle(self, *args, **options):
@@ -39,9 +47,11 @@ class Command(BaseCommand):
             aktivitaet.erledigt = True
             aktivitaet.save(update_fields=["erledigt"])
 
-            if deal is None or deal.phase not in ("lead", "qualifiziert"):
-                # Deal ist inzwischen in der Angebotsphase (oder weiter) bzw. ohne
-                # Deal-Bezug – die Kette endet hier, kein neuer Eintrag.
+            bereits_versendet = deal is not None and deal.lieferscheine.exclude(trackingnummer="").exists()
+            if deal is None or deal.phase == "verloren" or bereits_versendet:
+                # Deal verloren, tatsaechlich versendet, oder ohne Deal-Bezug - die Kette
+                # endet hier, kein neuer Eintrag. (Vor dem 17.10.2026 endete die Kette
+                # stattdessen schon beim Erreichen der Angebotsphase - siehe Kommentar oben.)
                 beendet += 1
                 continue
 

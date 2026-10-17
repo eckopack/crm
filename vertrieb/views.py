@@ -19,7 +19,7 @@ from . import nurture, pdf
 from .forms import (
     AktivitaetForm, AngebotForm, AngebotPositionFormSet, ArtikelForm, DealForm, FirmaForm, KontaktForm,
     PackscheinForm, PackscheinPositionFormSet, PackscheinVersandForm,
-    LieferscheinForm, LieferscheinPositionFormSet, RechnungForm, RechnungPositionFormSet,
+    LieferscheinForm, LieferscheinPositionFormSet, LieferscheinVersandForm, RechnungForm, RechnungPositionFormSet,
 )
 from .models import (
     DEAL_PHASE_CHOICES, PHASE_STANDARD_WAHRSCHEINLICHKEIT,
@@ -709,6 +709,45 @@ def lieferschein_bearbeiten(request, pk):
     })
 
 
+@login_required
+def lieferschein_versand_bestaetigen(request, pk):
+    """Trackingnummer eintragen und Lieferschein auf 'versendet' setzen (17.10.2026,
+    auf Wunsch von Björn - analog zu packschein_versand_bestaetigen). Löst die
+    Versand-Bestätigungsmail an den Kunden aus (siehe nurture.lieferschein_versand_abgeschlossen)
+    und schaltet damit zugleich die Rechnungserstellung zu diesem Lieferschein frei
+    (siehe rechnung_erstellen) sowie das Ende der Nachfass-Kette des Deals (siehe
+    management/commands/nachfass_pruefen.py)."""
+    lieferschein = get_object_or_404(Lieferschein, pk=pk)
+    if request.method == "POST":
+        form = LieferscheinVersandForm(request.POST, instance=lieferschein)
+        if form.is_valid():
+            lieferschein = form.save(commit=False)
+            lieferschein.status = "versendet"
+            if not lieferschein.versendet_am:
+                lieferschein.versendet_am = timezone.now().date()
+            lieferschein.versand_erfasst_von = request.user
+            lieferschein.save()
+            erfolg, fehler = nurture.lieferschein_versand_abgeschlossen(lieferschein)
+            if erfolg:
+                messages.success(
+                    request,
+                    f"Lieferschein {lieferschein.nummer} als versendet markiert. "
+                    f"Versand-Bestätigungsmail wurde an den Kunden gesendet.",
+                )
+            else:
+                messages.warning(
+                    request,
+                    f"Lieferschein {lieferschein.nummer} als versendet markiert, aber die "
+                    f"Versand-Bestätigungsmail an den Kunden konnte NICHT gesendet werden "
+                    f"({fehler}). Rechnung kann trotzdem erstellt werden - bitte Kunden ggf. "
+                    f"manuell informieren.",
+                )
+            return redirect(lieferschein.get_absolute_url())
+    else:
+        form = LieferscheinVersandForm(instance=lieferschein, initial={"versendet_am": timezone.now().date()})
+    return render(request, "vertrieb/lieferschein_versand_form.html", {"form": form, "lieferschein": lieferschein})
+
+
 class LieferscheinDeleteView(LoginRequiredMixin, DeleteView):
     model = Lieferschein
     template_name = "vertrieb/confirm_delete.html"
@@ -760,13 +799,37 @@ def rechnung_erstellen(request):
     if request.method == "POST":
         form = RechnungForm(request.POST)
         if form.is_valid():
-            rechnung = form.save()
-            formset = RechnungPositionFormSet(request.POST, instance=rechnung)
-            if formset.is_valid():
-                formset.save()
-                return redirect(rechnung.get_absolute_url())
-        else:
-            formset = RechnungPositionFormSet(request.POST)
+            # Versand-Pflicht vor Rechnungserstellung (17.10.2026, auf Wunsch von Björn):
+            # eine Rechnung darf nur zu einem tatsaechlich versendeten Lieferschein erzeugt
+            # werden (Trackingnummer gesetzt, siehe Lieferschein.tatsaechlich_versendet).
+            # Bewusst nur hier bei der NEU-Erstellung geprueft, nicht in RechnungForm.clean()
+            # oder bei rechnung_bearbeiten - damit bereits bestehende (vor dieser Regel
+            # angelegte) Rechnungen beim Bearbeiten nicht nachtraeglich blockiert werden.
+            gewaehlter_lieferschein = form.cleaned_data.get("lieferschein")
+            if not gewaehlter_lieferschein:
+                form.add_error(
+                    "lieferschein",
+                    "Pflichtfeld: Eine Rechnung kann erst nach Versand zu einem Lieferschein "
+                    "erzeugt werden.",
+                )
+            elif not gewaehlter_lieferschein.tatsaechlich_versendet:
+                form.add_error(
+                    "lieferschein",
+                    f"Lieferschein {gewaehlter_lieferschein.nummer} hat noch keine Trackingnummer "
+                    f"hinterlegt. Bitte zuerst dort auf der Detailseite \"Als versendet markieren\" "
+                    f"ausfüllen, dann kann die Rechnung erzeugt werden.",
+                )
+            else:
+                rechnung = form.save()
+                formset = RechnungPositionFormSet(request.POST, instance=rechnung)
+                if formset.is_valid():
+                    formset.save()
+                    return redirect(rechnung.get_absolute_url())
+                return render(request, "vertrieb/rechnung_form.html", {
+                    "form": form, "formset": formset, "angebot_quelle": angebot_quelle,
+                    "lieferschein_quelle": lieferschein_quelle,
+                })
+        formset = RechnungPositionFormSet(request.POST)
     else:
         initial = {}
         deal_id = request.GET.get("deal")

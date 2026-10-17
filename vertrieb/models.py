@@ -82,12 +82,25 @@ PACKSCHEIN_STATUS_CHOICES = [
 
 VERSANDDIENSTLEISTER_CHOICES = [
     ("dhl", "DHL"),
+    ("dpd", "DPD"),
     ("gls", "GLS"),
     ("ups", "UPS"),
     ("post", "Deutsche Post"),
     ("abholung", "Selbstabholung"),
     ("sonstiges", "Sonstiges"),
 ]
+
+# Tracking-Link-Vorlagen fuer die Versand-Bestaetigungsmail (siehe Lieferschein.tracking_url
+# unten). STAND 17.10.2026: aus Trainingswissen uebernommen, NICHT live verifiziert (Websuche
+# fuer diesen Account deaktiviert) - vor dem ersten echten Kundenversand bitte je einmal mit
+# einer echten Sendungsnummer durchklicken und ggf. hier korrigieren.
+TRACKING_URL_VORLAGEN = {
+    "dhl": "https://www.dhl.de/de/privatkunden/pakete-empfangen/verfolgen.html?piececode={code}",
+    "dpd": "https://tracking.dpd.de/status/de_DE/parcel/{code}",
+    "ups": "https://www.ups.com/track?loc=de_DE&tracknum={code}",
+    "gls": "https://gls-group.eu/DE/de/paket-verfolgen?match={code}",
+    "post": "https://www.deutschepost.de/de/s/sendungsverfolgung.html?piececode={code}",
+}
 
 LIEFERSCHEIN_STATUS_CHOICES = [
     ("entwurf", "Entwurf"),
@@ -436,6 +449,26 @@ class Lieferschein(models.Model):
     )
     datum = models.DateField("Lieferdatum", default=timezone.now)
     status = models.CharField("Status", max_length=20, choices=LIEFERSCHEIN_STATUS_CHOICES, default="entwurf")
+    # Versand-/Tracking-Erfassung (17.10.2026, auf Wunsch von Björn): bewusst dieselben
+    # Feldnamen/Choices wie beim Packschein (siehe oben) statt neuer Begriffe, damit das CRM
+    # durchgängig bleibt. Erst wenn trackingnummer gesetzt ist, gilt eine Rechnung zu diesem
+    # Lieferschein als erzeugbar (siehe views.rechnung_erstellen) und die Nachfass-Kette des
+    # zugehoerigen Deals als beendet (siehe management/commands/nachfass_pruefen.py) - die
+    # Eingabe des Trackingcodes ist damit der maßgebliche "jetzt ist wirklich versendet"-Moment,
+    # nicht das Status-Feld oben (das bleibt manuell/for Anzeige, kann aber durch die Eingabe
+    # ueberschrieben werden, siehe save()).
+    versanddienstleister = models.CharField(
+        "Versanddienstleister", max_length=20, choices=VERSANDDIENSTLEISTER_CHOICES, blank=True
+    )
+    trackingnummer = models.CharField("Trackingnummer", max_length=50, blank=True)
+    versendet_am = models.DateField("Versendet am", null=True, blank=True)
+    versand_erfasst_von = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="Versand erfasst von", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="+", editable=False,
+    )
+    bestaetigungsmail_gesendet_am = models.DateTimeField(
+        "Versand-Bestätigungsmail an Kunde gesendet am", null=True, blank=True, editable=False,
+    )
     notizen = models.TextField("Notizen", blank=True)
     erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
 
@@ -449,6 +482,21 @@ class Lieferschein(models.Model):
 
     def get_absolute_url(self):
         return reverse("vertrieb:lieferschein_detail", args=[self.pk])
+
+    @property
+    def tatsaechlich_versendet(self):
+        """True, sobald ein Trackingcode hinterlegt ist - siehe Kommentar oben am Feld."""
+        return bool(self.trackingnummer)
+
+    @property
+    def tracking_url(self):
+        if not self.trackingnummer or not self.versanddienstleister:
+            return ""
+        vorlage = TRACKING_URL_VORLAGEN.get(self.versanddienstleister)
+        if not vorlage:
+            return ""
+        from urllib.parse import quote
+        return vorlage.format(code=quote(self.trackingnummer))
 
     def save(self, *args, **kwargs):
         if not self.nummer:

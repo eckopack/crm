@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ihre Bestellung ist unterwegs</title>
+</head>
+<body style="margin:0; padding:0; background-color:#f5f6f8; font-family:Arial, Helvetica, sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f6f8; padding:24px 0;">
+  <tr>
+    <td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px; width:100%; background-color:#ffffff; border-radius:8px; overflow:hidden;">
+
+        <tr>
+          <td style="background-color:#3c3c3b; padding:24px 32px;">
+            <img src="{{ logo_url }}" alt="ECKO-PACK" height="32" style="display:block; height:32px; width:auto;">
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:32px;">
+            <p style="margin:0 0 16px 0; font-size:16px; color:#3c3c3b;">
+              Guten Tag{% if ansprechpartner %} {{ ansprechpartner.vorname }} {{ ansprechpartner.nachname }}{% endif %},
+            </p>
+            <p style="margin:0 0 24px 0; font-size:16px; color:#3c3c3b; line-height:1.5;">
+              Ihre Bestellung bei ECKO-PACK ist unterwegs zu Ihnen.
+            </p>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f6f8; border-radius:6px; margin-bottom:24px;">
+              <tr>
+                <td style="padding:16px 20px; font-size:14px; color:#3c3c3b;">
+                  <table role="presentation" width="100%" cellpadding="4" cellspacing="0" style="font-size:14px; color:#3c3c3b;">
+                    <tr>
+                      <td style="color:#888; white-space:nowrap;">Lieferschein</td>
+                      <td style="font-weight:bold;">{{ lieferschein.nummer }}</td>
+                    </tr>
+                    {% if lieferschein.get_versanddienstleister_display %}
+                    <tr>
+                      <td style="color:#888; white-space:nowrap;">Versanddienstleister</td>
+                      <td>{{ lieferschein.get_versanddienstleister_display }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if lieferschein.trackingnummer %}
+                    <tr>
+                      <td style="color:#888; white-space:nowrap;">Sendungsnummer</td>
+                      <td>{{ lieferschein.trackingnummer }}</td>
+                    </tr>
+                    {% endif %}
+                  </table>
+                </td>
+              </tr>
+            </table>
+
+            {% if lieferschein.tracking_url %}
+            <table role="presentation" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+              <tr>
+                <td style="border-radius:4px; background-color:#05db8e;">
+                  <a href="{{ lieferschein.tracking_url }}" target="_blank"
+                     style="display:inline-block; padding:12px 24px; font-size:14px; font-weight:bold; color:#3c3c3b; text-decoration:none;">
+                    Sendung verfolgen
+                  </a>
+                </td>
+              </tr>
+            </table>
+            {% endif %}
+
+            <p style="margin:0 0 8px 0; font-size:14px; color:#3c3c3b; line-height:1.5;">
+              Bei Fragen zu Ihrer Lieferung melden Sie sich jederzeit gerne bei uns.
+            </p>
+            <p style="margin:24px 0 0 0; font-size:14px; color:#3c3c3b;">
+              Mit freundlichen Grüßen<br>
+              Ihr ECKO-PACK Team
+            </p>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="background-color:#f5f6f8; padding:16px 32px; font-size:12px; color:#888;">
+            ECKO-PACK GmbH · Wasbeker Straße 324 · D-24537 Neumünster
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>
