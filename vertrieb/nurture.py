@@ -13,10 +13,11 @@ gesetzt wird (views.packschein_versand_bestaetigen), läuft hier:
 Teil 2 (neu, 17.10.2026, auf Wunsch von Björn): Sobald ein echter Lieferschein (nicht nur
 der Musterversand-Packschein) über views.lieferschein_versand_bestaetigen mit Trackingnummer
 versehen wird, verschickt lieferschein_versand_abgeschlossen() eine eigene, als HTML gestaltete
-Versand-Bestätigungsmail an den Kunden. Anders als bei Teil 1 wird hier KEINE neue Nachfass-
-Aktivität angelegt - der echte Versand ist stattdessen das Ende der Nachfass-Kette (siehe
-nachfass_pruefen.py: eine bestehende Kette wird nicht mehr verlängert, sobald irgendein
-Lieferschein des Deals eine Trackingnummer hat).
+Versand-Bestätigungsmail an den Kunden, der Lieferschein selbst wird dabei als PDF angehängt
+(dieselbe Erzeugung wie beim Download-Button im CRM, siehe pdf.lieferschein_pdf_erzeugen).
+Anders als bei Teil 1 wird hier KEINE neue Nachfass-Aktivität angelegt - der echte Versand ist
+stattdessen das Ende der Nachfass-Kette (siehe nachfass_pruefen.py: eine bestehende Kette wird
+nicht mehr verlängert, sobald irgendein Lieferschein des Deals eine Trackingnummer hat).
 """
 
 import logging
@@ -27,6 +28,7 @@ from django.core.mail import EmailMultiAlternatives, send_mail
 from django.template.loader import render_to_string
 from django.utils import timezone
 
+from . import pdf
 from .models import Aktivitaet
 
 logger = logging.getLogger(__name__)
@@ -103,6 +105,10 @@ def lieferschein_versand_abgeschlossen(lieferschein):
     """Verschickt die (HTML-gestaltete) Versand-Bestätigungsmail an den Kunden, sobald ein
     echter Lieferschein (views.lieferschein_versand_bestaetigen) eine Trackingnummer erhält.
 
+    Der Lieferschein wird als PDF angehängt (gleiche Erzeugung wie der Download-Button im CRM).
+    Schlägt die PDF-Erzeugung fehl, zählt das als Fehlschlag der gesamten Mail - eine
+    Versandbestätigung ohne den eigentlichen Lieferschein waere unvollstaendig.
+
     Gibt (erfolg: bool, fehlermeldung: str|None) zurück, damit der aufrufende View dem
     Nutzer sofort sichtbar machen kann, wenn der Versand zwar erfasst, die Mail aber NICHT
     rausgegangen ist (anders als bei musterversand_abgeschlossen() oben oder beim woechentlichen
@@ -132,12 +138,14 @@ def lieferschein_versand_abgeschlossen(lieferschein):
     html_body = render_to_string("vertrieb/email/versand_bestaetigung.html", kontext)
 
     try:
+        lieferschein_pdf_bytes = pdf.lieferschein_pdf_erzeugen(lieferschein)
         mail = EmailMultiAlternatives(betreff, text_body, settings.DEFAULT_FROM_EMAIL, [empfaenger])
         mail.attach_alternative(html_body, "text/html")
+        mail.attach(f"{lieferschein.nummer}.pdf", lieferschein_pdf_bytes, "application/pdf")
         mail.send(fail_silently=False)
     except Exception as exc:
         logger.exception(
-            "Versand-Bestaetigungsmail konnte nicht gesendet werden (Lieferschein %s)",
+            "Versand-Bestaetigungsmail (inkl. Lieferschein-PDF) konnte nicht gesendet werden (Lieferschein %s)",
             lieferschein.nummer,
         )
         return False, str(exc)

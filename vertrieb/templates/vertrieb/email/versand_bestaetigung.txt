@@ -7,6 +7,8 @@ Lieferschein: {{ lieferschein.nummer }}
 {% endif %}{% if lieferschein.trackingnummer %}Sendungsnummer: {{ lieferschein.trackingnummer }}
 {% endif %}{% if lieferschein.tracking_url %}Sendungsverfolgung: {{ lieferschein.tracking_url }}
 {% endif %}
+Den Lieferschein finden Sie als PDF im Anhang dieser E-Mail.
+
 Bei Fragen zu Ihrer Lieferung melden Sie sich jederzeit gerne bei uns.
 
 Mit freundlichen Grüßen
