@@ -19,12 +19,17 @@ Anders als bei Teil 1 wird hier KEINE neue Nachfass-Aktivität angelegt - der ec
 stattdessen das Ende der Nachfass-Kette (siehe nachfass_pruefen.py: eine bestehende Kette wird
 nicht mehr verlängert, sobald irgendein Lieferschein des Deals eine Trackingnummer hat).
 
-Teil 3 (neu, 18.10.2026, auf Wunsch von Björn): nachfass_kundenmail_senden() verschickt bei
-jeder Verlängerung der Nachfass-Kette (siehe management/commands/nachfass_pruefen.py) zusätzlich
-zur bisherigen internen Erinnerungsmail an den zuständigen Mitarbeiter eine eigene Nachfass-Mail
-direkt an den Kunden. Betreff und Nachrichtentext kommen NICHT aus dem Code, sondern aus
-models.NachfassKundenmailVorlage - einem einzelnen Admin-Datensatz, den Björn/Vertrieb jederzeit
-selbst im Django-Admin ändern können, ohne dass dafür ein Deploy nötig wäre.
+Teil 3 (18.10.2026, auf Wunsch von Björn, NOCHMAL GEÄNDERT am selben Tag): Die ursprüngliche
+Teil-3-Version verschickte bei jeder Verlängerung der (für ALLE offenen Deals laufenden)
+Nachfass-Kette eine einzige, immer gleiche Kundenmail (models.NachfassKundenmailVorlage,
+inzwischen entfernt). Björn wollte das stattdessen nur für Musterversand-Leads und als
+erzählerisch aufgebaute 8-Wochen-Reihe: musterbox_nachfass_senden() verschickt pro Woche
+(1-8) einen eigenen Text aus models.MusterboxNachfassVorlage, gesteuert über
+models.MusterboxNachfassStatus (ein Status-Datensatz pro Deal, angelegt in
+musterversand_abgeschlossen() unten). Die Kette endet, sobald der Deal die Phase
+lead/qualifiziert verlässt (Angebot o.ä. = Reaktion da) oder nach Woche 8 ohne Reaktion -
+siehe management/commands/nachfass_pruefen.py für die genaue Ablaufsteuerung. Deals OHNE
+Musterversand-Historie bekommen seitdem gar keine automatische Kundenmail mehr.
 """
 
 import logging
@@ -37,11 +42,12 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 
 from . import pdf
-from .models import Aktivitaet, NachfassKundenmailVorlage
+from .models import Aktivitaet, MusterboxNachfassStatus, MusterboxNachfassVorlage
 
 logger = logging.getLogger(__name__)
 
 NACHFASS_INTERVALL_TAGE = 7
+MUSTERBOX_NACHFASS_INTERVALL_TAGE = 7
 
 # Hardcoded wie beim NACHFASS-Cron in render.yaml - fuer absolute Links (Logo, Tracking) in
 # E-Mails, die ausserhalb eines Request-Kontexts (also ohne request.build_absolute_uri)
@@ -108,6 +114,19 @@ def musterversand_abgeschlossen(packschein):
         zustaendiger=deal.zustaendiger,
     )
 
+    # 8-wöchige Musterbox-Nachfasskette an den KUNDEN (siehe Teil 3 oben) - eigener,
+    # von der internen Aktivitaet oben unabhängiger Status pro Deal. get_or_create, falls
+    # musterversand_abgeschlossen() fuer denselben Deal ausnahmsweise ein zweites Mal
+    # laufen sollte (z.B. zweiter Musterversand-Packschein) - die laufende Kette wird dann
+    # NICHT neu gestartet/verlaengert.
+    MusterboxNachfassStatus.objects.get_or_create(
+        deal=deal,
+        defaults={
+            "naechste_woche": 1,
+            "naechster_versand_am": timezone.now() + timedelta(days=MUSTERBOX_NACHFASS_INTERVALL_TAGE),
+        },
+    )
+
 
 def lieferschein_versand_abgeschlossen(lieferschein):
     """Verschickt die (HTML-gestaltete) Versand-Bestätigungsmail an den Kunden, sobald ein
@@ -163,15 +182,37 @@ def lieferschein_versand_abgeschlossen(lieferschein):
     return True, None
 
 
-def nachfass_kundenmail_senden(deal):
-    """Verschickt die (im Django-Admin editierbare, siehe NachfassKundenmailVorlage)
-    wöchentliche Nachfass-Mail direkt an den Kunden - zusätzlich zur bestehenden internen
-    Erinnerungsmail an den zuständigen Mitarbeiter (siehe nachfass_pruefen.py).
+def _musterversand_artikel_text(deal):
+    """Leitet eine kurze, menschenlesbare Bezeichnung der beim Musterversand bestellten
+    Artikelart ab (für den {{ artikel }}-Platzhalter der Musterbox-Nachfasskette) - aus den
+    Positionen des (letzten) Musterversand-Packscheins des Deals. Es gibt dafür bewusst
+    KEIN eigenes Feld auf Packschein (z.B. "Besteck"/"Trinkhalm"/"Beides") - das wäre eine
+    Doppelung der ohnehin erfassten Packschein-Positionen gewesen. Fallback auf einen
+    neutralen Text, falls sich nichts ableiten lässt (z.B. Packschein ohne Positionen)."""
+    packschein = deal.packscheine.filter(ist_musterversand=True).order_by("-datum", "-pk").first()
+    if not packschein:
+        return "unsere Produkte"
+    bezeichnungen = list(
+        packschein.positionen.exclude(bezeichnung="").values_list("bezeichnung", flat=True).distinct()
+    )
+    if not bezeichnungen:
+        return "unsere Produkte"
+    return " und ".join(bezeichnungen)
 
-    Best effort, bewusst anders als lieferschein_versand_abgeschlossen() oben: ein Fehler hier
-    (z.B. keine E-Mail-Adresse hinterlegt) wird nur geloggt und blockiert weder die interne
-    Erinnerung noch die Verlängerung der Nachfass-Kette, da dieser Lauf unbeaufsichtigt im
-    wöchentlichen Cron passiert und niemand da ist, der eine UI-Fehlermeldung sehen könnte.
+
+def musterbox_nachfass_senden(deal, status):
+    """Verschickt die Mail der aktuell fälligen Woche (status.naechste_woche) der
+    8-wöchigen Musterbox-Nachfasskette an den Kunden (siehe MusterboxNachfassVorlage /
+    MusterboxNachfassStatus in models.py sowie management/commands/nachfass_pruefen.py, das
+    diese Funktion pro fälligem Status-Datensatz aufruft).
+
+    Best effort, wie zuvor bei der generischen Kundenmail: ein Fehler hier (z.B. keine
+    E-Mail-Adresse hinterlegt, kaputte Vorlage) wird nur geloggt und blockiert nicht den
+    Fortschritt der Kette - der wöchentliche Cron läuft unbeaufsichtigt, niemand ist da, um
+    eine UI-Fehlermeldung zu sehen. Das heißt auch: schlägt der Versand einer Woche fehl,
+    rückt die Kette trotzdem auf die nächste Woche vor (siehe nachfass_pruefen.py) statt
+    hängen zu bleiben - sonst würde ein einziger kaputter Platzhalter die komplette Kette
+    für den betroffenen Deal dauerhaft blockieren.
 
     Gibt (erfolg: bool, fehlermeldung: str|None) zurück, damit der aufrufende Cron-Befehl
     zählen kann, wie viele Kundenmails pro Lauf tatsächlich rausgegangen sind."""
@@ -180,26 +221,36 @@ def nachfass_kundenmail_senden(deal):
     if not empfaenger:
         meldung = "keine E-Mail-Adresse für Firma/Ansprechpartner hinterlegt"
         logger.warning(
-            "Kein Empfaenger (E-Mail) fuer Nachfass-Kundenmail gefunden (Deal %s)", deal.pk,
+            "Kein Empfaenger (E-Mail) fuer Musterbox-Nachfassmail gefunden (Deal %s, Woche %s)",
+            deal.pk, status.naechste_woche,
         )
         return False, meldung
 
-    vorlage = NachfassKundenmailVorlage.aktuelle()
+    vorlage = MusterboxNachfassVorlage.fuer_woche(status.naechste_woche)
+    if vorlage is None:
+        meldung = f"keine Vorlage für Woche {status.naechste_woche} hinterlegt"
+        logger.error(
+            "Musterbox-Nachfassmail: keine Vorlage fuer Woche %s (Deal %s) - bitte im Admin anlegen",
+            status.naechste_woche, deal.pk,
+        )
+        return False, meldung
+
     ansprechpartner = deal.kontakt
     platzhalter = Context({
         "vorname": ansprechpartner.vorname if ansprechpartner else "",
         "nachname": ansprechpartner.nachname if ansprechpartner else "",
         "firma": deal.firma.name,
         "deal_titel": deal.titel,
+        "artikel": _musterversand_artikel_text(deal),
     })
     try:
         betreff = Template(vorlage.betreff).render(platzhalter)
         nachricht_text = Template(vorlage.text).render(platzhalter)
     except Exception as exc:
         logger.exception(
-            "Nachfass-Kundenmail-Vorlage konnte nicht gerendert werden (Deal %s) - "
+            "Musterbox-Nachfassmail-Vorlage (Woche %s) konnte nicht gerendert werden (Deal %s) - "
             "vermutlich ein Tippfehler in einem {{ Platzhalter }} im Admin",
-            deal.pk,
+            status.naechste_woche, deal.pk,
         )
         return False, str(exc)
 
@@ -209,8 +260,8 @@ def nachfass_kundenmail_senden(deal):
         "site_url": SITE_URL,
         "logo_url": f"{SITE_URL}/static/img/eckopack-logo.png",
     }
-    text_body = render_to_string("vertrieb/email/nachfass_kunde.txt", kontext)
-    html_body = render_to_string("vertrieb/email/nachfass_kunde.html", kontext)
+    text_body = render_to_string("vertrieb/email/musterbox_nachfass.txt", kontext)
+    html_body = render_to_string("vertrieb/email/musterbox_nachfass.html", kontext)
 
     try:
         mail = EmailMultiAlternatives(betreff, text_body, settings.DEFAULT_FROM_EMAIL, [empfaenger])
@@ -218,7 +269,8 @@ def nachfass_kundenmail_senden(deal):
         mail.send(fail_silently=False)
     except Exception as exc:
         logger.exception(
-            "Nachfass-Kundenmail konnte nicht gesendet werden (Deal %s)", deal.pk,
+            "Musterbox-Nachfassmail (Woche %s) konnte nicht gesendet werden (Deal %s)",
+            status.naechste_woche, deal.pk,
         )
         return False, str(exc)
 

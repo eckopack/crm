@@ -3,4 +3,5 @@ Guten Tag{% if ansprechpartner %} {{ ansprechpartner.vorname }} {{ ansprechpartn
 {{ nachricht_text }}
 
 Mit freundlichen Grüßen
-Ihr ECKO-PACK Team
+Björn Gallenkamp
+Geschäftsführer, ECKO-PACK GmbH
