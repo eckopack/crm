@@ -62,10 +62,10 @@ class PreisstaffelInline(admin.TabularInline):
 @admin.register(Artikel)
 class ArtikelAdmin(admin.ModelAdmin):
     list_display = (
-        "artikelnummer", "bezeichnung", "geschaeftsbereich", "warengruppe", "materialtyp",
-        "verkaufspreis", "lagerbestand_aktuell", "status", "aktualisiert_am",
+        "artikelnummer", "bezeichnung", "vertriebskanal", "geschaeftsbereich", "warengruppe",
+        "materialtyp", "verkaufspreis", "lagerbestand_aktuell", "status", "aktualisiert_am",
     )
-    list_filter = ("geschaeftsbereich", "warengruppe", "materialtyp", "status")
+    list_filter = ("vertriebskanal", "geschaeftsbereich", "warengruppe", "materialtyp", "status")
     search_fields = ("artikelnummer", "bezeichnung")
     inlines = [PreisstaffelInline]
 
