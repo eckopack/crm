@@ -49,13 +49,21 @@ STIL_TEXT_RECHTS = ParagraphStyle("TextRechts", parent=STIL_TEXT, alignment=TA_R
 STIL_NOTIZEN = ParagraphStyle("Notizen", fontName="Helvetica", fontSize=9.5, leading=13, textColor=DUNKEL, spaceBefore=4)
 
 
-def _eur(betrag):
+_MONATE_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def _eur(betrag, sprache="de"):
+    """sprache="en" (18.10.2026, Angebot.sprache): englische Zahlenkonvention (Punkt als
+    Dezimal-, Komma als Tausendertrennzeichen) statt der deutschen - sonst liest sich
+    "1.234,56 €" für einen englischsprachigen Kunden leicht als "1,23456" oder "1234,56"."""
+    if sprache == "en":
+        return f"€{betrag:,.2f}"
     text = f"{betrag:,.2f}"
     text = text.replace(",", "X").replace(".", ",").replace("X", ".")
     return f"{text} €"
 
 
-def _eur_praezise(betrag):
+def _eur_praezise(betrag, sprache="de"):
     """Wie _eur(), aber mit bis zu 5 statt 2 Nachkommastellen (mindestens 2).
 
     Für Einzelpreise von Stückgut-Artikeln mit Bruchteilscent-Preisen (z. B. 0,01298 €
@@ -63,6 +71,13 @@ def _eur_praezise(betrag):
     voller Präzision berechnet, aber bei der normalen 2-Nachkommastellen-Anzeige würde der
     Einzelpreis auf 0,01 € gerundet erscheinen - wer das von Hand nachrechnet, käme auf
     ein falsches Ergebnis, obwohl die gedruckte Summe stimmt."""
+    if sprache == "en":
+        text = f"{betrag:.5f}"
+        ganzzahl, dezimal = text.split(".")
+        dezimal = dezimal.rstrip("0")
+        if len(dezimal) < 2:
+            dezimal = dezimal.ljust(2, "0")
+        return f"€{int(ganzzahl):,}.{dezimal}"
     text = f"{betrag:,.5f}"
     text = text.replace(",", "X").replace(".", ",").replace("X", ".")
     ganzzahl, dezimal = text.split(",")
@@ -72,17 +87,25 @@ def _eur_praezise(betrag):
     return f"{ganzzahl},{dezimal} €"
 
 
-def _menge(wert):
+def _menge(wert, sprache="de"):
     wert = Decimal(wert)
+    if sprache == "en":
+        if wert == wert.to_integral_value():
+            return f"{int(wert):,}"
+        return f"{wert:,.2f}"
     if wert == wert.to_integral_value():
         return f"{int(wert):,}".replace(",", ".")
     text = f"{wert:,.2f}"
     return text.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-def _datum(d):
+def _datum(d, sprache="de"):
+    """sprache="en": "18 Oct 2026" statt "18.10.2026" - vermeidet die MM/DD- vs. TT.MM.-
+    Verwechslungsgefahr des rein numerischen Formats bei englischsprachigen Kunden."""
     if d is None:
         return "–"
+    if sprache == "en":
+        return f"{d.day} {_MONATE_EN[d.month - 1]} {d.year}"
     return d.strftime("%d.%m.%Y")
 
 
@@ -364,28 +387,64 @@ def packschein_pdf_erzeugen(packschein):
     return buffer.getvalue()
 
 
+# Einheit-Anzeigetexte für das englische Angebots-PDF (18.10.2026) - EINHEIT_CHOICES in
+# models.py ist fest Deutsch (get_einheit_display()), da dieselben Einheiten auch auf
+# internen Dokumenten (Packschein) und in der CRM-Oberfläche selbst verwendet werden, die
+# nicht übersetzt werden. Nur hier fürs Kunden-PDF übersetzt; fehlt ein Schlüssel (sollte
+# bei den neun festen EINHEIT_CHOICES nicht vorkommen), wird die deutsche Anzeige genutzt.
+_EINHEIT_LABEL_EN = {
+    "stk": "pcs", "karton": "carton", "std": "hour", "tag": "day", "monat": "month",
+    "pauschal": "flat rate", "kg": "kg", "m": "m", "m2": "m²",
+}
+
+
 def angebot_pdf_erzeugen(angebot):
+    """sprache="en" (angebot.sprache, 18.10.2026): übersetzt nur Überschriften/Spalten-
+    köpfe/Zahlenformat des PDFs - die Positions-Bezeichnung selbst kommt unverändert aus
+    AngebotPosition.bezeichnung (beim Anlegen ggf. aus Artikel.bezeichnung_en vorbefüllt,
+    siehe views.artikel_daten_json), die Kalkulation (Preis/Menge/Summe) ist in jeder
+    Sprache exakt dieselbe."""
+    sprache = angebot.sprache
     deal = angebot.deal
     firma = deal.firma
     empfaenger_zeilen = _empfaenger_zeilen(firma, deal.kontakt)
-    meta_zeilen = [
-        ("Angebotsnummer", angebot.nummer),
-        ("Datum", _datum(angebot.datum)),
-        ("Gültig bis", _datum(angebot.gueltig_bis)),
-    ]
-    spalten = [
-        ("Pos.", 32, "l"), ("Bezeichnung", 187.5, "l"), ("Menge", 55, "r"),
-        ("Einheit", 55, "r"), ("Einzelpreis", 70, "r"), ("Gesamt", 68, "r"),
-    ]
+    if sprache == "en":
+        titel = "QUOTATION"
+        meta_zeilen = [
+            ("Quotation No.", angebot.nummer),
+            ("Date", _datum(angebot.datum, sprache)),
+            ("Valid until", _datum(angebot.gueltig_bis, sprache)),
+        ]
+        spalten = [
+            ("No.", 32, "l"), ("Description", 187.5, "l"), ("Qty", 55, "r"),
+            ("Unit", 55, "r"), ("Unit Price", 70, "r"), ("Total", 68, "r"),
+        ]
+        summen_label = "Total (net, plus applicable VAT)"
+        notizen_titel = "Terms" if angebot.notizen else None
+    else:
+        titel = "ANGEBOT"
+        meta_zeilen = [
+            ("Angebotsnummer", angebot.nummer),
+            ("Datum", _datum(angebot.datum)),
+            ("Gültig bis", _datum(angebot.gueltig_bis)),
+        ]
+        spalten = [
+            ("Pos.", 32, "l"), ("Bezeichnung", 187.5, "l"), ("Menge", 55, "r"),
+            ("Einheit", 55, "r"), ("Einzelpreis", 70, "r"), ("Gesamt", 68, "r"),
+        ]
+        summen_label = "Gesamtsumme (netto, zzgl. gesetzl. USt.)"
+        notizen_titel = "Konditionen" if angebot.notizen else None
+
     zeilen = []
     for p in angebot.positionen.all():
-        zeilen.append([p.position, p.bezeichnung, _menge(p.menge), p.get_einheit_display(),
-                        _eur_praezise(p.einzelpreis), _eur(p.gesamtpreis)])
-    summenzeilen = [("Gesamtsumme (netto, zzgl. gesetzl. USt.)", _eur(angebot.gesamtsumme))]
+        einheit_text = _EINHEIT_LABEL_EN.get(p.einheit, p.get_einheit_display()) if sprache == "en" else p.get_einheit_display()
+        zeilen.append([p.position, p.bezeichnung, _menge(p.menge, sprache), einheit_text,
+                        _eur_praezise(p.einzelpreis, sprache), _eur(p.gesamtpreis, sprache)])
+    summenzeilen = [(summen_label, _eur(angebot.gesamtsumme, sprache))]
     return _dokument_pdf_bytes(
-        titel="ANGEBOT", nummer=angebot.nummer, empfaenger_zeilen=empfaenger_zeilen,
+        titel=titel, nummer=angebot.nummer, empfaenger_zeilen=empfaenger_zeilen,
         meta_zeilen=meta_zeilen, spalten=spalten, zeilen=zeilen, summenzeilen=summenzeilen,
-        notizen_titel="Konditionen" if angebot.notizen else None, notizen_text=angebot.notizen,
+        notizen_titel=notizen_titel, notizen_text=angebot.notizen,
     )
 
 

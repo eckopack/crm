@@ -67,6 +67,16 @@ Stand 18.10.2026 (auf Wunsch von Björn, siehe Artikel.vertriebskanal-Doku in mo
   englische Zeile ist jetzt ausschließlich über die jeweilige "-EN"-Zweitlistung
   gepflegt. _mehrsprachig bleibt trotzdem bestehen (schadet bei einzeiligen Zellen
   nicht, falls doch mal wieder zweizeilig befüllt wird) statt sie zu entfernen.
+
+Stand 18.10.2026, zweite Änderung desselben Tages (Angebot.sprache, "eine Preisquelle,
+zwei Anzeigesprachen" - siehe Artikel.bezeichnung_en-Doku in models.py):
+
+- Zwei neue, optionale Spalten "Bezeichnung (Englisch)" und "Beschreibung (Englisch)":
+  füllen Artikel.bezeichnung_en/beschreibung_en - reine Anzeige-Übersetzung für Angebote
+  mit Sprache=Englisch, OHNE eigenen Preis/eigene Preisstaffeln (die bleiben die des
+  Artikels selbst, unabhängig von der Angebotssprache). Fehlt eine der Spalten oder ist
+  die Zelle leer, bleibt das jeweilige Feld leer - kein Fehler, keine Warnung (nicht
+  jeder Artikel braucht zwingend eine englische Übersetzung).
 """
 from decimal import Decimal, InvalidOperation
 
@@ -246,7 +256,9 @@ class Command(BaseCommand):
 
                 defaults = {
                     "bezeichnung": bezeichnung[:300],
+                    "bezeichnung_en": _s(wert(row, "Bezeichnung (Englisch)"))[:300],
                     "beschreibung": _mehrsprachig(_s(wert(row, beschreibung_spalte))) if beschreibung_spalte else "",
+                    "beschreibung_en": _s(wert(row, "Beschreibung (Englisch)")),
                     "geschaeftsbereich": GESCHAEFTSBEREICH_IMPORT,
                     "vertriebskanal": vertriebskanal,
                     "warengruppe": warengruppe,

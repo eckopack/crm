@@ -9,6 +9,7 @@
             · Firma: <a href="{{ angebot.deal.firma.get_absolute_url }}">{{ angebot.deal.firma.name }}</a>
         </div>
         <span class="badge text-bg-light border">{{ angebot.get_status_display }}</span>
+        <span class="badge text-bg-light border">{{ angebot.get_sprache_display }}</span>
     </div>
     <div class="d-print-none">
         <a href="{% url 'vertrieb:packschein_create' %}?angebot={{ angebot.pk }}" class="btn btn-primary">Packschein erstellen</a>

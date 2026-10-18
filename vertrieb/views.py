@@ -965,7 +965,13 @@ def artikel_daten_json(request, pk):
     von der Artikelauswahl in den Positionsformularen (Angebot/Packschein/Lieferschein/
     Rechnung), um die übrigen Felder der Zeile per JavaScript automatisch zu befüllen,
     ohne die Seite neu zu laden. Die Felder bleiben danach für den Nutzer frei editierbar -
-    das hier ist nur ein Ausfüll-Vorschlag, keine Festschreibung."""
+    das hier ist nur ein Ausfüll-Vorschlag, keine Festschreibung.
+
+    sprache=en (18.10.2026, Angebot.sprache - siehe Model-Doku "eine Preisquelle, zwei
+    Anzeigesprachen"): liefert bezeichnung_en statt bezeichnung, falls gepflegt - Preis/
+    Staffeln/Lagerbestand bleiben IMMER die des angefragten Artikels, unabhängig von der
+    Sprache. Fehlt bezeichnung_en (noch) für diesen Artikel, fällt die Vorbefüllung auf
+    die deutsche Bezeichnung zurück, statt leer zu bleiben."""
     artikel = get_object_or_404(Artikel, pk=pk)
     menge = request.GET.get("menge")
     try:
@@ -977,8 +983,10 @@ def artikel_daten_json(request, pk):
         {"ab_menge": s.ab_menge, "preis_netto": str(s.preis_netto)}
         for s in artikel.preisstaffeln.all()
     ]
+    sprache = request.GET.get("sprache")
+    bezeichnung = artikel.bezeichnung_en if sprache == "en" and artikel.bezeichnung_en else artikel.bezeichnung
     return JsonResponse({
-        "bezeichnung": artikel.bezeichnung,
+        "bezeichnung": bezeichnung,
         "einheit": artikel.einheit,
         "einzelpreis": str(preis) if preis is not None else None,
         "steuersatz": str(artikel.ust_satz),

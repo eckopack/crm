@@ -106,6 +106,21 @@
 # Trinkhalme/Musterkartons) tragen in Bezeichnung/Beschreibung nur noch die deutsche
 # Zeile - die englische Zeile wird jetzt ausschließlich über die jeweilige
 # "-EN"-Zweitlistung gepflegt, nicht mehr doppelt im selben Artikel.
+#
+# ARTIKELSTAMM-IMPORT, STAND 18.10.2026b (zweite Änderung desselben Tages, auf Wunsch
+# von Björn: "eine Preisquelle, zwei Anzeigesprachen" - siehe Angebot.sprache/Artikel.
+# bezeichnung_en-Doku in models.py): Neue Masterdatei
+# data/20261018b_LUAMO_Masterartikelstamm.xlsx (weiterhin 36 Zeilen) ergänzt zwei neue,
+# optionale Spalten "Bezeichnung (Englisch)" und "Beschreibung (Englisch)". Diese füllen
+# KEINEN zweiten, eigenständig bepreisten Artikel, sondern nur die Anzeige-Übersetzung
+# für ein Angebot mit Sprache=Englisch - Preis/Staffeln/Lagerbestand bleiben in jeder
+# Sprache die des einen (deutschen) Artikels. Für die 16 Hauptartikel (Großbesteck/
+# Kleinbesteck/Trinkhalme/Musterkartons) mit der bereits vorhandenen Bezeichnung/
+# Beschreibung ihrer jeweiligen Amazon-"-EN"-Zweitlistung vorbefüllt (dort stand die
+# englische Produktbeschreibung schon, nur mit falschem Retail-Preis) - Björn sollte den
+# Wortlaut für ein förmliches B2B-Angebot noch prüfen/anpassen. Die 20 übrigen Artikel
+# (Amazon-Zweitlistungen selbst sowie Einlage-/Flyer-Artikel, die bereits eigene DE-/EN-
+# Zeilen haben) bleiben hier leer.
 
 services:
   - type: web
@@ -122,7 +137,7 @@ services:
     startCommand: >
       python manage.py migrate &&
       python manage.py beispieldaten &&
-      python manage.py import_artikelstamm data/20261018_LUAMO_Masterartikelstamm.xlsx &&
+      python manage.py import_artikelstamm data/20261018b_LUAMO_Masterartikelstamm.xlsx &&
       gunicorn eckopack_crm.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: DJANGO_SECRET_KEY
