@@ -39,11 +39,21 @@
             </ul>
         </div>
         {% if artikel.beschreibung or artikel.notizen %}
-        <div class="card">
+        <div class="card mb-3">
             <div class="card-header fw-semibold">Beschreibung / Notizen</div>
             <div class="card-body">
                 {% if artikel.beschreibung %}<p>{{ artikel.beschreibung|linebreaks }}</p>{% endif %}
                 {% if artikel.notizen %}<p class="text-muted">{{ artikel.notizen|linebreaks }}</p>{% endif %}
+            </div>
+        </div>
+        {% endif %}
+        {% if artikel.bezeichnung_en or artikel.beschreibung_en %}
+        <div class="card">
+            <div class="card-header fw-semibold">Englische Anzeige (für Angebote mit Sprache=Englisch)</div>
+            <div class="card-body">
+                {% if artikel.bezeichnung_en %}<p class="mb-1"><strong>{{ artikel.bezeichnung_en }}</strong></p>{% endif %}
+                {% if artikel.beschreibung_en %}<p class="text-muted mb-0">{{ artikel.beschreibung_en|linebreaks }}</p>{% endif %}
+                <p class="small text-muted mt-2 mb-0">Ändert nichts an Preis/Lagerbestand – nur der Anzeigetext auf englischen Angeboten.</p>
             </div>
         </div>
         {% endif %}

@@ -61,6 +61,15 @@ ANGEBOT_STATUS_CHOICES = [
     ("abgelaufen", "Abgelaufen"),
 ]
 
+# Nach oben verschoben (18.10.2026), damit sowohl Angebot (unten) als auch Packschein
+# (weiter unten im File) SPRACHE_CHOICES referenzieren können - vorher stand die
+# Konstante erst zwischen beiden Klassen und war für Angebot schlicht noch nicht
+# definiert (NameError beim Laden des Moduls).
+SPRACHE_CHOICES = [
+    ("de", "Deutsch"),
+    ("en", "English"),
+]
+
 EINHEIT_CHOICES = [
     ("stk", "Stück"),
     ("karton", "Karton"),
@@ -293,6 +302,17 @@ class Angebot(models.Model):
     datum = models.DateField("Datum", default=timezone.now)
     gueltig_bis = models.DateField("Gültig bis", null=True, blank=True)
     status = models.CharField("Status", max_length=20, choices=ANGEBOT_STATUS_CHOICES, default="entwurf")
+    sprache = models.CharField(
+        "Sprache", max_length=2, choices=SPRACHE_CHOICES, default="de",
+        help_text=(
+            "Bestimmt die Sprache des Angebots-PDFs (Überschriften/Tabellenköpfe) sowie - "
+            "beim Auswählen eines Artikels in den Positionen - ob die deutsche oder "
+            "englische Anzeige-Bezeichnung vorgeschlagen wird (siehe Artikel.bezeichnung_en). "
+            "Ändert NICHT die Kalkulation: Preis/Staffeln/Lagerbestand kommen immer vom "
+            "selben Artikel, unabhängig von der gewählten Sprache - Amazon-Zweitlistungen "
+            "bleiben in jeder Sprache von der Positionsauswahl ausgeschlossen."
+        ),
+    )
     notizen = models.TextField("Notizen/Konditionen", blank=True)
     erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
 
@@ -369,11 +389,8 @@ MUSTERKARTON_ARTIKEL = {
     },
 }
 MUSTERKARTON_EINZELART_CHOICES = [(k, v["text"]["de"]) for k, v in MUSTERKARTON_ARTIKEL.items()]
-
-SPRACHE_CHOICES = [
-    ("de", "Deutsch"),
-    ("en", "English"),
-]
+# SPRACHE_CHOICES steht jetzt weiter oben im File (siehe dort) - wird hier von
+# Packschein/Angebot/MusterboxNachfassVorlage/MusterboxNachfassStatus genutzt.
 
 
 class Packschein(models.Model):
@@ -728,10 +745,34 @@ class Artikel(models.Model):
     dass eine versehentliche Auswahl in einem echten Angebot zu einer um den Faktor
     ~300 falschen Positions-Berechnung geführt hätte. vertriebskanal="amazon" wird deshalb
     aus der normalen Positionsauswahl ausgeschlossen (siehe forms.py); die Artikel bleiben
-    im Artikelstamm sichtbar/bearbeitbar, nur eben nicht in Angebot & Co. wählbar."""
+    im Artikelstamm sichtbar/bearbeitbar, nur eben nicht in Angebot & Co. wählbar.
+
+    bezeichnung_en/beschreibung_en (18.10.2026, auf Wunsch von Björn: "eine Preisquelle,
+    zwei Anzeigesprachen"): tragen die englische Anzeige-Übersetzung für die Positions-
+    Vorbefüllung auf einem Angebot mit sprache="en" (siehe Angebot.sprache, views.
+    artikel_daten_json). Bewusst KEIN zweiter, eigenständig bepreister Artikel - Preis,
+    Preisstaffeln und Lagerbestand kommen in jeder Angebotssprache aus diesem einen
+    Artikel. Das vermeidet genau das Problem, das wir gerade erst bei den Amazon-
+    Zweitlistungen gefunden haben (zwei Preise für dasselbe physische Produkt, die
+    auseinanderlaufen können). Für die 16 Hauptartikel initial aus der bereits
+    vorhandenen Amazon-EN-Zweitlistung übernommen (dort stand die englische Produkt-
+    beschreibung schon, nur mit falschem Retail-Preis) - inhaltlich von Björn noch zu
+    prüfen/anzupassen, falls der Amazon-Wortlaut für ein förmliches B2B-Angebot nicht
+    passt. Bleibt leer, wenn (noch) keine Übersetzung gepflegt ist; in dem Fall fällt
+    die Vorbefüllung auf die deutsche Bezeichnung zurück (siehe artikel_daten_json)."""
     artikelnummer = models.CharField("Artikelnummer", max_length=50, unique=True)
     bezeichnung = models.CharField("Bezeichnung", max_length=300)
+    bezeichnung_en = models.CharField(
+        "Bezeichnung (Englisch)", max_length=300, blank=True,
+        help_text="Anzeige-Übersetzung für Angebote mit Sprache=Englisch (siehe Model-Doku) "
+                   "- ändert nichts an Preis/Lagerbestand. Leer = Vorbefüllung nutzt die "
+                   "deutsche Bezeichnung.",
+    )
     beschreibung = models.TextField("Beschreibung", blank=True)
+    beschreibung_en = models.TextField(
+        "Beschreibung (Englisch)", blank=True,
+        help_text="Englische Anzeige-Übersetzung, siehe bezeichnung_en.",
+    )
     geschaeftsbereich = models.CharField(
         "Geschäftsbereich (ECKO-PACK)", max_length=30, choices=GESCHAEFTSBEREICH_CHOICES,
         default="einweg_serviceprodukte",

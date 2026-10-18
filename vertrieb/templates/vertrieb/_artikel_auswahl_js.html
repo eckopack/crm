@@ -18,7 +18,15 @@
 // durch die nächste freie Formset-Nummer, hängt die Zeile unten an die Tabelle an und
 // verdrahtet sie genauso wie die beim Laden vorhandenen Zeilen. Das Template gibt es nur,
 // wenn das jeweilige *_form.html es einbindet - ohne Template/Button passiert hier nichts.
+//
+// Sprache (18.10.2026, Angebot.sprache): gibt es auf der Seite ein Feld #id_sprache (nur
+// beim Angebot-Formular der Fall), wird dessen aktueller Wert an daten.json angehängt, damit
+// die Vorbefüllung die englische statt die deutsche Artikel-Bezeichnung nimmt (siehe
+// views.artikel_daten_json). Ändert sich #id_sprache, werden alle bereits befüllten Zeilen
+// einmal neu abgefragt, damit ein Sprachwechsel mitten im Angebot nicht übersehen wird -
+// das ändert nur Anzeigetexte, nie Preis/Menge/Einheit.
 document.addEventListener('DOMContentLoaded', function () {
+    var spracheFeld = document.getElementById('id_sprache');
     function feldFuerZeile(select, feld) {
         var match = select.id.match(/^id_(.+)-artikel$/);
         if (!match) return null;
@@ -53,6 +61,14 @@ document.addEventListener('DOMContentLoaded', function () {
         staffelFeld.style.display = '';
     }
 
+    function datenUrl(artikelId, menge) {
+        var url = '/artikel/' + encodeURIComponent(artikelId) + '/daten.json?';
+        var teile = [];
+        if (menge) teile.push('menge=' + encodeURIComponent(menge));
+        if (spracheFeld && spracheFeld.value) teile.push('sprache=' + encodeURIComponent(spracheFeld.value));
+        return url + teile.join('&');
+    }
+
     function aktualisiereZeile(select) {
         var artikelId = select.value;
         var hinweisFeld = document.getElementById(select.id + '-hinweis');
@@ -64,9 +80,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         var mengeFeld = feldFuerZeile(select, 'menge');
         var menge = mengeFeld ? mengeFeld.value : '';
-        var url = '/artikel/' + encodeURIComponent(artikelId) + '/daten.json'
-            + (menge ? ('?menge=' + encodeURIComponent(menge)) : '');
-        fetch(url).then(function (r) { return r.ok ? r.json() : null; }).then(function (daten) {
+        fetch(datenUrl(artikelId, menge)).then(function (r) { return r.ok ? r.json() : null; }).then(function (daten) {
             if (!daten) return;
             var bezeichnungFeld = feldFuerZeile(select, 'bezeichnung');
             if (bezeichnungFeld) bezeichnungFeld.value = daten.bezeichnung;
@@ -85,6 +99,23 @@ document.addEventListener('DOMContentLoaded', function () {
                 hinweisFeld.textContent = teile.join(' · ');
             }
             aktualisiereStaffelAuswahl(select, daten);
+        });
+    }
+
+    // Reagiert auf einen Sprachwechsel am Angebot (siehe #id_sprache unten) - fragt
+    // daten.json erneut ab, überschreibt aber bewusst NUR die Bezeichnung. Preis/Einheit/
+    // Steuersatz/Staffeln bleiben unangetastet, damit ein bereits manuell angepasster
+    // Preis (z. B. ein verhandelter Sonderpreis) durch den reinen Sprachwechsel nicht
+    // versehentlich wieder auf den Artikel-Standardpreis zurückgesetzt wird.
+    function aktualisiereBezeichnungFuerSprachwechsel(select) {
+        var artikelId = select.value;
+        if (!artikelId) return;
+        var mengeFeld = feldFuerZeile(select, 'menge');
+        var menge = mengeFeld ? mengeFeld.value : '';
+        fetch(datenUrl(artikelId, menge)).then(function (r) { return r.ok ? r.json() : null; }).then(function (daten) {
+            if (!daten) return;
+            var bezeichnungFeld = feldFuerZeile(select, 'bezeichnung');
+            if (bezeichnungFeld) bezeichnungFeld.value = daten.bezeichnung;
         });
     }
 
@@ -108,6 +139,14 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     document.querySelectorAll('select.artikel-auswahl').forEach(wireArtikelAuswahlZeile);
+
+    if (spracheFeld) {
+        spracheFeld.addEventListener('change', function () {
+            document.querySelectorAll('select.artikel-auswahl').forEach(function (select) {
+                if (select.value) aktualisiereBezeichnungFuerSprachwechsel(select);
+            });
+        });
+    }
 
     var hinzufuegenBtn = document.getElementById('position-hinzufuegen-btn');
     var vorlage = document.getElementById('leere-position-vorlage');

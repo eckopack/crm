@@ -47,8 +47,8 @@ class AngebotPositionInline(admin.TabularInline):
 
 @admin.register(Angebot)
 class AngebotAdmin(admin.ModelAdmin):
-    list_display = ("nummer", "deal", "datum", "status", "gesamtsumme")
-    list_filter = ("status",)
+    list_display = ("nummer", "deal", "datum", "status", "sprache", "gesamtsumme")
+    list_filter = ("status", "sprache")
     search_fields = ("nummer",)
     inlines = [AngebotPositionInline]
 

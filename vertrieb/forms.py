@@ -109,7 +109,7 @@ class AktivitaetForm(BootstrapFormMixin, forms.ModelForm):
 class AngebotForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Angebot
-        fields = ["deal", "datum", "gueltig_bis", "status", "notizen"]
+        fields = ["deal", "datum", "gueltig_bis", "status", "sprache", "notizen"]
         widgets = {
             "notizen": forms.Textarea(attrs={"rows": 3}),
             "datum": date_input(),
@@ -297,13 +297,14 @@ class ArtikelForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Artikel
         fields = [
-            "artikelnummer", "bezeichnung", "beschreibung", "geschaeftsbereich", "vertriebskanal",
-            "warengruppe", "einheit", "verkaufspreis", "ust_satz", "einkaufspreis",
-            "lagerbestand_aktuell", "mindestbestand", "verpackungseinheit_stk", "lagerort",
-            "lieferant", "status", "notizen",
+            "artikelnummer", "bezeichnung", "bezeichnung_en", "beschreibung", "beschreibung_en",
+            "geschaeftsbereich", "vertriebskanal", "warengruppe", "einheit", "verkaufspreis",
+            "ust_satz", "einkaufspreis", "lagerbestand_aktuell", "mindestbestand",
+            "verpackungseinheit_stk", "lagerort", "lieferant", "status", "notizen",
         ]
         widgets = {
             "beschreibung": forms.Textarea(attrs={"rows": 3}),
+            "beschreibung_en": forms.Textarea(attrs={"rows": 3}),
             "notizen": forms.Textarea(attrs={"rows": 3}),
         }
 
