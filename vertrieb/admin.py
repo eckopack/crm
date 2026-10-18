@@ -120,10 +120,11 @@ class MusterboxNachfassVorlageAdmin(admin.ModelAdmin):
     """Admin für die acht festen Wochen-Vorlagen der Musterbox-Nachfasskette (siehe
     Model-Doku): weder neue Zeilen hinzufügen noch bestehende löschen - die acht Wochen sind
     ein fester Rahmen, der per Datenmigration angelegt wird. Nur Betreff/Text je Woche sind
-    bearbeitbar."""
-    list_display = ("woche", "betreff", "aktualisiert_am", "aktualisiert_von")
-    ordering = ["woche"]
-    readonly_fields = ("woche", "aktualisiert_am", "aktualisiert_von")
+    bearbeitbar. Seit 18.10.2026 16 Zeilen (8 Wochen × 2 Sprachen) statt 8."""
+    list_display = ("woche", "sprache", "betreff", "aktualisiert_am", "aktualisiert_von")
+    list_filter = ("sprache",)
+    ordering = ["woche", "sprache"]
+    readonly_fields = ("woche", "sprache", "aktualisiert_am", "aktualisiert_von")
 
     def has_add_permission(self, request):
         return False
@@ -142,8 +143,8 @@ class MusterboxNachfassStatusAdmin(admin.ModelAdmin):
     zu pausieren/beenden (z.B. aktiv=False setzen) - Zeilen selbst werden ausschließlich
     automatisch angelegt (siehe nurture.musterversand_abgeschlossen), daher kein manuelles
     Hinzufügen."""
-    list_display = ("deal", "naechste_woche", "naechster_versand_am", "aktiv", "beendet_grund")
-    list_filter = ("aktiv", "beendet_grund")
+    list_display = ("deal", "sprache", "naechste_woche", "naechster_versand_am", "aktiv", "beendet_grund")
+    list_filter = ("aktiv", "sprache", "beendet_grund")
     search_fields = ("deal__titel", "deal__firma__name")
     readonly_fields = ("deal", "erstellt_am")
 

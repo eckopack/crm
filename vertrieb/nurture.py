@@ -30,6 +30,15 @@ musterversand_abgeschlossen() unten). Die Kette endet, sobald der Deal die Phase
 lead/qualifiziert verlässt (Angebot o.ä. = Reaktion da) oder nach Woche 8 ohne Reaktion -
 siehe management/commands/nachfass_pruefen.py für die genaue Ablaufsteuerung. Deals OHNE
 Musterversand-Historie bekommen seitdem gar keine automatische Kundenmail mehr.
+
+Teil 4 (18.10.2026, auf Wunsch von Björn): Bei der Musterkarton-Anforderung (views.
+musterkarton_anfordern) wird die dort gewählte Sprache (de/en) jetzt auf Packschein.sprache
+gespeichert und bei Versand auf MusterboxNachfassStatus.sprache übernommen - für die gesamte
+Dauer der 8-Wochen-Kette fest. ALLE Musterbox-bezogenen Kundenmails (die sofortige
+Versandbestätigung unten UND die 8 Wochen-Nachfassmails) werden entsprechend in der
+jeweiligen Sprache verschickt, inkl. {{ artikel }}-Platzhalter. Die unabhängige
+Lieferschein-Versandbestätigung (Teil 2, für echte Bestellungen) ist davon NICHT betroffen -
+bleibt bewusst deutsch, bis Björn das separat beauftragt.
 """
 
 import logging
@@ -42,9 +51,18 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 
 from . import pdf
-from .models import Aktivitaet, MusterboxNachfassStatus, MusterboxNachfassVorlage
+from .models import Aktivitaet, MUSTERKARTON_ARTIKEL, MusterboxNachfassStatus, MusterboxNachfassVorlage
 
 logger = logging.getLogger(__name__)
+
+# Versanddienstleister-Anzeigetext fuer die englische Versandbestaetigung - die Choices in
+# models.VERSANDDIENSTLEISTER_CHOICES sind deutsch beschriftet (zwei davon tatsaechlich
+# uebersetzungsbeduerftig, der Rest sind Markennamen und bleiben gleich).
+_VERSANDDIENSTLEISTER_TEXT_EN = {
+    "post": "Deutsche Post",
+    "abholung": "Pickup",
+    "sonstiges": "Other carrier",
+}
 
 NACHFASS_INTERVALL_TAGE = 7
 MUSTERBOX_NACHFASS_INTERVALL_TAGE = 7
@@ -72,15 +90,29 @@ def _empfaenger_email(deal):
 def musterversand_abgeschlossen(packschein):
     deal = packschein.deal
     empfaenger = _empfaenger_email(deal)
+    sprache = packschein.sprache
 
     if empfaenger:
-        betreff = f"Ihr Musterkarton ist unterwegs – ECKO-PACK"
-        zeilen = ["Guten Tag,", "", "Ihr Musterkarton ist auf dem Weg zu Ihnen"]
-        if packschein.trackingnummer:
-            versanddienstleister = packschein.get_versanddienstleister_display() or "Versanddienstleister"
-            zeilen[-1] += f" ({versanddienstleister}, Sendungsnummer {packschein.trackingnummer})"
-        zeilen[-1] += "."
-        zeilen += ["", "Wir freuen uns auf weitere Gespräche.", "", "Mit freundlichen Grüßen", "Ihr ECKO-PACK Team"]
+        if sprache == "en":
+            betreff = "Your sample box is on its way – ECKO-PACK"
+            zeilen = ["Hello,", "", "Your sample box is on its way to you"]
+            if packschein.trackingnummer:
+                versanddienstleister = (
+                    _VERSANDDIENSTLEISTER_TEXT_EN.get(packschein.versanddienstleister)
+                    or packschein.get_versanddienstleister_display()
+                    or "carrier"
+                )
+                zeilen[-1] += f" ({versanddienstleister}, tracking number {packschein.trackingnummer})"
+            zeilen[-1] += "."
+            zeilen += ["", "We look forward to staying in touch.", "", "Kind regards,", "Your ECKO-PACK Team"]
+        else:
+            betreff = "Ihr Musterkarton ist unterwegs – ECKO-PACK"
+            zeilen = ["Guten Tag,", "", "Ihr Musterkarton ist auf dem Weg zu Ihnen"]
+            if packschein.trackingnummer:
+                versanddienstleister = packschein.get_versanddienstleister_display() or "Versanddienstleister"
+                zeilen[-1] += f" ({versanddienstleister}, Sendungsnummer {packschein.trackingnummer})"
+            zeilen[-1] += "."
+            zeilen += ["", "Wir freuen uns auf weitere Gespräche.", "", "Mit freundlichen Grüßen", "Ihr ECKO-PACK Team"]
         text = "\n".join(zeilen)
         try:
             send_mail(betreff, text, settings.DEFAULT_FROM_EMAIL, [empfaenger], fail_silently=False)
@@ -122,6 +154,7 @@ def musterversand_abgeschlossen(packschein):
     MusterboxNachfassStatus.objects.get_or_create(
         deal=deal,
         defaults={
+            "sprache": sprache,
             "naechste_woche": 1,
             "naechster_versand_am": timezone.now() + timedelta(days=MUSTERBOX_NACHFASS_INTERVALL_TAGE),
         },
@@ -182,22 +215,34 @@ def lieferschein_versand_abgeschlossen(lieferschein):
     return True, None
 
 
-def _musterversand_artikel_text(deal):
+def _musterversand_artikel_text(deal, sprache="de"):
     """Leitet eine kurze, menschenlesbare Bezeichnung der beim Musterversand bestellten
     Artikelart ab (für den {{ artikel }}-Platzhalter der Musterbox-Nachfasskette) - aus den
-    Positionen des (letzten) Musterversand-Packscheins des Deals. Es gibt dafür bewusst
-    KEIN eigenes Feld auf Packschein (z.B. "Besteck"/"Trinkhalm"/"Beides") - das wäre eine
-    Doppelung der ohnehin erfassten Packschein-Positionen gewesen. Fallback auf einen
-    neutralen Text, falls sich nichts ableiten lässt (z.B. Packschein ohne Positionen)."""
+    Positionen des (letzten) Musterversand-Packscheins des Deals.
+
+    Korrektur (18.10.2026, im Zuge der Sprachumstellung entdeckt): filtert jetzt explizit auf
+    musterkarton_einzelart (nur von views.musterkarton_anfordern auf der eigentlichen
+    Musterkarton-Position gesetzt, NICHT auf dem Beileger/Flyer) statt wie vorher auf alle
+    Positions-Bezeichnungen - vorher stand im Platzhalter faelschlich auch der Beileger-Text
+    mit drin (z.B. "Besteck-Muster und Flyer Besteck DE" statt "Besteck").
+
+    Fallback auf einen neutralen Text, falls sich nichts ableiten lässt (z.B. Packschein ohne
+    Positionen, oder ein manuell ohne den Schnellaktions-Button angelegter Musterversand ohne
+    gesetztes musterkarton_einzelart)."""
+    neutral = {"de": "unsere Produkte", "en": "our products"}[sprache]
     packschein = deal.packscheine.filter(ist_musterversand=True).order_by("-datum", "-pk").first()
     if not packschein:
-        return "unsere Produkte"
-    bezeichnungen = list(
-        packschein.positionen.exclude(bezeichnung="").values_list("bezeichnung", flat=True).distinct()
-    )
-    if not bezeichnungen:
-        return "unsere Produkte"
-    return " und ".join(bezeichnungen)
+        return neutral
+    einzelarten = []
+    for einzelart in packschein.positionen.exclude(musterkarton_einzelart="").values_list(
+        "musterkarton_einzelart", flat=True
+    ):
+        if einzelart not in einzelarten:
+            einzelarten.append(einzelart)
+    if not einzelarten:
+        return neutral
+    verbindungswort = {"de": " und ", "en": " and "}[sprache]
+    return verbindungswort.join(MUSTERKARTON_ARTIKEL[einzelart]["text"][sprache] for einzelart in einzelarten)
 
 
 def musterbox_nachfass_senden(deal, status):
@@ -226,12 +271,12 @@ def musterbox_nachfass_senden(deal, status):
         )
         return False, meldung
 
-    vorlage = MusterboxNachfassVorlage.fuer_woche(status.naechste_woche)
+    vorlage = MusterboxNachfassVorlage.fuer_woche(status.naechste_woche, status.sprache)
     if vorlage is None:
-        meldung = f"keine Vorlage für Woche {status.naechste_woche} hinterlegt"
+        meldung = f"keine Vorlage für Woche {status.naechste_woche}/{status.sprache} hinterlegt"
         logger.error(
-            "Musterbox-Nachfassmail: keine Vorlage fuer Woche %s (Deal %s) - bitte im Admin anlegen",
-            status.naechste_woche, deal.pk,
+            "Musterbox-Nachfassmail: keine Vorlage fuer Woche %s/%s (Deal %s) - bitte im Admin anlegen",
+            status.naechste_woche, status.sprache, deal.pk,
         )
         return False, meldung
 
@@ -241,22 +286,23 @@ def musterbox_nachfass_senden(deal, status):
         "nachname": ansprechpartner.nachname if ansprechpartner else "",
         "firma": deal.firma.name,
         "deal_titel": deal.titel,
-        "artikel": _musterversand_artikel_text(deal),
+        "artikel": _musterversand_artikel_text(deal, status.sprache),
     })
     try:
         betreff = Template(vorlage.betreff).render(platzhalter)
         nachricht_text = Template(vorlage.text).render(platzhalter)
     except Exception as exc:
         logger.exception(
-            "Musterbox-Nachfassmail-Vorlage (Woche %s) konnte nicht gerendert werden (Deal %s) - "
+            "Musterbox-Nachfassmail-Vorlage (Woche %s/%s) konnte nicht gerendert werden (Deal %s) - "
             "vermutlich ein Tippfehler in einem {{ Platzhalter }} im Admin",
-            status.naechste_woche, deal.pk,
+            status.naechste_woche, status.sprache, deal.pk,
         )
         return False, str(exc)
 
     kontext = {
         "ansprechpartner": ansprechpartner,
         "nachricht_text": nachricht_text,
+        "sprache": status.sprache,
         "site_url": SITE_URL,
         "logo_url": f"{SITE_URL}/static/img/eckopack-logo.png",
     }

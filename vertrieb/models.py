@@ -352,6 +352,30 @@ class AngebotPosition(models.Model):
         return self.menge * self.einzelpreis
 
 
+# Gemeinsame Quelle fuer Musterkarton-Artikelnummern + zweisprachige Anzeigetexte -
+# bewusst hier in models.py statt in views.py oder nurture.py, weil beide Module davon
+# importieren muessen (views.py importiert nurture.py, umgekehrt ginge es wegen des
+# zirkulaeren Imports nicht). Der Musterkarton selbst ist ein einziger, zweisprachig
+# bedruckter Artikel (siehe views.musterkarton_anfordern) - nur die "text"-Werte hier
+# unterscheiden sich je Sprache, die Artikelnummer nicht.
+MUSTERKARTON_ARTIKEL = {
+    "besteck": {
+        "artikelnummer": "LUA-MUSTER-BESTECK",
+        "text": {"de": "Besteck", "en": "cutlery"},
+    },
+    "trinkhalm": {
+        "artikelnummer": "LUA-MUSTER-STROH",
+        "text": {"de": "Trinkhalme", "en": "straws"},
+    },
+}
+MUSTERKARTON_EINZELART_CHOICES = [(k, v["text"]["de"]) for k, v in MUSTERKARTON_ARTIKEL.items()]
+
+SPRACHE_CHOICES = [
+    ("de", "Deutsch"),
+    ("en", "English"),
+]
+
+
 class Packschein(models.Model):
     """Internes Kommissionier-/Packdokument fürs Lagerpersonal.
 
@@ -379,6 +403,14 @@ class Packschein(models.Model):
     )
     versanddienstleister = models.CharField(
         "Versanddienstleister", max_length=20, choices=VERSANDDIENSTLEISTER_CHOICES, blank=True
+    )
+    sprache = models.CharField(
+        "Sprache", max_length=2, choices=SPRACHE_CHOICES, default="de",
+        help_text=(
+            "Bei Musterversand: die beim Anfordern gewählte Sprache (bestimmt Beileger/Flyer "
+            "sowie - ab Versand - Sprache der Bestätigungs- und Nachfassmails). Bei allen "
+            "anderen Packscheinen ohne Bedeutung."
+        ),
     )
     trackingnummer = models.CharField("Trackingnummer", max_length=50, blank=True)
     versendet_am = models.DateField("Versendet am", null=True, blank=True)
@@ -426,6 +458,15 @@ class PackscheinPosition(models.Model):
     menge = models.DecimalField("Menge", max_digits=10, decimal_places=2, default=1)
     einheit = models.CharField("Einheit", max_length=10, choices=EINHEIT_CHOICES, default="stk")
     gepackt = models.BooleanField("Gepackt", default=False)
+    musterkarton_einzelart = models.CharField(
+        "Musterkarton-Art", max_length=20, choices=MUSTERKARTON_EINZELART_CHOICES, blank=True,
+        help_text=(
+            "Nur gesetzt für die eigentliche Musterkarton-Position (nicht den Beileger/Flyer) "
+            "einer von 'Musterkarton anfordern' angelegten Position - liefert den "
+            "{{ artikel }}-Platzhaltertext der Musterbox-Nachfasskette (siehe nurture.py), "
+            "ohne die Beileger-Bezeichnung mit einzubeziehen."
+        ),
+    )
 
     class Meta:
         verbose_name = "Packscheinposition"
@@ -941,9 +982,15 @@ class MusterboxNachfassVorlage(models.Model):
     Text werden als Django-Template ausgewertet, verfügbar sind: {{ vorname }}, {{ nachname }},
     {{ firma }}, {{ deal_titel }}, {{ artikel }} (die beim Musterversand bestellte Artikelart,
     z.B. "Besteck" bzw. "Trinkhalme" - aus den Packschein-Positionen abgeleitet, da es dafür
-    kein eigenes Feld gibt; siehe nurture._musterversand_artikel_text)."""
+    kein eigenes Feld gibt; siehe nurture._musterversand_artikel_text).
 
-    woche = models.PositiveSmallIntegerField("Woche", unique=True)
+    Seit 18.10.2026 (auf Wunsch von Björn: englisch angeforderte Musterboxen sollen auch
+    englische Nachfassmails bekommen) gibt es je Woche ZWEI Vorlagen - eine je Sprache
+    (siehe sprache-Feld unten) - statt einer. woche ist deshalb nicht mehr für sich allein
+    unique, sondern nur noch die Kombination (woche, sprache)."""
+
+    woche = models.PositiveSmallIntegerField("Woche")
+    sprache = models.CharField("Sprache", max_length=2, choices=SPRACHE_CHOICES, default="de")
     betreff = models.CharField(
         "Betreff", max_length=200,
         help_text="Platzhalter möglich: {{ firma }}, {{ deal_titel }}, {{ artikel }}.",
@@ -951,10 +998,10 @@ class MusterboxNachfassVorlage(models.Model):
     text = models.TextField(
         "Nachrichtentext",
         help_text=(
-            "Nur der Nachrichtentext - Anrede ('Guten Tag ...') und Grußformel/Unterschrift "
-            "stehen fest im Vorlagen-Rahmen und müssen hier nicht wiederholt werden. "
-            "Platzhalter: {{ vorname }}, {{ nachname }}, {{ firma }}, {{ deal_titel }}, "
-            "{{ artikel }}. Leerzeilen werden als eigene Absätze dargestellt."
+            "Nur der Nachrichtentext - Anrede ('Guten Tag ...'/'Hello ...') und "
+            "Grußformel/Unterschrift stehen fest im Vorlagen-Rahmen und müssen hier nicht "
+            "wiederholt werden. Platzhalter: {{ vorname }}, {{ nachname }}, {{ firma }}, "
+            "{{ deal_titel }}, {{ artikel }}. Leerzeilen werden als eigene Absätze dargestellt."
         ),
     )
     aktualisiert_am = models.DateTimeField("Zuletzt geändert am", auto_now=True)
@@ -966,14 +1013,17 @@ class MusterboxNachfassVorlage(models.Model):
     class Meta:
         verbose_name = "Musterbox-Nachfassmail (Vorlage je Woche)"
         verbose_name_plural = "Musterbox-Nachfassmails (Vorlagen je Woche)"
-        ordering = ["woche"]
+        ordering = ["woche", "sprache"]
+        constraints = [
+            models.UniqueConstraint(fields=["woche", "sprache"], name="musterbox_nachfass_woche_sprache_unique"),
+        ]
 
     def __str__(self):
-        return f"Woche {self.woche}: {self.betreff}"
+        return f"Woche {self.woche} ({self.get_sprache_display()}): {self.betreff}"
 
     @classmethod
-    def fuer_woche(cls, woche):
-        return cls.objects.filter(woche=woche).first()
+    def fuer_woche(cls, woche, sprache="de"):
+        return cls.objects.filter(woche=woche, sprache=sprache).first()
 
 
 class MusterboxNachfassStatus(models.Model):
@@ -997,6 +1047,14 @@ class MusterboxNachfassStatus(models.Model):
 
     deal = models.OneToOneField(
         Deal, verbose_name="Deal", on_delete=models.CASCADE, related_name="musterbox_nachfass_status",
+    )
+    sprache = models.CharField(
+        "Sprache", max_length=2, choices=SPRACHE_CHOICES, default="de",
+        help_text=(
+            "Beim Anlegen der Kette (musterversand_abgeschlossen) aus Packschein.sprache "
+            "übernommen und für die gesamte Kette fest - eine spätere Änderung am Deal "
+            "ändert eine bereits laufende Kette nicht mehr."
+        ),
     )
     naechste_woche = models.PositiveSmallIntegerField("Nächste Woche", default=1)
     naechster_versand_am = models.DateTimeField("Nächster Versand fällig am", default=timezone.now)
