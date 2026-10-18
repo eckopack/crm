@@ -11,6 +11,7 @@
             {% if lieferschein.packschein %}· Packschein: <a href="{{ lieferschein.packschein.get_absolute_url }}">{{ lieferschein.packschein.nummer }}</a>{% endif %}
         </div>
         <span class="badge text-bg-light border">{{ lieferschein.get_status_display }}</span>
+        <span class="badge text-bg-light border">{{ lieferschein.get_sprache_display }}</span>
     </div>
     <div class="d-print-none">
         {% if lieferschein.tatsaechlich_versendet %}

@@ -201,7 +201,7 @@ PackscheinPositionFormSet = inlineformset_factory(
 class LieferscheinForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Lieferschein
-        fields = ["deal", "angebot", "packschein", "datum", "status", "notizen"]
+        fields = ["deal", "angebot", "packschein", "datum", "status", "sprache", "notizen"]
         widgets = {
             "notizen": forms.Textarea(attrs={"rows": 3}),
             "datum": date_input(),
@@ -258,7 +258,7 @@ class RechnungForm(BootstrapFormMixin, forms.ModelForm):
         model = Rechnung
         fields = [
             "deal", "angebot", "lieferschein", "rechnungsdatum", "leistungsdatum",
-            "zahlungsziel_tage", "status", "notizen",
+            "zahlungsziel_tage", "status", "sprache", "notizen",
         ]
         widgets = {
             "notizen": forms.Textarea(attrs={"rows": 3}),

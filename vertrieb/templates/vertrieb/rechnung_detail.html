@@ -10,6 +10,7 @@
             {% if rechnung.lieferschein %}· Lieferschein: <a href="{{ rechnung.lieferschein.get_absolute_url }}">{{ rechnung.lieferschein.nummer }}</a>{% endif %}
         </div>
         <span class="badge text-bg-light border">{{ rechnung.get_status_display }}</span>
+        <span class="badge text-bg-light border">{{ rechnung.get_sprache_display }}</span>
         {% if not rechnung.ist_bearbeitbar %}
         <span class="badge text-bg-warning">Nach Versand nicht mehr änderbar (GoBD)</span>
         {% endif %}

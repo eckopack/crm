@@ -11,12 +11,47 @@ from django.conf import settings
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_RIGHT
 from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-BRIEFPAPIER_PFAD = os.path.join(settings.BASE_DIR, "vertrieb", "pdf_assets", "briefpapier.png")
+# Briefpapier als Vektor-Zeichenfunktion statt fixem Bild (18.10.2026, siehe
+# _hintergrund_zeichnen unten): vorher wurde hier ein fertig gerendertes PNG
+# (briefpapier.png, nur Deutsch) per drawImage() als Hintergrund eingeklebt. Björns
+# Anforderung "Angebot/Lieferschein/Rechnung müssen komplett in der gewählten Sprache
+# rausgehen, inkl. Briefpapier" ließ sich damit nicht erfüllen, ohne zwei Bilddateien zu
+# pflegen UND jede künftige Adress-/Bankänderung doppelt nachzuziehen. Stattdessen wird das
+# Briefpapier jetzt komplett aus Vektorelementen (Formen + Text) nachgebaut: eine einzige
+# Quelle, die Angebot/Lieferschein/Rechnung-Hintergrund für beide Sprachen erzeugt. Die
+# Positionen/Farben/Schriftgrößen unten sind per Pixelanalyse aus dem alten
+# briefpapier.png (1654×2339px, 200dpi A4) hergeleitet - siehe PX2PT-Hilfsfunktion.
+# briefpapier.png selbst bleibt unverändert im Repo (Referenz/Fallback), wird aber ab jetzt
+# nirgends mehr geladen.
+_PDF_ASSETS = os.path.join(settings.BASE_DIR, "vertrieb", "pdf_assets")
+_FONT_REGULAR_PFAD = os.path.join(_PDF_ASSETS, "fonts", "Poppins-Regular.ttf")
+_FONT_MEDIUM_PFAD = os.path.join(_PDF_ASSETS, "fonts", "Poppins-Medium.ttf")
+LOGO_ICON_PFAD = os.path.join(_PDF_ASSETS, "logo_icon.png")
+
+# Poppins ist KEINE der 14 reportlab-eingebauten Standardschriften (Helvetica/Times/
+# Courier) - muss daher als TTF-Datei mitgeliefert und registriert werden, sonst würde ein
+# Deploy auf Render (kein Google-Fonts-Paket im Container) mit fehlender Schrift fehlschlagen
+# oder lautlos auf irgendeinen Fallback springen. Dateien liegen unter pdf_assets/fonts/
+# (Google Fonts, SIL Open Font License - frei einsetzbar). Nur fürs Briefpapier (Logo/
+# Fußzeile) verwendet; die eigentlichen Dokumentinhalte (Positionstabelle etc.) bleiben bei
+# Helvetica, wie bisher.
+if "Poppins" not in pdfmetrics.getRegisteredFontNames():
+    pdfmetrics.registerFont(TTFont("Poppins", _FONT_REGULAR_PFAD))
+    pdfmetrics.registerFont(TTFont("Poppins-Medium", _FONT_MEDIUM_PFAD))
 
 SEITENBREITE, SEITENHOEHE = A4
+_PX2PT = SEITENHOEHE / 2339.0  # Umrechnung Pixel (altes 200dpi-Referenzbild) -> PDF-Punkte
+
+
+def _px(x, y):
+    """Pixelkoordinate (Ursprung oben links, wie im alten briefpapier.png) -> reportlab-
+    Punktkoordinate (Ursprung unten links)."""
+    return x * _PX2PT, SEITENHOEHE - y * _PX2PT
 
 # RAND_LINKS war bisher 56pt und damit ~15,5pt weiter links als die im Briefpapier-
 # Hintergrundbild (briefpapier.png) fest eingebrannte Adresszeile ("ECKO-PACK GMBH ·
@@ -109,17 +144,21 @@ def _datum(d, sprache="de"):
     return d.strftime("%d.%m.%Y")
 
 
-def _satz_text(satz):
+def _satz_text(satz, sprache="de"):
     satz_normal = satz.normalize()
-    if satz_normal == satz_normal.to_integral():
-        return f"{int(satz_normal)} %"
-    return f"{satz_normal} %"
+    text = f"{int(satz_normal)}" if satz_normal == satz_normal.to_integral() else f"{satz_normal}"
+    return f"{text}%" if sprache == "en" else f"{text} %"
 
 
-def _empfaenger_zeilen(firma, kontakt=None):
+def _empfaenger_zeilen(firma, kontakt=None, sprache="de"):
+    """sprache="en" (18.10.2026): "z. Hd." -> "Attn." - war in der ursprünglichen
+    Angebot-Sprachfunktion (PR #13) übersehen worden, da kein Testfall einen Kontakt mit
+    Empfänger-Adresse auf einem englischen Angebot geprüft hatte. Fällt hier auf, weil
+    jetzt auch Lieferschein/Rechnung dieselbe Funktion sprachabhängig nutzen."""
     zeilen = [firma.name]
     if kontakt:
-        zeilen.append(f"z. Hd. {kontakt.vorname} {kontakt.nachname}")
+        anrede = "Attn." if sprache == "en" else "z. Hd."
+        zeilen.append(f"{anrede} {kontakt.vorname} {kontakt.nachname}")
     if firma.strasse:
         zeilen.append(firma.strasse)
     plz_ort = f"{firma.plz} {firma.ort}".strip()
@@ -130,19 +169,149 @@ def _empfaenger_zeilen(firma, kontakt=None):
     return zeilen
 
 
-def _hintergrund_zeichnen(canvas_obj, doc):
-    canvas_obj.saveState()
-    if os.path.exists(BRIEFPAPIER_PFAD):
-        canvas_obj.drawImage(
-            BRIEFPAPIER_PFAD, 0, 0, width=SEITENBREITE, height=SEITENHOEHE,
-            preserveAspectRatio=False, mask="auto",
-        )
-    canvas_obj.restoreState()
+# ---------------------------------------------------------------------------
+# Briefpapier-Hintergrund (Vektor-Nachbau, siehe Modul-Kommentar oben)
+# ---------------------------------------------------------------------------
+# Alle Koordinaten unten sind Pixel-Koordinaten aus dem alten briefpapier.png
+# (1654x2339px @ 200dpi), per Konturerkennung (mint-farbige Flächen) bzw. Pixelanalyse
+# (Text-Bounding-Boxes, Farben) exakt vermessen - siehe _px() oben für die Umrechnung.
+
+MINT_ECKE = colors.HexColor("#00ffaa")  # Farbe der Eckgrafiken (gemessen) - bewusst eigene
+# Konstante, nicht identisch mit MINT (#05db8e, die etwas gedämpftere Akzentfarbe für
+# Trennlinien/Tabellenkopf im Dokumentinhalt, unverändert aus der bisherigen Gestaltung).
+
+_BRIEFPAPIER_ECKE_OBEN_RECHTS = [
+    (1274, 0), (1653, 500), (1653, 315), (1561, 195), (1653, 44),
+    (1653, 0), (1549, 0), (1489, 98), (1414, 0),
+]
+_BRIEFPAPIER_ECKE_UNTEN_LINKS = [(0, 2026), (0, 2211), (96, 2338), (236, 2338)]
+_BRIEFPAPIER_STRICHE = [(29, 69, 826.5), (29, 85, 1170), (29, 69, 1653)]  # (x0, x1, y_mitte)
+
+_BRIEFPAPIER_FUSSZEILE_DE = [
+    [("ECKO-PACK GmbH", True), ("Wasbeker Straße 324", False), ("D-24537 Neumünster", False),
+     ("T. +49 (0) 4331 - 1348 - 101", False), ("info@ecko-pack.de", False), ("www.ecko-pack.de", False)],
+    [("Geschäftsführung:", True), ("Björn Gallenkamp", False), ("Carmen Ungnade-Täuberecht", False),
+     ("Amtsgericht Kiel · HRB 22209 KI", False), ("USt-IdNr.: DE334919463", False)],
+    [("Bankverbindungen:", True), ("VR Bank zwischen den Meeren eG", False),
+     ("IBAN: DE82 2139 0008 0004 3740 88", False), ("BIC: GENODEF1NSH", False),
+     ("HypoVereinsbank", False), ("IBAN: DE16 2003 0000 0020 5419 12", False),
+     ("BIC: HYVEDEMMXXX", False)],
+]
+# Englische Fußzeile (18.10.2026, auf Wunsch von Björn: "Amtsgericht Kiel · HRB 22209 KI"
+# vollständig übersetzt, nicht nur die üblichen Label wie USt-IdNr./Geschäftsführung -
+# Björns ausdrückliche Entscheidung, siehe Konversation). Adresse/IBAN/BIC/Namen bleiben
+# unverändert (international ohnehin verständlich bzw. nicht übersetzbar).
+_BRIEFPAPIER_FUSSZEILE_EN = [
+    [("ECKO-PACK GmbH", True), ("Wasbeker Straße 324", False), ("D-24537 Neumünster", False),
+     ("Germany", False), ("Phone: +49 (0) 4331 - 1348 - 101", False),
+     ("info@ecko-pack.de", False), ("www.ecko-pack.de", False)],
+    [("Management:", True), ("Björn Gallenkamp", False), ("Carmen Ungnade-Täuberecht", False),
+     ("Local Court Kiel · HRB 22209 KI", False), ("VAT ID: DE334919463", False)],
+    [("Bank details:", True), ("VR Bank zwischen den Meeren eG", False),
+     ("IBAN: DE82 2139 0008 0004 3740 88", False), ("BIC: GENODEF1NSH", False),
+     ("HypoVereinsbank", False), ("IBAN: DE16 2003 0000 0020 5419 12", False),
+     ("BIC: HYVEDEMMXXX", False)],
+]
 
 
-def _kopf_erste_seite(empfaenger_zeilen, meta_zeilen, titel):
+def _briefpapier_text_getrackt(c, text, x, y, font, groesse, farbe, tracking):
+    """Zeichnet Text mit zusätzlichem Buchstabenabstand (tracking) - reportlab kennt das
+    nicht nativ; wird für Logo/Tagline gebraucht, die im Original deutlich gesperrt gesetzt
+    sind (siehe Pixelanalyse)."""
+    c.setFont(font, groesse)
+    c.setFillColor(farbe)
+    cx = x
+    for ch in text:
+        c.drawString(cx, y, ch)
+        cx += c.stringWidth(ch, font, groesse) + tracking
+
+
+def _hintergrund_zeichnen(canvas_obj, doc, sprache="de"):
+    c = canvas_obj
+    c.saveState()
+
+    # Eckgrafiken (mint, sprachunabhängig)
+    c.setFillColor(MINT_ECKE)
+    for form in (_BRIEFPAPIER_ECKE_OBEN_RECHTS, _BRIEFPAPIER_ECKE_UNTEN_LINKS):
+        pfad = c.beginPath()
+        punkte = [_px(x, y) for x, y in form]
+        pfad.moveTo(*punkte[0])
+        for punkt in punkte[1:]:
+            pfad.lineTo(*punkt)
+        pfad.close()
+        c.drawPath(pfad, fill=1, stroke=0)
+
+    # Strich-Akzente am linken Rand (sprachunabhängig)
+    c.setStrokeColor(GRAU)
+    c.setLineWidth(1.4)
+    for x0, x1, y_mitte in _BRIEFPAPIER_STRICHE:
+        xx0, yy = _px(x0, y_mitte)
+        xx1, _ = _px(x1, y_mitte)
+        c.line(xx0, yy, xx1, yy)
+
+    # Logo "ECKO [Icon] PACK" (sprachunabhängig - Wortmarke bleibt immer Englisch/neutral)
+    logo_groesse, logo_tracking = 27.5, 1.6
+    ecko_x, ecko_y = _px(575, 186)
+    _briefpapier_text_getrackt(c, "ECKO", ecko_x, ecko_y, "Poppins", logo_groesse, DUNKEL, logo_tracking)
+    pack_x, pack_y = _px(880, 186)
+    _briefpapier_text_getrackt(c, "PACK", pack_x, pack_y, "Poppins", logo_groesse, DUNKEL, logo_tracking)
+    if os.path.exists(LOGO_ICON_PFAD):
+        icon_x, icon_y = _px(797, 185)
+        icon_breite = (869 - 797) * _PX2PT
+        icon_hoehe = (185 - 131) * _PX2PT
+        c.drawImage(LOGO_ICON_PFAD, icon_x, icon_y, width=icon_breite, height=icon_hoehe, mask="auto")
+
+    # Tagline (sprachunabhängig - im Original bereits Englisch)
+    tagline = "[ INTELLIGENT FOOD PACKAGING ]"
+    tag_groesse, tag_tracking = 12.8, 1.4
+    c.setFont("Poppins", tag_groesse)
+    tag_breite = sum(c.stringWidth(ch, "Poppins", tag_groesse) + tag_tracking for ch in tagline) - tag_tracking
+    tag_start_x = (618 + 1019) / 2 * _PX2PT - tag_breite / 2
+    _, tag_y = _px(0, 228)
+    _briefpapier_text_getrackt(c, tagline, tag_start_x, tag_y, "Poppins", tag_groesse, DUNKEL, tag_tracking)
+
+    # Adresszeile unter dem Logo (18.10.2026, Björns Korrektur: diese Zeile sitzt an der
+    # Stelle, an der später die Kundenadresse im Fensterumschlag erscheint - darf deshalb
+    # höchstens bis zur Papierhälfte reichen, nicht darüber hinaus. Statt einer fest
+    # kalibrierten Schriftgröße (die bei der englischen Variante mit ", Germany" sowie durch
+    # die Schriftersatz-Breite von Poppins bereits über die Hälfte hinausragte) wird die
+    # Größe hier aus der tatsächlichen Textbreite berechnet - bleibt automatisch korrekt,
+    # auch wenn sich Adresse oder Übersetzung später mal ändern.
+    if sprache == "en":
+        adresszeile = "ECKO-PACK GMBH · Wasbeker Straße 324 · D-24537 Neumünster, Germany"
+    else:
+        adresszeile = "ECKO-PACK GMBH · Wasbeker Straße 324 · D-24537 Neumünster"
+    addr_x, addr_y = _px(198, 368)
+    addr_max_breite = (SEITENBREITE / 2) - addr_x
+    addr_basis_groesse = 10.3
+    addr_breite = pdfmetrics.stringWidth(adresszeile, "Poppins", addr_basis_groesse)
+    # 0.96 Sicherheitsabstand, damit die Zeile nicht exakt auf der Papierhälfte endet
+    addr_groesse = addr_basis_groesse if addr_breite <= addr_max_breite else (
+        addr_basis_groesse * addr_max_breite / addr_breite * 0.96
+    )
+    c.setFont("Poppins", addr_groesse)
+    c.setFillColor(GRAU)
+    c.drawString(addr_x, addr_y, adresszeile)
+
+    # Fußzeile, drei Spalten (sprachabhängig)
+    fuss_groesse, fuss_zeilenabstand = 6.9, 9.72
+    spalten_x = [_px(309, 0)[0], _px(685, 0)[0], _px(1116, 0)[0]]
+    _, fuss_start_y = _px(0, 2098 + 16)
+    fusszeile = _BRIEFPAPIER_FUSSZEILE_EN if sprache == "en" else _BRIEFPAPIER_FUSSZEILE_DE
+    for spalte_x, zeilen in zip(spalten_x, fusszeile):
+        y = fuss_start_y
+        for text, fett in zeilen:
+            c.setFont("Poppins-Medium" if fett else "Poppins", fuss_groesse)
+            c.setFillColor(GRAU)
+            c.drawString(spalte_x, y, text)
+            y -= fuss_zeilenabstand
+
+    c.restoreState()
+
+
+def _kopf_erste_seite(empfaenger_zeilen, meta_zeilen, titel, sprache="de"):
     def zeichnen(canvas_obj, doc):
-        _hintergrund_zeichnen(canvas_obj, doc)
+        _hintergrund_zeichnen(canvas_obj, doc, sprache)
         canvas_obj.saveState()
 
         y = HEADER_START_Y
@@ -173,13 +342,14 @@ def _kopf_erste_seite(empfaenger_zeilen, meta_zeilen, titel):
     return zeichnen
 
 
-def _kopf_folgeseite(titel, nummer):
+def _kopf_folgeseite(titel, nummer, sprache="de"):
     def zeichnen(canvas_obj, doc):
-        _hintergrund_zeichnen(canvas_obj, doc)
+        _hintergrund_zeichnen(canvas_obj, doc, sprache)
         canvas_obj.saveState()
         canvas_obj.setFont("Helvetica", 9)
         canvas_obj.setFillColor(GRAU)
-        canvas_obj.drawString(RAND_LINKS, HEADER_START_Y + 30, f"{titel} {nummer} – Fortsetzung")
+        fortsetzung = "continued" if sprache == "en" else "Fortsetzung"
+        canvas_obj.drawString(RAND_LINKS, HEADER_START_Y + 30, f"{titel} {nummer} – {fortsetzung}")
         canvas_obj.restoreState()
     return zeichnen
 
@@ -237,7 +407,8 @@ def _summentabelle(zeilen, fett_letzte=True):
 
 
 def _dokument_pdf_bytes(*, titel, nummer, empfaenger_zeilen, meta_zeilen, spalten, zeilen,
-                         summenzeilen=None, notizen_titel=None, notizen_text=None, fusshinweis=None):
+                         summenzeilen=None, notizen_titel=None, notizen_text=None, fusshinweis=None,
+                         sprache="de"):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=A4,
@@ -265,8 +436,8 @@ def _dokument_pdf_bytes(*, titel, nummer, empfaenger_zeilen, meta_zeilen, spalte
 
     doc.build(
         story,
-        onFirstPage=_kopf_erste_seite(empfaenger_zeilen, meta_zeilen, titel),
-        onLaterPages=_kopf_folgeseite(titel, nummer),
+        onFirstPage=_kopf_erste_seite(empfaenger_zeilen, meta_zeilen, titel, sprache),
+        onLaterPages=_kopf_folgeseite(titel, nummer, sprache),
     )
     return buffer.getvalue()
 
@@ -407,7 +578,7 @@ def angebot_pdf_erzeugen(angebot):
     sprache = angebot.sprache
     deal = angebot.deal
     firma = deal.firma
-    empfaenger_zeilen = _empfaenger_zeilen(firma, deal.kontakt)
+    empfaenger_zeilen = _empfaenger_zeilen(firma, deal.kontakt, sprache)
     if sprache == "en":
         titel = "QUOTATION"
         meta_zeilen = [
@@ -444,72 +615,127 @@ def angebot_pdf_erzeugen(angebot):
     return _dokument_pdf_bytes(
         titel=titel, nummer=angebot.nummer, empfaenger_zeilen=empfaenger_zeilen,
         meta_zeilen=meta_zeilen, spalten=spalten, zeilen=zeilen, summenzeilen=summenzeilen,
-        notizen_titel=notizen_titel, notizen_text=angebot.notizen,
+        notizen_titel=notizen_titel, notizen_text=angebot.notizen, sprache=sprache,
     )
 
 
 def lieferschein_pdf_erzeugen(lieferschein):
+    """sprache=lieferschein.sprache (18.10.2026, wie Angebot.sprache): übersetzt Briefpapier,
+    Überschriften/Spaltenköpfe, Zahlen-/Datumsformat und den Fußhinweis. Die Vorbefüllung des
+    Felds beim Anlegen (aus dem verknüpften Angebot/Packschein) sorgt dafür, dass ein Deal in
+    der Regel durchgängig in einer Sprache läuft (siehe views.lieferschein_erstellen) - hier
+    wird aber bewusst immer lieferschein.sprache selbst gelesen, nicht nochmal das Angebot,
+    falls jemand die Sprache am Lieferschein bewusst abweichend gesetzt hat."""
+    sprache = lieferschein.sprache
     deal = lieferschein.deal
     firma = deal.firma
-    empfaenger_zeilen = _empfaenger_zeilen(firma, deal.kontakt)
-    meta_zeilen = [
-        ("Lieferscheinnummer", lieferschein.nummer),
-        ("Lieferdatum", _datum(lieferschein.datum)),
-        ("Bezug Angebot", lieferschein.angebot.nummer if lieferschein.angebot_id else "–"),
-    ]
-    spalten = [
-        ("Pos.", 36, "l"), ("Bezeichnung", 281.5, "l"), ("Menge", 75, "r"), ("Einheit", 75, "r"),
-    ]
+    empfaenger_zeilen = _empfaenger_zeilen(firma, deal.kontakt, sprache)
+    if sprache == "en":
+        titel = "DELIVERY NOTE"
+        meta_zeilen = [
+            ("Delivery Note No.", lieferschein.nummer),
+            ("Delivery Date", _datum(lieferschein.datum, sprache)),
+            ("Ref. Quotation", lieferschein.angebot.nummer if lieferschein.angebot_id else "–"),
+        ]
+        spalten = [
+            ("No.", 36, "l"), ("Description", 281.5, "l"), ("Qty", 75, "r"), ("Unit", 75, "r"),
+        ]
+        notizen_titel = "Notes" if lieferschein.notizen else None
+        fusshinweis = "The items listed above have been delivered."
+    else:
+        titel = "LIEFERSCHEIN"
+        meta_zeilen = [
+            ("Lieferscheinnummer", lieferschein.nummer),
+            ("Lieferdatum", _datum(lieferschein.datum)),
+            ("Bezug Angebot", lieferschein.angebot.nummer if lieferschein.angebot_id else "–"),
+        ]
+        spalten = [
+            ("Pos.", 36, "l"), ("Bezeichnung", 281.5, "l"), ("Menge", 75, "r"), ("Einheit", 75, "r"),
+        ]
+        notizen_titel = "Hinweise" if lieferschein.notizen else None
+        fusshinweis = "Die oben genannten Positionen wurden geliefert."
+
     zeilen = []
     for p in lieferschein.positionen.all():
-        zeilen.append([p.position, p.bezeichnung, _menge(p.menge), p.get_einheit_display()])
+        einheit_text = _EINHEIT_LABEL_EN.get(p.einheit, p.get_einheit_display()) if sprache == "en" else p.get_einheit_display()
+        zeilen.append([p.position, p.bezeichnung, _menge(p.menge, sprache), einheit_text])
 
-    pdf_bytes = _dokument_pdf_bytes(
-        titel="LIEFERSCHEIN", nummer=lieferschein.nummer, empfaenger_zeilen=empfaenger_zeilen,
+    return _dokument_pdf_bytes(
+        titel=titel, nummer=lieferschein.nummer, empfaenger_zeilen=empfaenger_zeilen,
         meta_zeilen=meta_zeilen, spalten=spalten, zeilen=zeilen,
-        notizen_titel="Hinweise" if lieferschein.notizen else None, notizen_text=lieferschein.notizen,
-        fusshinweis="Die oben genannten Positionen wurden geliefert.",
+        notizen_titel=notizen_titel, notizen_text=lieferschein.notizen,
+        fusshinweis=fusshinweis, sprache=sprache,
     )
-    return pdf_bytes
 
 
 def rechnung_pdf_erzeugen(rechnung):
+    """sprache=rechnung.sprache (18.10.2026, wie Angebot/Lieferschein) - siehe Kommentar bei
+    lieferschein_pdf_erzeugen, gilt hier analog."""
+    sprache = rechnung.sprache
     deal = rechnung.deal
     firma = deal.firma
-    empfaenger_zeilen = _empfaenger_zeilen(firma, deal.kontakt)
-    meta_zeilen = [
-        ("Rechnungsnummer", rechnung.nummer),
-        ("Rechnungsdatum", _datum(rechnung.rechnungsdatum)),
-        ("Leistungsdatum", _datum(rechnung.leistungsdatum or rechnung.rechnungsdatum)),
-        ("Zahlungsziel", f"{rechnung.zahlungsziel_tage} Tage netto"),
-        ("Fällig am", _datum(rechnung.faelligkeitsdatum)),
-    ]
-    spalten = [
-        ("Pos.", 30, "l"), ("Bezeichnung", 152.5, "l"), ("Menge", 45, "r"), ("Einheit", 45, "r"),
-        ("Einzelpreis", 60, "r"), ("USt.", 40, "r"), ("Gesamt (netto)", 95, "r"),
-    ]
+    empfaenger_zeilen = _empfaenger_zeilen(firma, deal.kontakt, sprache)
+    if sprache == "en":
+        titel = "INVOICE"
+        meta_zeilen = [
+            ("Invoice No.", rechnung.nummer),
+            ("Invoice Date", _datum(rechnung.rechnungsdatum, sprache)),
+            ("Delivery Date", _datum(rechnung.leistungsdatum or rechnung.rechnungsdatum, sprache)),
+            ("Payment Terms", f"{rechnung.zahlungsziel_tage} days net"),
+            ("Due Date", _datum(rechnung.faelligkeitsdatum, sprache)),
+        ]
+        spalten = [
+            ("No.", 30, "l"), ("Description", 152.5, "l"), ("Qty", 45, "r"), ("Unit", 45, "r"),
+            ("Unit Price", 60, "r"), ("VAT", 40, "r"), ("Total (net)", 95, "r"),
+        ]
+        netto_label, brutto_label = "Net total", "Total (gross)"
+        zuschlag_label = "plus VAT {satz} on {netto}"
+        notizen_titel = "Payment Terms"
+        zahlungstext = (
+            f"Please transfer the invoice amount by {_datum(rechnung.faelligkeitsdatum, sprache)} "
+            f"without deduction to the account below."
+        )
+    else:
+        titel = "RECHNUNG"
+        meta_zeilen = [
+            ("Rechnungsnummer", rechnung.nummer),
+            ("Rechnungsdatum", _datum(rechnung.rechnungsdatum)),
+            ("Leistungsdatum", _datum(rechnung.leistungsdatum or rechnung.rechnungsdatum)),
+            ("Zahlungsziel", f"{rechnung.zahlungsziel_tage} Tage netto"),
+            ("Fällig am", _datum(rechnung.faelligkeitsdatum)),
+        ]
+        spalten = [
+            ("Pos.", 30, "l"), ("Bezeichnung", 152.5, "l"), ("Menge", 45, "r"), ("Einheit", 45, "r"),
+            ("Einzelpreis", 60, "r"), ("USt.", 40, "r"), ("Gesamt (netto)", 95, "r"),
+        ]
+        netto_label, brutto_label = "Nettosumme", "Gesamtbetrag (brutto)"
+        zuschlag_label = "zzgl. USt {satz} auf {netto}"
+        notizen_titel = "Zahlungshinweis"
+        zahlungstext = (
+            f"Bitte überweisen Sie den Rechnungsbetrag bis zum {_datum(rechnung.faelligkeitsdatum)} "
+            f"ohne Abzug auf unten genanntes Konto."
+        )
+
     zeilen = []
     for p in rechnung.positionen.all():
+        einheit_text = _EINHEIT_LABEL_EN.get(p.einheit, p.get_einheit_display()) if sprache == "en" else p.get_einheit_display()
         zeilen.append([
-            p.position, p.bezeichnung, _menge(p.menge), p.get_einheit_display(),
-            _eur_praezise(p.einzelpreis), _satz_text(p.steuersatz), _eur(p.nettobetrag),
+            p.position, p.bezeichnung, _menge(p.menge, sprache), einheit_text,
+            _eur_praezise(p.einzelpreis, sprache), _satz_text(p.steuersatz, sprache), _eur(p.nettobetrag, sprache),
         ])
 
-    summenzeilen = [("Nettosumme", _eur(rechnung.nettosumme))]
+    summenzeilen = [(netto_label, _eur(rechnung.nettosumme, sprache))]
     for satz, netto, steuer in rechnung.steuer_aufschluesselung:
-        summenzeilen.append((f"zzgl. USt {_satz_text(satz)} auf {_eur(netto)}", _eur(steuer)))
-    summenzeilen.append(("Gesamtbetrag (brutto)", _eur(rechnung.bruttosumme)))
+        label = zuschlag_label.format(satz=_satz_text(satz, sprache), netto=_eur(netto, sprache))
+        summenzeilen.append((label, _eur(steuer, sprache)))
+    summenzeilen.append((brutto_label, _eur(rechnung.bruttosumme, sprache)))
 
-    zahlungstext = (
-        f"Bitte überweisen Sie den Rechnungsbetrag bis zum {_datum(rechnung.faelligkeitsdatum)} "
-        f"ohne Abzug auf unten genanntes Konto."
-    )
     notizen_text = zahlungstext
     if rechnung.notizen:
         notizen_text = f"{zahlungstext}\n{rechnung.notizen}"
 
     return _dokument_pdf_bytes(
-        titel="RECHNUNG", nummer=rechnung.nummer, empfaenger_zeilen=empfaenger_zeilen,
+        titel=titel, nummer=rechnung.nummer, empfaenger_zeilen=empfaenger_zeilen,
         meta_zeilen=meta_zeilen, spalten=spalten, zeilen=zeilen, summenzeilen=summenzeilen,
-        notizen_titel="Zahlungshinweis", notizen_text=notizen_text,
+        notizen_titel=notizen_titel, notizen_text=notizen_text, sprache=sprache,
     )
