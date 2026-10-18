@@ -5,6 +5,7 @@
     <div>
         <h2>{{ artikel.artikelnummer }} – {{ artikel.bezeichnung }}</h2>
         <span class="badge text-bg-secondary">{{ artikel.get_geschaeftsbereich_display }}</span>
+        {% if artikel.vertriebskanal == "amazon" %}<span class="badge text-bg-warning">Amazon/E-Commerce</span>{% endif %}
         {% if artikel.warengruppe %}<span class="badge text-bg-light border">{{ artikel.warengruppe }}</span>{% endif %}
         <span class="badge text-bg-light border">{{ artikel.get_status_display }}</span>
         {% if artikel.unter_mindestbestand %}<span class="badge text-bg-danger">unter Meldebestand</span>{% endif %}

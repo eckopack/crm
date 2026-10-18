@@ -47,6 +47,26 @@ Abgleich Excel ↔ CRM" und Chat-Verlauf):
 
 - Status (Spalte "Status"): wird informativ in Artikel.status übernommen (keine Sperre
   für Angebote/Packscheine), unbekannte Texte fallen auf "in_vorbereitung" zurück.
+
+Stand 18.10.2026 (auf Wunsch von Björn, siehe Artikel.vertriebskanal-Doku in models.py):
+
+- Neue, optionale Spalte "Vertriebskanal (Standard/Amazon)": trennt die normalen
+  Großhandels-Artikel von den rein für Amazon/E-Commerce angelegten "-EN"-Zweitlistungen
+  (eigene, retail-typische Flatrate-Preise ohne Mengenstaffel und ohne eigenen
+  Lagerbestand). "Amazon" (Groß-/Kleinschreibung egal) setzt vertriebskanal="amazon" und
+  schließt den Artikel damit aus der Positionsauswahl in Angebot/Packschein/Lieferschein/
+  Rechnung aus (siehe forms.py); alles andere (leer, "Standard", unbekannter Text, Spalte
+  fehlt ganz in einer älteren Datei) bleibt "standard". Grund: die Amazon-Preise weichen
+  von den Großhandelspreisen desselben Produkts um Größenordnungen ab (z. B. 33,53 €/Stk
+  Amazon- vs. 0,0995-0,1395 €/Stk Großhandelspreis bei LUA-GB-GABEL-150) - ohne diese
+  Trennung konnte ein Amazon-Artikel versehentlich in einem echten Angebot landen.
+
+- Die 16 "echten" (nicht per "-EN"-Zweitlistung für Amazon angelegten) Artikel mit
+  bilingualer Bezeichnung/Beschreibung (bisher per Zeilenumbruch DE+EN in derselben
+  Zelle, siehe _mehrsprachig) tragen ab dieser Datei nur noch die deutsche Zeile - die
+  englische Zeile ist jetzt ausschließlich über die jeweilige "-EN"-Zweitlistung
+  gepflegt. _mehrsprachig bleibt trotzdem bestehen (schadet bei einzeiligen Zellen
+  nicht, falls doch mal wieder zweizeilig befüllt wird) statt sie zu entfernen.
 """
 from decimal import Decimal, InvalidOperation
 
@@ -64,6 +84,11 @@ STATUS_MAPPING = {
     "aktiv": "aktiv",
     "auslaufend": "auslaufend",
     "gesperrt": "gesperrt",
+}
+
+VERTRIEBSKANAL_MAPPING = {
+    "amazon": "amazon",
+    "standard": "standard",
 }
 
 _EINHEIT_LABEL_ZU_KEY = {label.lower(): key for key, label in EINHEIT_CHOICES}
@@ -216,10 +241,14 @@ class Command(BaseCommand):
                 status_text = _s(wert(row, "Status")).lower()
                 status = STATUS_MAPPING.get(status_text, "in_vorbereitung")
 
+                vertriebskanal_text = _s(wert(row, "Vertriebskanal (Standard/Amazon)")).lower()
+                vertriebskanal = VERTRIEBSKANAL_MAPPING.get(vertriebskanal_text, "standard")
+
                 defaults = {
                     "bezeichnung": bezeichnung[:300],
                     "beschreibung": _mehrsprachig(_s(wert(row, beschreibung_spalte))) if beschreibung_spalte else "",
                     "geschaeftsbereich": GESCHAEFTSBEREICH_IMPORT,
+                    "vertriebskanal": vertriebskanal,
                     "warengruppe": warengruppe,
                     "einheit": einheit,
                     "verkaufspreis": _dec(wert(row, "Verkaufspreis (EUR, netto) *")),

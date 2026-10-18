@@ -690,6 +690,11 @@ MATERIALTYP_CHOICES = [
     ("fertigware", "Fertigware (Eigenproduktion)"),
 ]
 
+VERTRIEBSKANAL_CHOICES = [
+    ("standard", "Standard (Großhandel/B2B)"),
+    ("amazon", "Amazon/E-Commerce (reine Zweitlistung, kein eigener Lagerbestand)"),
+]
+
 
 class Artikel(models.Model):
     """Artikelstamm: ein Eintrag je verkauftem/gelagertem Artikel.
@@ -712,13 +717,32 @@ class Artikel(models.Model):
     hier auf dem Artikel selbst gepflegt, sondern als separate Preisstaffel-Einträge
     (siehe unten) - ein Artikel kann 0 bis n Staffeln haben. Gibt es keine Staffel für die
     bestellte Menge, gilt der Flatrate-Preis in `verkaufspreis`.
-    """
+
+    vertriebskanal (18.10.2026, auf Wunsch von Björn): trennt die normalen Großhandels-
+    Artikel von den rein für Amazon/E-Commerce angelegten "-EN"-Zweitlistungen (eigene,
+    retail-typische Flatrate-Preise ohne Mengenstaffel, kein eigener Lagerbestand - siehe
+    import_artikelstamm.py). Grund: vorher lagen beide Gruppen ununterschieden im selben
+    Artikel-Dropdown von Angebot/Packschein/Lieferschein/Rechnung; die Amazon-Preise
+    (z. B. 33,53 €/Stk für LUA-GB-GABEL-150-EN) weichen von den Großhandelspreisen des
+    identischen Produkts (z. B. 0,0995-0,1395 €/Stk für LUA-GB-GABEL-150) so stark ab,
+    dass eine versehentliche Auswahl in einem echten Angebot zu einer um den Faktor
+    ~300 falschen Positions-Berechnung geführt hätte. vertriebskanal="amazon" wird deshalb
+    aus der normalen Positionsauswahl ausgeschlossen (siehe forms.py); die Artikel bleiben
+    im Artikelstamm sichtbar/bearbeitbar, nur eben nicht in Angebot & Co. wählbar."""
     artikelnummer = models.CharField("Artikelnummer", max_length=50, unique=True)
     bezeichnung = models.CharField("Bezeichnung", max_length=300)
     beschreibung = models.TextField("Beschreibung", blank=True)
     geschaeftsbereich = models.CharField(
         "Geschäftsbereich (ECKO-PACK)", max_length=30, choices=GESCHAEFTSBEREICH_CHOICES,
         default="einweg_serviceprodukte",
+    )
+    vertriebskanal = models.CharField(
+        "Vertriebskanal", max_length=10, choices=VERTRIEBSKANAL_CHOICES, default="standard",
+        help_text=(
+            "'Amazon' schließt den Artikel aus der Positionsauswahl in Angebot/Packschein/"
+            "Lieferschein/Rechnung aus (siehe Model-Doku) - der Artikel bleibt im "
+            "Artikelstamm selbst sichtbar und bearbeitbar."
+        ),
     )
     warengruppe = models.CharField(
         "Warengruppe/Serie", max_length=100, blank=True,

@@ -8,6 +8,15 @@ from .models import (
 )
 
 
+def _artikel_fuer_positionsauswahl():
+    """Artikel-Queryset für die Positionsauswahl in Angebot/Packschein/Lieferschein/
+    Rechnung - schließt vertriebskanal='amazon' aus (siehe Artikel-Model-Doku: reine
+    Amazon-Zweitlistungen mit retail-typischen Preisen, die mit den Großhandelspreisen
+    des identischen Produkts nichts zu tun haben und in einem echten Angebot zu einer
+    um Größenordnungen falschen Position führen würden)."""
+    return Artikel.objects.exclude(vertriebskanal="amazon")
+
+
 class BootstrapFormMixin:
     """Fügt allen Feldern automatisch Bootstrap-CSS-Klassen hinzu."""
 
@@ -121,6 +130,7 @@ class AngebotPositionForm(BootstrapFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         self._bootstrapify()
         self.fields["artikel"].required = False
+        self.fields["artikel"].queryset = _artikel_fuer_positionsauswahl()
         self.fields["artikel"].widget.attrs["class"] = (
             self.fields["artikel"].widget.attrs.get("class", "") + " artikel-auswahl"
         )
@@ -177,6 +187,7 @@ class PackscheinPositionForm(BootstrapFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         self._bootstrapify()
         self.fields["artikel"].required = False
+        self.fields["artikel"].queryset = _artikel_fuer_positionsauswahl()
         self.fields["artikel"].widget.attrs["class"] = (
             self.fields["artikel"].widget.attrs.get("class", "") + " artikel-auswahl"
         )
@@ -231,6 +242,7 @@ class LieferscheinPositionForm(BootstrapFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         self._bootstrapify()
         self.fields["artikel"].required = False
+        self.fields["artikel"].queryset = _artikel_fuer_positionsauswahl()
         self.fields["artikel"].widget.attrs["class"] = (
             self.fields["artikel"].widget.attrs.get("class", "") + " artikel-auswahl"
         )
@@ -270,6 +282,7 @@ class RechnungPositionForm(BootstrapFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         self._bootstrapify()
         self.fields["artikel"].required = False
+        self.fields["artikel"].queryset = _artikel_fuer_positionsauswahl()
         self.fields["artikel"].widget.attrs["class"] = (
             self.fields["artikel"].widget.attrs.get("class", "") + " artikel-auswahl"
         )
@@ -284,9 +297,10 @@ class ArtikelForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Artikel
         fields = [
-            "artikelnummer", "bezeichnung", "beschreibung", "geschaeftsbereich", "warengruppe",
-            "einheit", "verkaufspreis", "ust_satz", "einkaufspreis", "lagerbestand_aktuell",
-            "mindestbestand", "verpackungseinheit_stk", "lagerort", "lieferant", "status", "notizen",
+            "artikelnummer", "bezeichnung", "beschreibung", "geschaeftsbereich", "vertriebskanal",
+            "warengruppe", "einheit", "verkaufspreis", "ust_satz", "einkaufspreis",
+            "lagerbestand_aktuell", "mindestbestand", "verpackungseinheit_stk", "lagerort",
+            "lieferant", "status", "notizen",
         ]
         widgets = {
             "beschreibung": forms.Textarea(attrs={"rows": 3}),

@@ -92,6 +92,20 @@
 # vor diesem Deploy einen Export der aktuellen Artikel/Preisstaffeln-Tabellen ziehen
 # (z. B. "python manage.py dumpdata vertrieb.Artikel vertrieb.Preisstaffel" über die
 # Render-Shell), da dies der erste Produktiv-Lauf des neuen Import-Codes ist.
+#
+# ARTIKELSTAMM-IMPORT, STAND 18.10.2026 (auf Wunsch von Björn, siehe Artikel.
+# vertriebskanal-Doku in models.py): Neue Masterdatei
+# data/20261018_LUAMO_Masterartikelstamm.xlsx ersetzt die vorherige (weiterhin 36
+# Zeilen, keine neuen/entfernten Artikel). Zwei Änderungen: (1) neue Spalte
+# "Vertriebskanal (Standard/Amazon)" markiert die 16 reinen Amazon-"-EN"-Zweitlistungen
+# als "Amazon" - diese werden dadurch aus der Positionsauswahl in Angebot/Packschein/
+# Lieferschein/Rechnung ausgeschlossen (vorher im selben Dropdown wie die
+# Großhandelsartikel, trotz um Größenordnungen abweichender Amazon-Retail-Preise -
+# z. B. 33,53 €/Stk Amazon- vs. 0,0995-0,1395 €/Stk Großhandelspreis bei
+# LUA-GB-GABEL-150). (2) Die 16 "echten" Artikel (Großbesteck/Kleinbesteck/
+# Trinkhalme/Musterkartons) tragen in Bezeichnung/Beschreibung nur noch die deutsche
+# Zeile - die englische Zeile wird jetzt ausschließlich über die jeweilige
+# "-EN"-Zweitlistung gepflegt, nicht mehr doppelt im selben Artikel.
 
 services:
   - type: web
@@ -108,7 +122,7 @@ services:
     startCommand: >
       python manage.py migrate &&
       python manage.py beispieldaten &&
-      python manage.py import_artikelstamm data/20261015_LUAMO_Masterartikelstamm.xlsx &&
+      python manage.py import_artikelstamm data/20261018_LUAMO_Masterartikelstamm.xlsx &&
       gunicorn eckopack_crm.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: DJANGO_SECRET_KEY
