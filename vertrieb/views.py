@@ -22,7 +22,7 @@ from .forms import (
     LieferscheinForm, LieferscheinPositionFormSet, LieferscheinVersandForm, RechnungForm, RechnungPositionFormSet,
 )
 from .models import (
-    DEAL_PHASE_CHOICES, PHASE_STANDARD_WAHRSCHEINLICHKEIT,
+    DEAL_PHASE_CHOICES, MUSTERKARTON_ARTIKEL, PHASE_STANDARD_WAHRSCHEINLICHKEIT,
     Aktivitaet, Angebot, Artikel, Deal, Firma, Kontakt, Packschein, PackscheinPosition, Lieferschein, Rechnung,
 )
 from django.forms import inlineformset_factory
@@ -239,10 +239,9 @@ class DealDetailView(LoginRequiredMixin, DetailView):
 # Sprache getrennte Artikel (physisch unterschiedliche Druckstücke), der Musterkarton
 # selbst ist ein einziger, zweisprachig bedruckter Artikel - die Sprachauswahl hier
 # entscheidet nur, welcher Beileger mitgepackt wird, nicht welcher Musterkarton.
-MUSTERKARTON_ARTIKELNUMMER = {
-    "besteck": "LUA-MUSTER-BESTECK",
-    "trinkhalm": "LUA-MUSTER-STROH",
-}
+# Artikelnummern selbst kommen aus models.MUSTERKARTON_ARTIKEL (gemeinsame Quelle mit
+# nurture.py - siehe dort, warum sie nicht hier liegen können).
+MUSTERKARTON_ARTIKELNUMMER = {k: v["artikelnummer"] for k, v in MUSTERKARTON_ARTIKEL.items()}
 BEILEGER_ARTIKELNUMMER = {
     ("besteck", "de"): "LUA-EINL-BESTECK-DE",
     ("besteck", "en"): "LUA-EINL-BESTECK-EN",
@@ -292,6 +291,7 @@ def musterkarton_anfordern(request, pk):
 
     packschein = Packschein.objects.create(
         deal=deal, datum=timezone.now().date(), status="offen", ist_musterversand=True,
+        sprache=sprache,
         notizen="Automatisch angelegt über 'Musterkarton anfordern'.",
     )
     position = 1
@@ -307,6 +307,7 @@ def musterkarton_anfordern(request, pk):
             bezeichnung=(musterkarton_artikel.bezeichnung if musterkarton_artikel
                          else f"Musterkarton – ACHTUNG: Artikel {musterkarton_nr} fehlt im Artikelstamm"),
             menge=1, einheit="stk",
+            musterkarton_einzelart=einzelart,
         )
         position += 1
         PackscheinPosition.objects.create(

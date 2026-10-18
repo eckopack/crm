@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="{% if sprache == "en" %}en{% else %}de{% endif %}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Kurze Rückfrage von ECKO-PACK</title>
+<title>{% if sprache == "en" %}A quick question from ECKO-PACK{% else %}Kurze Rückfrage von ECKO-PACK{% endif %}</title>
 </head>
 <body style="margin:0; padding:0; background-color:#f5f6f8; font-family:Arial, Helvetica, sans-serif;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f6f8; padding:24px 0;">
@@ -20,16 +20,24 @@
         <tr>
           <td style="padding:32px;">
             <p style="margin:0 0 16px 0; font-size:16px; color:#3c3c3b;">
-              Guten Tag{% if ansprechpartner %} {{ ansprechpartner.vorname }} {{ ansprechpartner.nachname }}{% endif %},
+              {% if sprache == "en" %}Hello{% else %}Guten Tag{% endif %}{% if ansprechpartner %} {{ ansprechpartner.vorname }} {{ ansprechpartner.nachname }}{% endif %},
             </p>
             <div style="margin:0 0 24px 0; font-size:16px; color:#3c3c3b; line-height:1.5;">
               {{ nachricht_text|linebreaks }}
             </div>
+            {% if sprache == "en" %}
+            <p style="margin:24px 0 0 0; font-size:14px; color:#3c3c3b;">
+              Kind regards,<br>
+              Björn Gallenkamp<br>
+              Managing Director, ECKO-PACK GmbH
+            </p>
+            {% else %}
             <p style="margin:24px 0 0 0; font-size:14px; color:#3c3c3b;">
               Mit freundlichen Grüßen<br>
               Björn Gallenkamp<br>
               Geschäftsführer, ECKO-PACK GmbH
             </p>
+            {% endif %}
           </td>
         </tr>
 
