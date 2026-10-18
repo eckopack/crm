@@ -665,10 +665,17 @@ def lieferschein_erstellen(request):
                 "deal": packschein_quelle.deal_id,
                 "angebot": packschein_quelle.angebot_id,
                 "packschein": packschein_quelle.pk,
+                # Sprache wird vom Packschein übernommen (nicht vom Angebot dahinter, falls
+                # eins existiert) - beim Musterkarton-Versand ist packschein.sprache die
+                # verlässlichere Quelle, siehe views.musterkarton_anfordern.
+                "sprache": packschein_quelle.sprache,
             }
             quelle_positionen = packschein_quelle.positionen.all()
         elif angebot_quelle:
-            initial = {"deal": angebot_quelle.deal_id, "angebot": angebot_quelle.pk}
+            initial = {
+                "deal": angebot_quelle.deal_id, "angebot": angebot_quelle.pk,
+                "sprache": angebot_quelle.sprache,
+            }
             quelle_positionen = angebot_quelle.positionen.all()
         elif deal_id:
             initial = {"deal": deal_id}
@@ -838,9 +845,15 @@ def rechnung_erstellen(request):
             initial = {
                 "deal": lieferschein_quelle.deal_id, "lieferschein": lieferschein_quelle.pk,
                 "angebot": lieferschein_quelle.angebot_id,
+                # Sprache vom Lieferschein übernehmen (nicht nochmal vom Angebot dahinter) -
+                # der Lieferschein ist das unmittelbar vorhergehende Dokument in der Kette.
+                "sprache": lieferschein_quelle.sprache,
             }
         elif angebot_quelle:
-            initial = {"deal": angebot_quelle.deal_id, "angebot": angebot_quelle.pk}
+            initial = {
+                "deal": angebot_quelle.deal_id, "angebot": angebot_quelle.pk,
+                "sprache": angebot_quelle.sprache,
+            }
         elif deal_id:
             initial = {"deal": deal_id}
         form = RechnungForm(initial=initial)

@@ -527,6 +527,20 @@ class Lieferschein(models.Model):
     bestaetigungsmail_gesendet_am = models.DateTimeField(
         "Versand-Bestätigungsmail an Kunde gesendet am", null=True, blank=True, editable=False,
     )
+    # sprache (18.10.2026, auf Wunsch von Björn): die Sprachauswahl eines Angebots soll sich
+    # durch die GESAMTE Dokumentenkette ziehen - Angebot, Lieferschein, Rechnung sollen nie
+    # gemischt (ein Dokument Deutsch, das nächste Englisch) beim selben Kunden ankommen. Statt
+    # eines reinen Pflichtfelds, das man bei jedem Dokument erneut setzen müsste, wird der
+    # Startwert in views.lieferschein_erstellen aus packschein.sprache bzw. angebot.sprache
+    # vorbefüllt (siehe dort) - bleibt aber ein normales, überschreibbares Formularfeld für den
+    # Sonderfall, dass sich die Sprache zwischen Angebot und Lieferschein doch ändern soll.
+    # Betrifft nur die PDF-Ausgabe (Briefpapier + Texte/Zahlenformat), nicht die Kalkulation.
+    sprache = models.CharField(
+        "Sprache", max_length=2, choices=SPRACHE_CHOICES, default="de",
+        help_text="Bestimmt die Sprache des Lieferschein-PDFs (Briefpapier, Überschriften, "
+                   "Zahlenformat). Wird beim Anlegen aus dem verknüpften Angebot/Packschein "
+                   "vorbefüllt, ist aber frei überschreibbar.",
+    )
     notizen = models.TextField("Notizen", blank=True)
     erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
 
@@ -606,6 +620,14 @@ class Rechnung(models.Model):
     )
     zahlungsziel_tage = models.PositiveSmallIntegerField("Zahlungsziel (Tage, netto)", default=7)
     status = models.CharField("Status", max_length=20, choices=RECHNUNG_STATUS_CHOICES, default="entwurf")
+    # sprache: siehe ausführlichen Kommentar bei Lieferschein.sprache - wird beim Anlegen aus
+    # dem verknüpften Lieferschein/Angebot vorbefüllt (views.rechnung_erstellen).
+    sprache = models.CharField(
+        "Sprache", max_length=2, choices=SPRACHE_CHOICES, default="de",
+        help_text="Bestimmt die Sprache des Rechnungs-PDFs (Briefpapier, Überschriften, "
+                   "Zahlenformat). Wird beim Anlegen aus dem verknüpften Lieferschein/Angebot "
+                   "vorbefüllt, ist aber frei überschreibbar.",
+    )
     notizen = models.TextField("Notizen/Zahlungshinweis", blank=True)
     erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
 
