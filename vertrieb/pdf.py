@@ -522,7 +522,7 @@ def packschein_pdf_erzeugen(packschein):
         ("Bezug Angebot", packschein.angebot.nummer if packschein.angebot_id else "–"),
     ]
     spalten = [
-        ("Pos.", 32, "l"), ("Bezeichnung", 249.5, "l"), ("Menge", 70, "r"),
+        ("Pos.", 32, "l"), ("Artikel-Nr.", 75, "l"), ("Bezeichnung", 174.5, "l"), ("Menge", 70, "r"),
         ("Einheit", 70, "r"), ("Gepackt", 46, "r"),
     ]
     zeilen = []
@@ -530,7 +530,8 @@ def packschein_pdf_erzeugen(packschein):
         # Unicode-Kästchen (☐/☑) werden von reportlabs Standard-Helvetica nicht
         # unterstützt (kaputtes Glyph im PDF) - daher ASCII-Darstellung.
         haken = "[X]" if p.gepackt else "[  ]"
-        zeilen.append([p.position, p.bezeichnung, _menge(p.menge), p.get_einheit_display(), haken])
+        artikelnummer = p.artikel.artikelnummer if p.artikel_id else "–"
+        zeilen.append([p.position, artikelnummer, p.bezeichnung, _menge(p.menge), p.get_einheit_display(), haken])
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -587,7 +588,7 @@ def angebot_pdf_erzeugen(angebot):
             ("Valid until", _datum(angebot.gueltig_bis, sprache)),
         ]
         spalten = [
-            ("No.", 32, "l"), ("Description", 187.5, "l"), ("Qty", 55, "r"),
+            ("No.", 32, "l"), ("Art. No.", 65, "l"), ("Description", 122.5, "l"), ("Qty", 55, "r"),
             ("Unit", 55, "r"), ("Unit Price", 70, "r"), ("Total", 68, "r"),
         ]
         summen_label = "Total (net, plus applicable VAT)"
@@ -600,7 +601,7 @@ def angebot_pdf_erzeugen(angebot):
             ("Gültig bis", _datum(angebot.gueltig_bis)),
         ]
         spalten = [
-            ("Pos.", 32, "l"), ("Bezeichnung", 187.5, "l"), ("Menge", 55, "r"),
+            ("Pos.", 32, "l"), ("Artikel-Nr.", 65, "l"), ("Bezeichnung", 122.5, "l"), ("Menge", 55, "r"),
             ("Einheit", 55, "r"), ("Einzelpreis", 70, "r"), ("Gesamt", 68, "r"),
         ]
         summen_label = "Gesamtsumme (netto, zzgl. gesetzl. USt.)"
@@ -609,7 +610,8 @@ def angebot_pdf_erzeugen(angebot):
     zeilen = []
     for p in angebot.positionen.all():
         einheit_text = _EINHEIT_LABEL_EN.get(p.einheit, p.get_einheit_display()) if sprache == "en" else p.get_einheit_display()
-        zeilen.append([p.position, p.bezeichnung, _menge(p.menge, sprache), einheit_text,
+        artikelnummer = p.artikel.artikelnummer if p.artikel_id else "–"
+        zeilen.append([p.position, artikelnummer, p.bezeichnung, _menge(p.menge, sprache), einheit_text,
                         _eur_praezise(p.einzelpreis, sprache), _eur(p.gesamtpreis, sprache)])
     summenzeilen = [(summen_label, _eur(angebot.gesamtsumme, sprache))]
     return _dokument_pdf_bytes(
@@ -638,7 +640,7 @@ def lieferschein_pdf_erzeugen(lieferschein):
             ("Ref. Quotation", lieferschein.angebot.nummer if lieferschein.angebot_id else "–"),
         ]
         spalten = [
-            ("No.", 36, "l"), ("Description", 281.5, "l"), ("Qty", 75, "r"), ("Unit", 75, "r"),
+            ("No.", 36, "l"), ("Art. No.", 80, "l"), ("Description", 201.5, "l"), ("Qty", 75, "r"), ("Unit", 75, "r"),
         ]
         notizen_titel = "Notes" if lieferschein.notizen else None
         fusshinweis = "The items listed above have been delivered."
@@ -650,7 +652,7 @@ def lieferschein_pdf_erzeugen(lieferschein):
             ("Bezug Angebot", lieferschein.angebot.nummer if lieferschein.angebot_id else "–"),
         ]
         spalten = [
-            ("Pos.", 36, "l"), ("Bezeichnung", 281.5, "l"), ("Menge", 75, "r"), ("Einheit", 75, "r"),
+            ("Pos.", 36, "l"), ("Artikel-Nr.", 80, "l"), ("Bezeichnung", 201.5, "l"), ("Menge", 75, "r"), ("Einheit", 75, "r"),
         ]
         notizen_titel = "Hinweise" if lieferschein.notizen else None
         fusshinweis = "Die oben genannten Positionen wurden geliefert."
@@ -658,7 +660,8 @@ def lieferschein_pdf_erzeugen(lieferschein):
     zeilen = []
     for p in lieferschein.positionen.all():
         einheit_text = _EINHEIT_LABEL_EN.get(p.einheit, p.get_einheit_display()) if sprache == "en" else p.get_einheit_display()
-        zeilen.append([p.position, p.bezeichnung, _menge(p.menge, sprache), einheit_text])
+        artikelnummer = p.artikel.artikelnummer if p.artikel_id else "–"
+        zeilen.append([p.position, artikelnummer, p.bezeichnung, _menge(p.menge, sprache), einheit_text])
 
     return _dokument_pdf_bytes(
         titel=titel, nummer=lieferschein.nummer, empfaenger_zeilen=empfaenger_zeilen,
@@ -685,8 +688,8 @@ def rechnung_pdf_erzeugen(rechnung):
             ("Due Date", _datum(rechnung.faelligkeitsdatum, sprache)),
         ]
         spalten = [
-            ("No.", 30, "l"), ("Description", 152.5, "l"), ("Qty", 45, "r"), ("Unit", 45, "r"),
-            ("Unit Price", 60, "r"), ("VAT", 40, "r"), ("Total (net)", 95, "r"),
+            ("No.", 30, "l"), ("Art. No.", 55, "l"), ("Description", 112.5, "l"), ("Qty", 45, "r"), ("Unit", 45, "r"),
+            ("Unit Price", 60, "r"), ("VAT", 40, "r"), ("Total (net)", 80, "r"),
         ]
         netto_label, brutto_label = "Net total", "Total (gross)"
         zuschlag_label = "plus VAT {satz} on {netto}"
@@ -705,8 +708,8 @@ def rechnung_pdf_erzeugen(rechnung):
             ("Fällig am", _datum(rechnung.faelligkeitsdatum)),
         ]
         spalten = [
-            ("Pos.", 30, "l"), ("Bezeichnung", 152.5, "l"), ("Menge", 45, "r"), ("Einheit", 45, "r"),
-            ("Einzelpreis", 60, "r"), ("USt.", 40, "r"), ("Gesamt (netto)", 95, "r"),
+            ("Pos.", 30, "l"), ("Artikel-Nr.", 55, "l"), ("Bezeichnung", 112.5, "l"), ("Menge", 45, "r"), ("Einheit", 45, "r"),
+            ("Einzelpreis", 60, "r"), ("USt.", 40, "r"), ("Gesamt (netto)", 80, "r"),
         ]
         netto_label, brutto_label = "Nettosumme", "Gesamtbetrag (brutto)"
         zuschlag_label = "zzgl. USt {satz} auf {netto}"
@@ -719,8 +722,9 @@ def rechnung_pdf_erzeugen(rechnung):
     zeilen = []
     for p in rechnung.positionen.all():
         einheit_text = _EINHEIT_LABEL_EN.get(p.einheit, p.get_einheit_display()) if sprache == "en" else p.get_einheit_display()
+        artikelnummer = p.artikel.artikelnummer if p.artikel_id else "–"
         zeilen.append([
-            p.position, p.bezeichnung, _menge(p.menge, sprache), einheit_text,
+            p.position, artikelnummer, p.bezeichnung, _menge(p.menge, sprache), einheit_text,
             _eur_praezise(p.einzelpreis, sprache), _satz_text(p.steuersatz, sprache), _eur(p.nettobetrag, sprache),
         ])
 
