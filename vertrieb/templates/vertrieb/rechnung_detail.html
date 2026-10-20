@@ -35,6 +35,14 @@
     Rechnungs-Mail an Kunde gesendet am {{ rechnung.bestaetigungsmail_gesendet_am|date:"d.m.Y H:i" }}.
 </div>
 {% endif %}
+{% if rechnung.status == "entwurf" and ungepreiste_positionen %}
+<div class="alert alert-warning">
+    <strong>Noch nicht versandfertig:</strong> {{ ungepreiste_positionen|length }} Position(en) ohne
+    Preis (siehe unten, rot markiert). Bitte über
+    <a href="{% url 'vertrieb:rechnung_update' rechnung.pk %}">Bearbeiten</a> den Einzelpreis
+    eintragen und speichern – danach kann die Rechnung über "Jetzt versenden" verschickt werden.
+</div>
+{% endif %}
 
 <div class="card mb-3" style="max-width:300px;">
     <ul class="list-group list-group-flush">
@@ -49,29 +57,36 @@
     <div class="card-header fw-semibold">Positionen</div>
     <table class="table mb-0">
         <thead>
-        <tr><th>Pos.</th><th>Bezeichnung</th><th>Menge</th><th>Einheit</th><th>Einzelpreis</th><th>USt.</th><th>Netto</th></tr>
+        <tr><th>Pos.</th><th>Artikel-Nr.</th><th>Bezeichnung</th><th>Menge</th><th>Einheit</th><th>Einzelpreis</th><th>USt.</th><th>Netto</th></tr>
         </thead>
         <tbody>
         {% for p in rechnung.positionen.all %}
-        <tr>
+        <tr{% if p.einzelpreis == 0 %} class="table-warning"{% endif %}>
             <td>{{ p.position }}</td>
+            <td>{{ p.artikel.artikelnummer|default:"–" }}</td>
             <td>{{ p.bezeichnung }}</td>
             <td>{{ p.menge }}</td>
             <td>{{ p.get_einheit_display }}</td>
-            <td>{{ p.einzelpreis|floatformat:-5 }} €</td>
+            <td>
+                {% if p.einzelpreis == 0 %}
+                <span class="text-danger fw-semibold">Kein Preis hinterlegt</span>
+                {% else %}
+                {{ p.einzelpreis|floatformat:-5 }} €
+                {% endif %}
+            </td>
             <td>{{ p.steuersatz|floatformat:0 }} %</td>
             <td>{{ p.nettobetrag|floatformat:2 }} €</td>
         </tr>
         {% empty %}
-        <tr><td colspan="7" class="text-muted text-center py-3">Keine Positionen erfasst.</td></tr>
+        <tr><td colspan="8" class="text-muted text-center py-3">Keine Positionen erfasst.</td></tr>
         {% endfor %}
         </tbody>
         <tfoot>
-        <tr><td colspan="6" class="text-end">Nettosumme</td><td>{{ rechnung.nettosumme|floatformat:2 }} €</td></tr>
+        <tr><td colspan="7" class="text-end">Nettosumme</td><td>{{ rechnung.nettosumme|floatformat:2 }} €</td></tr>
         {% for satz, netto, steuer in rechnung.steuer_aufschluesselung %}
-        <tr><td colspan="6" class="text-end">zzgl. USt {{ satz|floatformat:0 }}% auf {{ netto|floatformat:2 }} €</td><td>{{ steuer|floatformat:2 }} €</td></tr>
+        <tr><td colspan="7" class="text-end">zzgl. USt {{ satz|floatformat:0 }}% auf {{ netto|floatformat:2 }} €</td><td>{{ steuer|floatformat:2 }} €</td></tr>
         {% endfor %}
-        <tr class="fw-bold"><td colspan="6" class="text-end">Gesamtbetrag (brutto)</td><td>{{ rechnung.bruttosumme|floatformat:2 }} €</td></tr>
+        <tr class="fw-bold"><td colspan="7" class="text-end">Gesamtbetrag (brutto)</td><td>{{ rechnung.bruttosumme|floatformat:2 }} €</td></tr>
         </tfoot>
     </table>
 </div>

@@ -299,7 +299,7 @@ class Aktivitaet(models.Model):
 class Angebot(models.Model):
     nummer = models.CharField("Angebotsnummer", max_length=30, unique=True, blank=True)
     deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.CASCADE, related_name="angebote")
-    datum = models.DateField("Datum", default=timezone.now)
+    datum = models.DateField("Datum", default=timezone.localdate)
     gueltig_bis = models.DateField("Gültig bis", null=True, blank=True)
     status = models.CharField("Status", max_length=20, choices=ANGEBOT_STATUS_CHOICES, default="entwurf")
     sprache = models.CharField(
@@ -407,7 +407,7 @@ class Packschein(models.Model):
         Angebot, verbose_name="Angebot", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="packscheine"
     )
-    datum = models.DateField("Kommissionierdatum", default=timezone.now)
+    datum = models.DateField("Kommissionierdatum", default=timezone.localdate)
     kommissionierer = models.CharField("Kommissioniert von", max_length=150, blank=True)
     status = models.CharField("Status", max_length=20, choices=PACKSCHEIN_STATUS_CHOICES, default="offen")
     notizen = models.TextField("Notizen (z. B. Lagerplatz, Besonderheiten)", blank=True)
@@ -519,7 +519,7 @@ class Lieferschein(models.Model):
         Packschein, verbose_name="Packschein", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="lieferscheine"
     )
-    datum = models.DateField("Lieferdatum", default=timezone.now)
+    datum = models.DateField("Lieferdatum", default=timezone.localdate)
     status = models.CharField("Status", max_length=20, choices=LIEFERSCHEIN_STATUS_CHOICES, default="entwurf")
     # Versand-/Tracking-Erfassung (17.10.2026, auf Wunsch von Björn): bewusst dieselben
     # Feldnamen/Choices wie beim Packschein (siehe oben) statt neuer Begriffe, damit das CRM
@@ -627,7 +627,22 @@ class Rechnung(models.Model):
         Lieferschein, verbose_name="Lieferschein", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="rechnungen"
     )
-    rechnungsdatum = models.DateField("Rechnungsdatum", default=timezone.now)
+    # default=timezone.localdate statt timezone.now (20.10.2026 korrigiert, betraf auch
+    # Angebot.datum/Packschein.datum/Lieferschein.datum/Warenchargen.wareneingang_datum
+    # unten - gleiches Muster): timezone.now() liefert ein DATETIME, nicht ein DATE. Der
+    # Default-Wert wird bei models.Model.__init__() direkt und ungeprueft als
+    # Attributwert gesetzt (ohne DateField.to_python()), sodass ein frisch per
+    # Model.objects.create(...) angelegtes Objekt - VOR einem erneuten DB-Refetch - im
+    # selben Python-Prozess ein datetime.datetime statt datetime.date als
+    # rechnungsdatum/datum trug. Nach einem Save+Refetch (SQLite normalisiert beim
+    # Schreiben) war das zwar korrekt, aber jeder Code, der dasselbe frisch erzeugte
+    # Objekt direkt weiterverwendet (z. B. nurture.rechnung_versand_senden() direkt im
+    # Anschluss an rechnung_automatisch_erstellen(), ohne Refetch), bekam dort ein
+    # datetime statt date zu sehen - funktionierte meist zufaellig trotzdem (datetime
+    # hat dieselben strftime-Codes), war aber ein tickender Zeitzonen-/Typ-Bug.
+    # timezone.localdate() liefert direkt ein echtes date in der konfigurierten
+    # Zeitzone (TIME_ZONE = Europe/Berlin).
+    rechnungsdatum = models.DateField("Rechnungsdatum", default=timezone.localdate)
     leistungsdatum = models.DateField(
         "Liefer-/Leistungsdatum", null=True, blank=True,
         help_text="Falls abweichend vom Rechnungsdatum; Pflichtangabe nach §14 UStG.",
@@ -1029,7 +1044,7 @@ class Charge(models.Model):
     Chargen in der Reihenfolge der Meta.ordering (älteste zuerst = FIFO)."""
     artikel = models.ForeignKey(Artikel, verbose_name="Artikel", on_delete=models.PROTECT, related_name="chargen")
     chargennummer = models.CharField("Chargennummer", max_length=100, blank=True)
-    wareneingang_datum = models.DateField("Wareneingangsdatum", default=timezone.now)
+    wareneingang_datum = models.DateField("Wareneingangsdatum", default=timezone.localdate)
     mindesthaltbarkeitsdatum = models.DateField("Mindesthaltbarkeitsdatum (MHD)", null=True, blank=True)
     lieferant = models.CharField("Lieferant", max_length=200, blank=True)
     menge_eingang = models.DecimalField(
