@@ -39,13 +39,24 @@ Versandbestätigung unten UND die 8 Wochen-Nachfassmails) werden entsprechend in
 jeweiligen Sprache verschickt, inkl. {{ artikel }}-Platzhalter. Die unabhängige
 Lieferschein-Versandbestätigung (Teil 2, für echte Bestellungen) ist davon NICHT betroffen -
 bleibt bewusst deutsch, bis Björn das separat beauftragt.
+
+Teil 5 (20.10.2026, auf Wunsch von Björn): Die Musterversand-Bestätigungsmail aus Teil 1 war
+seit ihrer ursprünglichen Einführung reiner Text (send_mail ohne HTML) - anders als die
+HTML-gestaltete Lieferschein-Versandbestätigung aus Teil 2, die erst später (PR #7/#8)
+dazukam. Björn ist aufgefallen, dass ausgerechnet die allererste Mail an einen neuen Lead
+(der Musterkarton-Versand) ohne Logo/Branding ankommt. musterversand_abgeschlossen() nutzt
+jetzt wie Teil 2 EmailMultiAlternatives mit einem eigenen HTML/Text-Template-Paar
+(email/musterversand_bestaetigung.html/.txt) inkl. Logo-Header und "Sendung verfolgen"-Button
+(dafür neu: Packschein.tracking_url, analog zu Lieferschein.tracking_url). Weiterhin KEIN
+PDF-Anhang (Packschein hat kein Briefpapier/keine PDF-Erzeugung, siehe Packschein-Docstring
+in models.py) und weiterhin zweisprachig wie seit Teil 4.
 """
 
 import logging
 from datetime import timedelta
 
 from django.conf import settings
-from django.core.mail import EmailMultiAlternatives, send_mail
+from django.core.mail import EmailMultiAlternatives
 from django.template import Context, Template
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -93,29 +104,41 @@ def musterversand_abgeschlossen(packschein):
     sprache = packschein.sprache
 
     if empfaenger:
+        # Bis 20.10.2026 verschickte diese Mail reinen Text ohne Logo/Header - anders als
+        # die HTML-gestaltete Versandbestaetigung fuer echte Bestellungen weiter unten
+        # (lieferschein_versand_abgeschlossen). Björn ist das beim Musterversand an einen
+        # Lead aufgefallen (gerade DER erste Eindruck zaehlt da). Jetzt auf dasselbe
+        # EmailMultiAlternatives-Muster umgestellt, inkl. "Sendung verfolgen"-Button
+        # (Packschein.tracking_url, neu). Dabei auch der Mailtext leicht neu strukturiert:
+        # Trackingdaten stehen jetzt wie bei der Lieferschein-Mail in einer eigenen Zeile
+        # statt im Fliesstext eingebettet - lesbarer, konsistent mit der anderen Mail.
         if sprache == "en":
             betreff = "Your sample box is on its way – ECKO-PACK"
-            zeilen = ["Hello,", "", "Your sample box is on its way to you"]
-            if packschein.trackingnummer:
-                versanddienstleister = (
-                    _VERSANDDIENSTLEISTER_TEXT_EN.get(packschein.versanddienstleister)
-                    or packschein.get_versanddienstleister_display()
-                    or "carrier"
-                )
-                zeilen[-1] += f" ({versanddienstleister}, tracking number {packschein.trackingnummer})"
-            zeilen[-1] += "."
-            zeilen += ["", "We look forward to staying in touch.", "", "Kind regards,", "Your ECKO-PACK Team"]
+            versanddienstleister_anzeige = (
+                _VERSANDDIENSTLEISTER_TEXT_EN.get(packschein.versanddienstleister)
+                or packschein.get_versanddienstleister_display()
+            )
         else:
             betreff = "Ihr Musterkarton ist unterwegs – ECKO-PACK"
-            zeilen = ["Guten Tag,", "", "Ihr Musterkarton ist auf dem Weg zu Ihnen"]
-            if packschein.trackingnummer:
-                versanddienstleister = packschein.get_versanddienstleister_display() or "Versanddienstleister"
-                zeilen[-1] += f" ({versanddienstleister}, Sendungsnummer {packschein.trackingnummer})"
-            zeilen[-1] += "."
-            zeilen += ["", "Wir freuen uns auf weitere Gespräche.", "", "Mit freundlichen Grüßen", "Ihr ECKO-PACK Team"]
-        text = "\n".join(zeilen)
+            versanddienstleister_anzeige = packschein.get_versanddienstleister_display()
+
+        kontext = {
+            "packschein": packschein,
+            "deal": deal,
+            "firma": deal.firma,
+            "ansprechpartner": deal.kontakt,
+            "sprache": sprache,
+            "versanddienstleister_anzeige": versanddienstleister_anzeige,
+            "site_url": SITE_URL,
+            "logo_url": f"{SITE_URL}/static/img/eckopack-logo.png",
+        }
+        text_body = render_to_string("vertrieb/email/musterversand_bestaetigung.txt", kontext)
+        html_body = render_to_string("vertrieb/email/musterversand_bestaetigung.html", kontext)
+
         try:
-            send_mail(betreff, text, settings.DEFAULT_FROM_EMAIL, [empfaenger], fail_silently=False)
+            mail = EmailMultiAlternatives(betreff, text_body, settings.DEFAULT_FROM_EMAIL, [empfaenger])
+            mail.attach_alternative(html_body, "text/html")
+            mail.send(fail_silently=False)
         except Exception:
             logger.exception(
                 "Musterversand-Bestaetigungsmail konnte nicht gesendet werden (Packschein %s)",

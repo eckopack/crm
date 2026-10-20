@@ -1,0 +1,13 @@
+{% if sprache == "en" %}Hello{% else %}Guten Tag{% endif %}{% if ansprechpartner %} {{ ansprechpartner.vorname }} {{ ansprechpartner.nachname }}{% endif %},
+
+{% if sprache == "en" %}Your sample box is on its way to you.{% else %}Ihr Musterkarton ist auf dem Weg zu Ihnen.{% endif %}
+{% if packschein.trackingnummer %}
+{% if versanddienstleister_anzeige %}{% if sprache == "en" %}Carrier{% else %}Versanddienstleister{% endif %}: {{ versanddienstleister_anzeige }}
+{% endif %}{% if sprache == "en" %}Tracking number{% else %}Sendungsnummer{% endif %}: {{ packschein.trackingnummer }}
+{% endif %}{% if packschein.tracking_url %}{% if sprache == "en" %}Track shipment{% else %}Sendungsverfolgung{% endif %}: {{ packschein.tracking_url }}
+{% endif %}
+{% if sprache == "en" %}We look forward to staying in touch.{% else %}Wir freuen uns auf weitere Gespräche.{% endif %}
+
+{% if sprache == "en" %}Kind regards,
+Your ECKO-PACK Team{% else %}Mit freundlichen Grüßen
+Ihr ECKO-PACK Team{% endif %}
