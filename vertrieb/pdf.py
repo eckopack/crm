@@ -767,14 +767,16 @@ STIL_ARTIKEL_HINWEIS = ParagraphStyle(
 )
 
 # Spaltenbreiten der Artikelliste-Tabelle, muessen INHALT_BREITE (467.5pt) ergeben -
-# siehe Modul-Kommentar zu den uebrigen Dokumenten.
-_ARTIKELLISTE_SPALTENBREITEN = [95, 160, 100, 112.5]
+# siehe Modul-Kommentar zu den uebrigen Dokumenten. Fuenfte Spalte "1.000er-Preis"
+# (21.10.2026, auf Wunsch von Björn) ergaenzt neben dem Preis je Einheit - in der
+# Verpackungsbranche die uebliche zweite Preisangabe fuer Mengenkalkulationen.
+_ARTIKELLISTE_SPALTENBREITEN = [90, 125, 85, 85, 82.5]
 _ARTIKELLISTE_GRUPPE_TRENNLINIE = colors.HexColor("#cfd2d1")
 _ARTIKELLISTE_ZEBRA = colors.HexColor("#f6f8f8")
 _ARTIKELLISTE_SUBZEILE_LINIE = colors.HexColor("#eeeeee")
 
 
-def _artikelliste_tabelle(label_ab_menge, label_preis, gruppen):
+def _artikelliste_tabelle(label_ab_menge, label_preis, label_preis_1000, gruppen):
     """Eine EINZIGE durchlaufende Tabelle (statt eines separaten Mini-Blocks je Artikel) -
     21.10.2026, auf Wunsch von Björn: "mehr tabellarisch, aber gut lesbar". Artikelnummer/
     Bezeichnung werden je Artikel über alle seine Preisstaffel-Zeilen hinweg vertikal
@@ -792,6 +794,7 @@ def _artikelliste_tabelle(label_ab_menge, label_preis, gruppen):
             ("Bezeichnung" if label_ab_menge == "Ab Menge" else "Description", "l"),
             (label_ab_menge, "l"),
             (label_preis, "r"),
+            (label_preis_1000, "r"),
         )
     ]
     daten = [kopf]
@@ -805,12 +808,13 @@ def _artikelliste_tabelle(label_ab_menge, label_preis, gruppen):
     zeile = 1
     for gruppen_index, (artikelnummer, bezeichnung, unterzeilen) in enumerate(gruppen):
         start = zeile
-        for menge_text, preis_text in unterzeilen:
+        for menge_text, preis_text, preis_1000_text in unterzeilen:
             daten.append([
                 Paragraph(artikelnummer, STIL_ARTIKEL_NR),
                 Paragraph(bezeichnung, STIL_ARTIKEL_BEZEICHNUNG),
                 Paragraph(menge_text, STIL_TEXT),
                 Paragraph(preis_text, STIL_TEXT_RECHTS),
+                Paragraph(preis_1000_text, STIL_TEXT_RECHTS),
             ])
             zeile += 1
         ende = zeile - 1
@@ -819,7 +823,7 @@ def _artikelliste_tabelle(label_ab_menge, label_preis, gruppen):
             stil.append(("SPAN", (0, start), (0, ende)))
             stil.append(("SPAN", (1, start), (1, ende)))
             for r in range(start, ende):
-                stil.append(("LINEBELOW", (2, r), (3, r), 0.3, _ARTIKELLISTE_SUBZEILE_LINIE))
+                stil.append(("LINEBELOW", (2, r), (4, r), 0.3, _ARTIKELLISTE_SUBZEILE_LINIE))
         if gruppen_index > 0:
             stil.append(("LINEABOVE", (0, start), (-1, start), 0.6, _ARTIKELLISTE_GRUPPE_TRENNLINIE))
         if gruppen_index % 2 == 1:
@@ -847,7 +851,8 @@ def artikelliste_pdf_erzeugen(artikel_liste, sprache="de"):
         titel = "PRICE LIST"
         meta_zeilen = [("As of", _datum(heute, sprache))]
         label_ab_menge, label_preis = "From qty.", "Unit price (net)"
-        preis_auf_anfrage = "Price on request"
+        label_preis_1000 = "Price per 1,000 (net)"
+        preis_auf_anfrage = "on request"
         fusshinweis = (
             "All prices are net in EUR, plus statutory VAT. Subject to errors and price "
             "changes. Please contact us for current availability and shipping costs."
@@ -857,7 +862,8 @@ def artikelliste_pdf_erzeugen(artikel_liste, sprache="de"):
         titel = "ARTIKEL- UND PREISLISTE"
         meta_zeilen = [("Stand", _datum(heute))]
         label_ab_menge, label_preis = "Ab Menge", "Preis je Einheit (netto)"
-        preis_auf_anfrage = "Preis auf Anfrage"
+        label_preis_1000 = "1.000er-Preis (netto)"
+        preis_auf_anfrage = "auf Anfrage"
         fusshinweis = (
             "Alle Preise netto in EUR, zzgl. der gesetzlichen Umsatzsteuer. Irrtümer und "
             "Preisänderungen vorbehalten. Aktuelle Verfügbarkeit und Versandkosten bitte "
@@ -875,18 +881,24 @@ def artikelliste_pdf_erzeugen(artikel_liste, sprache="de"):
         staffeln = list(artikel.preisstaffeln.order_by("ab_menge"))
         if staffeln:
             unterzeilen = [
-                (f"{_menge(s.ab_menge, sprache)} {einheit_text}", _eur_praezise(s.preis_netto, sprache))
+                (
+                    f"{_menge(s.ab_menge, sprache)} {einheit_text}",
+                    _eur_praezise(s.preis_netto, sprache),
+                    _eur(s.preis_netto * 1000, sprache),
+                )
                 for s in staffeln
             ]
         elif artikel.verkaufspreis is not None:
-            unterzeilen = [("–", _eur_praezise(artikel.verkaufspreis, sprache))]
+            unterzeilen = [(
+                "–", _eur_praezise(artikel.verkaufspreis, sprache), _eur(artikel.verkaufspreis * 1000, sprache),
+            )]
         else:
-            unterzeilen = [("–", preis_auf_anfrage)]
+            unterzeilen = [("–", preis_auf_anfrage, "–")]
         gruppen.append((artikel.artikelnummer, bezeichnung, unterzeilen))
 
     story = []
     if gruppen:
-        story.append(_artikelliste_tabelle(label_ab_menge, label_preis, gruppen))
+        story.append(_artikelliste_tabelle(label_ab_menge, label_preis, label_preis_1000, gruppen))
     else:
         story.append(Paragraph(keine_artikel, STIL_TEXT))
 
