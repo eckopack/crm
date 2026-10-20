@@ -355,6 +355,29 @@ def _kopf_folgeseite(titel, nummer, sprache="de"):
     return zeichnen
 
 
+def _kopf_folgeseite_artikelliste(titel, nummer, sprache, empfaenger_name):
+    """Wie _kopf_folgeseite (Fortsetzungszeile auf Seite 2+), aber zusätzlich mit dem
+    Empfängernamen (erste Zeile von empfaenger_zeilen) rechtsbündig in der gleichen Zeile -
+    nur für die Artikelliste (21.10.2026, Bjoerns Nachtrag: "warum ist die adresse nicht
+    auf allen erzeugten seiten zu sehen?"). Grund: die Artikelliste kann über mehrere
+    Seiten laufen und Seiten könnten getrennt werden, dann fehlt sonst jeder Hinweis, für
+    wen Seite 2 gedacht ist. Bewusst NICHT in der geteilten _kopf_folgeseite ergänzt,
+    damit Angebot/Lieferschein/Rechnung (die dieselbe Funktion verwenden) unverändert
+    bleiben. empfaenger_name: None/leer lässt die rechte Seite frei (z.B. interne Vorschau
+    ohne Empfänger)."""
+    def zeichnen(canvas_obj, doc):
+        _hintergrund_zeichnen(canvas_obj, doc, sprache)
+        canvas_obj.saveState()
+        canvas_obj.setFont("Helvetica", 9)
+        canvas_obj.setFillColor(GRAU)
+        fortsetzung = "continued" if sprache == "en" else "Fortsetzung"
+        canvas_obj.drawString(RAND_LINKS, HEADER_START_Y + 30, f"{titel} {nummer} – {fortsetzung}")
+        if empfaenger_name:
+            canvas_obj.drawRightString(SEITENBREITE - RAND_RECHTS, HEADER_START_Y + 30, empfaenger_name)
+        canvas_obj.restoreState()
+    return zeichnen
+
+
 def _positionstabelle(spalten, zeilen):
     """spalten: Liste von (Kopfzeile, Breite, Ausrichtung ('l'|'r')).
     zeilen: Liste von Zeilen, jede Zeile eine Liste von Werten passend zu spalten."""
@@ -913,6 +936,8 @@ def artikelliste_pdf_erzeugen(artikel_liste, sprache="de", empfaenger_zeilen=Non
     story.append(Spacer(1, 16))
     story.append(Paragraph(fusshinweis, STIL_NOTIZEN))
 
+    empfaenger_name = (empfaenger_zeilen or [None])[0]
+
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=A4,
@@ -922,6 +947,6 @@ def artikelliste_pdf_erzeugen(artikel_liste, sprache="de", empfaenger_zeilen=Non
     doc.build(
         story,
         onFirstPage=_kopf_erste_seite(empfaenger_zeilen or [], meta_zeilen, titel, sprache),
-        onLaterPages=_kopf_folgeseite(titel, _datum(heute, sprache), sprache),
+        onLaterPages=_kopf_folgeseite_artikelliste(titel, _datum(heute, sprache), sprache, empfaenger_name),
     )
     return buffer.getvalue()
