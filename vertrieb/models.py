@@ -452,6 +452,20 @@ class Packschein(models.Model):
         positionen = list(self.positionen.all())
         return bool(positionen) and all(p.gepackt for p in positionen)
 
+    @property
+    def tracking_url(self):
+        """Wie Lieferschein.tracking_url - hinzugefuegt am 20.10.2026, damit die
+        Musterversand-Bestaetigungsmail (nurture.musterversand_abgeschlossen) denselben
+        "Sendung verfolgen"-Button anzeigen kann wie die Versandbestaetigung fuer echte
+        Bestellungen."""
+        if not self.trackingnummer or not self.versanddienstleister:
+            return ""
+        vorlage = TRACKING_URL_VORLAGEN.get(self.versanddienstleister)
+        if not vorlage:
+            return ""
+        from urllib.parse import quote
+        return vorlage.format(code=quote(self.trackingnummer))
+
     def save(self, *args, **kwargs):
         if not self.nummer:
             jahr = (self.datum or timezone.now().date()).year
