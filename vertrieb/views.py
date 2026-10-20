@@ -768,7 +768,15 @@ def lieferschein_versand_bestaetigen(request, pk):
     gleichermassen. Hat jede Position einen ermittelbaren Preis, wird die Rechnung direkt
     mitverschickt; fehlt bei mindestens einer Position der Preis, bleibt die Rechnung als
     Entwurf liegen und muss nach manueller Preis-Korrektur ueber den "Jetzt versenden"-Button
-    auf der Rechnungs-Detailseite verschickt werden (siehe rechnung_versand_senden_view)."""
+    auf der Rechnungs-Detailseite verschickt werden (siehe rechnung_versand_senden_view).
+
+    AENDERUNG 20.10.2026 (auf Wunsch von Björn: "wenn wir die trackingnummer beim packschein
+    eingeben, braucht diese nicht nochmal beim lieferschein eingegeben werden"): Hat der
+    verknuepfte Packschein bereits eine Trackingnummer (z. B. weil derselbe Versand bereits
+    dort als versendet erfasst wurde) und der Lieferschein selbst noch keine eigene, wird das
+    Formular damit vorbefuellt - bleibt aber ein normales, ueberschreibbares Feld fuer den
+    Sonderfall, dass Packschein und Lieferschein tatsaechlich unterschiedlich versendet
+    wurden (z. B. Teillieferung, oder ein Lieferschein ohne Packschein-Bezug)."""
     lieferschein = get_object_or_404(Lieferschein, pk=pk)
     if request.method == "POST":
         form = LieferscheinVersandForm(request.POST, instance=lieferschein)
@@ -821,7 +829,11 @@ def lieferschein_versand_bestaetigen(request, pk):
                     )
             return redirect(lieferschein.get_absolute_url())
     else:
-        form = LieferscheinVersandForm(instance=lieferschein, initial={"versendet_am": timezone.now().date()})
+        initial = {"versendet_am": timezone.now().date()}
+        if lieferschein.packschein_id and not lieferschein.trackingnummer and lieferschein.packschein.trackingnummer:
+            initial["versanddienstleister"] = lieferschein.packschein.versanddienstleister
+            initial["trackingnummer"] = lieferschein.packschein.trackingnummer
+        form = LieferscheinVersandForm(instance=lieferschein, initial=initial)
     return render(request, "vertrieb/lieferschein_versand_form.html", {"form": form, "lieferschein": lieferschein})
 
 

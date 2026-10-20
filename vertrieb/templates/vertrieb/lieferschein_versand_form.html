@@ -7,6 +7,12 @@
     Paketaufgabe). Danach wird automatisch eine Versand-Bestätigungsmail an den Kunden
     verschickt, und die Rechnung zu diesem Lieferschein kann erstellt werden – vorher nicht.
 </p>
+{% if lieferschein.packschein.trackingnummer and not lieferschein.trackingnummer %}
+<p class="text-muted small">
+    Trackingnummer {{ lieferschein.packschein.trackingnummer }} wurde vom Packschein
+    {{ lieferschein.packschein.nummer }} übernommen – bei Bedarf unten überschreiben.
+</p>
+{% endif %}
 
 <form method="post">
     {% csrf_token %}
