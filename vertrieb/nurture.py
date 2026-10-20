@@ -50,6 +50,16 @@ jetzt wie Teil 2 EmailMultiAlternatives mit einem eigenen HTML/Text-Template-Paa
 (dafür neu: Packschein.tracking_url, analog zu Lieferschein.tracking_url). Weiterhin KEIN
 PDF-Anhang (Packschein hat kein Briefpapier/keine PDF-Erzeugung, siehe Packschein-Docstring
 in models.py) und weiterhin zweisprachig wie seit Teil 4.
+
+Teil 6 (20.10.2026, auf Wunsch von Björn): Die in Teil 4 bewusst ausgeklammerte
+Lieferschein-Versandbestätigung (Teil 2) ignorierte lieferschein.sprache tatsächlich
+komplett und verschickte IMMER Deutsch - aufgefallen bei einem englischsprachigen
+Testversand (Lieferschein-PDF selbst korrekt Englisch, Mail drumherum aber Deutsch).
+lieferschein_versand_abgeschlossen() ist jetzt wie musterversand_abgeschlossen()
+zweisprachig (Betreff + Templates). Separat davon, bei derselben Gelegenheit entdeckt:
+views.musterkarton_anfordern setzte die Bezeichnung der Musterkarton-Position IMMER aus
+Artikel.bezeichnung (Deutsch) statt sprachabhaengig aus bezeichnung_en - anders als beim
+Beileger (eigener Artikel pro Sprache, daher dort unbemerkt), siehe Fix dort.
 """
 
 import logging
@@ -196,7 +206,14 @@ def lieferschein_versand_abgeschlossen(lieferschein):
     Nutzer sofort sichtbar machen kann, wenn der Versand zwar erfasst, die Mail aber NICHT
     rausgegangen ist (anders als bei musterversand_abgeschlossen() oben oder beim woechentlichen
     Nachfass-Cron wird hier bewusst NICHT fail-silent geloggt - das ist eine kundenseitige
-    Benachrichtigung, Björn soll das direkt im UI sehen, nicht erst im Render-Log suchen)."""
+    Benachrichtigung, Björn soll das direkt im UI sehen, nicht erst im Render-Log suchen).
+
+    Sprache (20.10.2026, auf Wunsch von Björn): Diese Mail ignorierte lieferschein.sprache
+    bisher komplett und ging IMMER deutsch raus, obwohl das Feld seit PR #14 existiert und
+    der Lieferschein selbst (inkl. angehaengter PDF) laengst zweisprachig ist - Björn ist das
+    bei einem englischsprachigen Testversand aufgefallen. Templates und Betreff sind jetzt
+    nach demselben {% if sprache == "en" %}-Muster wie musterversand_bestaetigung.html/.txt
+    zweisprachig."""
     deal = lieferschein.deal
     empfaenger = _empfaenger_email(deal)
 
@@ -208,15 +225,27 @@ def lieferschein_versand_abgeschlossen(lieferschein):
         )
         return False, meldung
 
+    sprache = lieferschein.sprache
+    if sprache == "en":
+        betreff = f"Your order is on its way – ECKO-PACK ({lieferschein.nummer})"
+        versanddienstleister_anzeige = (
+            _VERSANDDIENSTLEISTER_TEXT_EN.get(lieferschein.versanddienstleister)
+            or lieferschein.get_versanddienstleister_display()
+        )
+    else:
+        betreff = f"Ihre Bestellung ist unterwegs – ECKO-PACK ({lieferschein.nummer})"
+        versanddienstleister_anzeige = lieferschein.get_versanddienstleister_display()
+
     kontext = {
         "lieferschein": lieferschein,
         "deal": deal,
         "firma": deal.firma,
         "ansprechpartner": deal.kontakt,
+        "sprache": sprache,
+        "versanddienstleister_anzeige": versanddienstleister_anzeige,
         "site_url": SITE_URL,
         "logo_url": f"{SITE_URL}/static/img/eckopack-logo.png",
     }
-    betreff = f"Ihre Bestellung ist unterwegs – ECKO-PACK ({lieferschein.nummer})"
     text_body = render_to_string("vertrieb/email/versand_bestaetigung.txt", kontext)
     html_body = render_to_string("vertrieb/email/versand_bestaetigung.html", kontext)
 
