@@ -1200,9 +1200,21 @@ def artikelliste_pdf_download(request):
     return response
 
 
+def _empfaenger_zeilen_aus_textarea(request):
+    """Freitext-Anschriftenfeld (21.10.2026, auf Wunsch von Björn: "ich möchte aber auch
+    die adresse auf der preisliste eingeben können") in einzelne, nicht-leere Zeilen
+    zerlegt - wie bei der freien E-Mail-Eingabe bewusst kein Firma/Kontakt-Lookup, da die
+    Preisliste (anders als Angebot & Co.) keinen Deal-/Firmenbezug hat."""
+    rohtext = request.POST.get("empfaenger_adresse", "")
+    return [zeile.strip() for zeile in rohtext.splitlines() if zeile.strip()]
+
+
 @login_required
 def artikelliste_versenden(request):
-    """GET zeigt das Formular (Sprachwahl + freie E-Mail-Eingabe), POST verschickt die
+    """GET zeigt das Formular (Sprachwahl + optionale Anschrift + freie E-Mail-Eingabe).
+    POST unterscheidet per "aktion"-Feld zwei Buttons desselben Formulars: "ansehen"
+    liefert das PDF direkt zur Ansicht (wie zuvor artikelliste_pdf_download, aber jetzt
+    inklusive der eingegebenen Anschrift fürs Briefpapier), "senden" verschickt die
     Artikel-/Preisliste direkt per Mail (ohne Umweg über einen Deal) - siehe
     nurture.artikelliste_versenden. Erfolg/Fehlschlag werden wie bei den übrigen
     Mailversand-Views über Django-Messages zurückgemeldet und zusätzlich zentral in
@@ -1211,6 +1223,17 @@ def artikelliste_versenden(request):
         sprache = request.POST.get("sprache")
         if sprache not in ("de", "en"):
             sprache = "de"
+        empfaenger_zeilen = _empfaenger_zeilen_aus_textarea(request)
+
+        if request.POST.get("aktion") == "ansehen":
+            pdf_bytes = pdf.artikelliste_pdf_erzeugen(
+                _artikelliste_standard_artikel(), sprache=sprache, empfaenger_zeilen=empfaenger_zeilen,
+            )
+            dateiname = "ECKO-PACK_Price_List.pdf" if sprache == "en" else "ECKO-PACK_Artikel-Preisliste.pdf"
+            response = HttpResponse(pdf_bytes, content_type="application/pdf")
+            response["Content-Disposition"] = f'inline; filename="{dateiname}"'
+            return response
+
         empfaenger = (request.POST.get("empfaenger") or "").strip()
         if not empfaenger:
             messages.warning(request, "Bitte eine Empfänger-E-Mail-Adresse eingeben.")
@@ -1220,7 +1243,7 @@ def artikelliste_versenden(request):
             except ValidationError:
                 messages.warning(request, f"„{empfaenger}“ ist keine gültige E-Mail-Adresse.")
                 return redirect("vertrieb:artikelliste_versenden")
-            erfolg, fehler = nurture.artikelliste_versenden(empfaenger, sprache=sprache)
+            erfolg, fehler = nurture.artikelliste_versenden(empfaenger, sprache=sprache, empfaenger_zeilen=empfaenger_zeilen)
             if erfolg:
                 messages.success(request, f"Artikel-/Preisliste wurde an {empfaenger} versendet.")
             else:

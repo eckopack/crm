@@ -836,7 +836,7 @@ def _artikelliste_tabelle(label_ab_menge, label_preis, label_preis_1000, gruppen
     return tabelle
 
 
-def artikelliste_pdf_erzeugen(artikel_liste, sprache="de"):
+def artikelliste_pdf_erzeugen(artikel_liste, sprache="de", empfaenger_zeilen=None):
     """Erzeugt die zweisprachige Artikel-/Preisliste als EINE durchlaufende Tabelle
     (Artikelnummer/Bezeichnung je Artikel über seine Preisstaffel-Zeilen hinweg vertikal
     verbunden, siehe _artikelliste_tabelle) - aufsteigend nach Ab-Menge sortiert, bewusst
@@ -845,12 +845,20 @@ def artikelliste_pdf_erzeugen(artikel_liste, sprache="de"):
     wäre. Artikel ganz ohne Preisstaffel zeigen stattdessen den Flatrate-Verkaufspreis;
     fehlt auch der (verkaufspreis=None, z.B. unvollständig gepflegter Artikel), wird das
     ausdrücklich als "Preis auf Anfrage"/"Price on request" ausgewiesen statt eine falsche
-    Zahl zu erfinden oder die Zeile stillschweigend wegzulassen."""
+    Zahl zu erfinden oder die Zeile stillschweigend wegzulassen.
+
+    empfaenger_zeilen (21.10.2026, auf Wunsch von Björn: "ich möchte aber auch die adresse
+    auf der preisliste eingeben können"): optionale Liste von Textzeilen fürs
+    Anschriftenfeld oben links (gleiche Position/Optik wie bei Angebot/Lieferschein/
+    Rechnung, siehe _kopf_erste_seite) - anders als dort aber KEIN Firma/Kontakt-Objekt,
+    sondern freier Text, weil die Preisliste (anders als die übrigen Dokumente) keinen
+    Deal-/Firmenbezug hat (siehe Modul-Kommentar oben). Leer/None lässt das Feld frei,
+    z.B. für eine reine interne Vorschau ohne Empfänger."""
     heute = timezone.localdate()
     if sprache == "en":
         titel = "PRICE LIST"
         meta_zeilen = [("As of", _datum(heute, sprache))]
-        label_ab_menge, label_preis = "From qty.", "Unit price (net)"
+        label_ab_menge, label_preis = "From qty.", "Price per piece (net)"
         label_preis_1000 = "Price per 1,000 pcs (net)"
         preis_auf_anfrage = "on request"
         fusshinweis = (
@@ -861,7 +869,7 @@ def artikelliste_pdf_erzeugen(artikel_liste, sprache="de"):
     else:
         titel = "ARTIKEL- UND PREISLISTE"
         meta_zeilen = [("Stand", _datum(heute))]
-        label_ab_menge, label_preis = "Ab Menge", "Preis je Einheit (netto)"
+        label_ab_menge, label_preis = "Ab Menge", "Preis je Stück (netto)"
         label_preis_1000 = "1.000er Stückpreis (netto)"
         preis_auf_anfrage = "auf Anfrage"
         fusshinweis = (
@@ -913,7 +921,7 @@ def artikelliste_pdf_erzeugen(artikel_liste, sprache="de"):
     )
     doc.build(
         story,
-        onFirstPage=_kopf_erste_seite([], meta_zeilen, titel, sprache),
+        onFirstPage=_kopf_erste_seite(empfaenger_zeilen or [], meta_zeilen, titel, sprache),
         onLaterPages=_kopf_folgeseite(titel, _datum(heute, sprache), sprache),
     )
     return buffer.getvalue()
