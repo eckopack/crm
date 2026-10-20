@@ -767,7 +767,7 @@ STIL_ARTIKEL_HINWEIS = ParagraphStyle(
 )
 
 # Spaltenbreiten der Artikelliste-Tabelle, muessen INHALT_BREITE (467.5pt) ergeben -
-# siehe Modul-Kommentar zu den uebrigen Dokumenten. Fuenfte Spalte "1.000er-Preis"
+# siehe Modul-Kommentar zu den uebrigen Dokumenten. Fuenfte Spalte "1.000er Stückpreis"
 # (21.10.2026, auf Wunsch von Björn) ergaenzt neben dem Preis je Einheit - in der
 # Verpackungsbranche die uebliche zweite Preisangabe fuer Mengenkalkulationen.
 _ARTIKELLISTE_SPALTENBREITEN = [90, 125, 85, 85, 82.5]
@@ -851,7 +851,7 @@ def artikelliste_pdf_erzeugen(artikel_liste, sprache="de"):
         titel = "PRICE LIST"
         meta_zeilen = [("As of", _datum(heute, sprache))]
         label_ab_menge, label_preis = "From qty.", "Unit price (net)"
-        label_preis_1000 = "Price per 1,000 (net)"
+        label_preis_1000 = "Price per 1,000 pcs (net)"
         preis_auf_anfrage = "on request"
         fusshinweis = (
             "All prices are net in EUR, plus statutory VAT. Subject to errors and price "
@@ -862,7 +862,7 @@ def artikelliste_pdf_erzeugen(artikel_liste, sprache="de"):
         titel = "ARTIKEL- UND PREISLISTE"
         meta_zeilen = [("Stand", _datum(heute))]
         label_ab_menge, label_preis = "Ab Menge", "Preis je Einheit (netto)"
-        label_preis_1000 = "1.000er-Preis (netto)"
+        label_preis_1000 = "1.000er Stückpreis (netto)"
         preis_auf_anfrage = "auf Anfrage"
         fusshinweis = (
             "Alle Preise netto in EUR, zzgl. der gesetzlichen Umsatzsteuer. Irrtümer und "
