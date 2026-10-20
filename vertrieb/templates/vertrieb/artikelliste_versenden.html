@@ -11,39 +11,37 @@
 
 <div class="card mb-3" style="max-width: 560px;">
     <div class="card-body">
-        <form method="get" action="{% url 'vertrieb:artikelliste_pdf' %}" target="_blank" class="mb-4 pb-4 border-bottom">
-            <label class="form-label fw-semibold">PDF ansehen</label>
-            <div class="d-flex gap-3 mb-2">
-                <div class="form-check">
-                    <input class="form-check-input" type="radio" name="sprache" id="pdf_sprache_de" value="de" checked>
-                    <label class="form-check-label" for="pdf_sprache_de">Deutsch</label>
-                </div>
-                <div class="form-check">
-                    <input class="form-check-input" type="radio" name="sprache" id="pdf_sprache_en" value="en">
-                    <label class="form-check-label" for="pdf_sprache_en">Englisch</label>
-                </div>
-            </div>
-            <button type="submit" class="btn btn-outline-primary">PDF in neuem Tab öffnen</button>
-        </form>
-
         <form method="post">
             {% csrf_token %}
-            <label class="form-label fw-semibold">Per E-Mail versenden</label>
-            <div class="d-flex gap-3 mb-2">
+
+            <label class="form-label fw-semibold">Sprache</label>
+            <div class="d-flex gap-3 mb-3">
                 <div class="form-check">
-                    <input class="form-check-input" type="radio" name="sprache" id="mail_sprache_de" value="de" checked>
-                    <label class="form-check-label" for="mail_sprache_de">Deutsch</label>
+                    <input class="form-check-input" type="radio" name="sprache" id="sprache_de" value="de" checked>
+                    <label class="form-check-label" for="sprache_de">Deutsch</label>
                 </div>
                 <div class="form-check">
-                    <input class="form-check-input" type="radio" name="sprache" id="mail_sprache_en" value="en">
-                    <label class="form-check-label" for="mail_sprache_en">Englisch</label>
+                    <input class="form-check-input" type="radio" name="sprache" id="sprache_en" value="en">
+                    <label class="form-check-label" for="sprache_en">Englisch</label>
                 </div>
             </div>
+
             <div class="mb-3">
-                <label for="empfaenger" class="form-label">Empfänger-E-Mail-Adresse</label>
-                <input type="email" name="empfaenger" id="empfaenger" class="form-control" placeholder="kunde@beispiel.de" required>
+                <label for="empfaenger_adresse" class="form-label fw-semibold">Empfänger-Adresse (optional)</label>
+                <textarea name="empfaenger_adresse" id="empfaenger_adresse" class="form-control" rows="4" placeholder="Musterfirma GmbH&#10;z. Hd. Max Mustermann&#10;Musterstraße 1&#10;12345 Musterstadt"></textarea>
+                <div class="form-text">Erscheint im Anschriftenfeld oben links auf dem Briefpapier (wie bei Angebot/Lieferschein/Rechnung). Leer lassen für eine Vorschau ohne Empfänger.</div>
             </div>
-            <button type="submit" class="btn btn-primary">Jetzt versenden</button>
+
+            <div class="d-flex gap-2 mb-4 pb-4 border-bottom">
+                <button type="submit" name="aktion" value="ansehen" formtarget="_blank" class="btn btn-outline-primary">PDF ansehen</button>
+            </div>
+
+            <div class="mb-3">
+                <label for="empfaenger" class="form-label fw-semibold">Per E-Mail versenden</label>
+                <input type="email" name="empfaenger" id="empfaenger" class="form-control" placeholder="kunde@beispiel.de">
+                <div class="form-text">Empfänger-E-Mail-Adresse – nur für den Versand nötig, nicht fürs PDF-Ansehen.</div>
+            </div>
+            <button type="submit" name="aktion" value="senden" class="btn btn-primary">Jetzt versenden</button>
         </form>
     </div>
 </div>

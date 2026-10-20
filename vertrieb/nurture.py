@@ -604,13 +604,15 @@ def rechnung_versand_senden(rechnung):
     return True, None
 
 
-def artikelliste_versenden(empfaenger_email, sprache="de"):
+def artikelliste_versenden(empfaenger_email, sprache="de", empfaenger_zeilen=None):
     """Verschickt die Artikel-/Preisliste (siehe pdf.artikelliste_pdf_erzeugen) als PDF-
     Anhang an eine frei eingegebene E-Mail-Adresse (21.10.2026, auf Wunsch von Björn) -
     bewusst OHNE Deal-/Firmenbezug, anders als alle übrigen Mailfunktionen in diesem Modul:
     EmailVersand.deal ist nullable (siehe Model-Doku "Teil 8"), ein Protokolleintrag mit
-    deal=None ist also ausdrücklich vorgesehen. Gibt (erfolg: bool, fehlermeldung: str|None)
-    zurück, analog zu rechnung_versand_senden() oben."""
+    deal=None ist also ausdrücklich vorgesehen. empfaenger_zeilen (optional): Textzeilen
+    fürs Anschriftenfeld auf dem PDF-Briefpapier, siehe pdf.artikelliste_pdf_erzeugen.
+    Gibt (erfolg: bool, fehlermeldung: str|None) zurück, analog zu
+    rechnung_versand_senden() oben."""
     betreff = "ECKO-PACK price list" if sprache == "en" else "ECKO-PACK Artikel- und Preisliste"
 
     kontext = {
@@ -624,7 +626,7 @@ def artikelliste_versenden(empfaenger_email, sprache="de"):
     artikel_liste = Artikel.objects.filter(vertriebskanal="standard").order_by("artikelnummer").prefetch_related("preisstaffeln")
 
     try:
-        pdf_bytes = pdf.artikelliste_pdf_erzeugen(artikel_liste, sprache=sprache)
+        pdf_bytes = pdf.artikelliste_pdf_erzeugen(artikel_liste, sprache=sprache, empfaenger_zeilen=empfaenger_zeilen)
         mail = EmailMultiAlternatives(betreff, text_body, settings.DEFAULT_FROM_EMAIL, [empfaenger_email])
         mail.attach_alternative(html_body, "text/html")
         dateiname = "ECKO-PACK_Price_List.pdf" if sprache == "en" else "ECKO-PACK_Artikel-Preisliste.pdf"
