@@ -121,6 +121,20 @@
 # Wortlaut für ein förmliches B2B-Angebot noch prüfen/anpassen. Die 20 übrigen Artikel
 # (Amazon-Zweitlistungen selbst sowie Einlage-/Flyer-Artikel, die bereits eigene DE-/EN-
 # Zeilen haben) bleiben hier leer.
+#
+# ARTIKELSTAMM-IMPORT, STAND 20.10.2026 (auf Wunsch von Björn: "es ist immer noch bei
+# den artikel flyer deutsch und englisch in der bezeichnung. bitte nimm das daraus!"):
+# Neue Masterdatei data/20261020_LUAMO_Masterartikelstamm.xlsx (weiterhin 36 Zeilen,
+# sonst byte-identisch zur 18b-Version) entfernt das Wort "Deutsch"/"English" aus der
+# Bezeichnung der 4 Artikel LUA-EINL-BESTECK-DE/EN und LUA-FLYER-STROH-DE/EN (z. B.
+# "LUAMO Trinkhalme Flyer Deutsch" -> "LUAMO Trinkhalme Flyer") - die Sprache steht
+# bei diesen schon eindeutig im "-DE"/"-EN"-Suffix der Artikelnummer, die Wiederholung
+# im Fließtext war überflüssig/störend. WICHTIGE LEKTION aus diesem Deploy: ein
+# direktes Bearbeiten der Artikel-Bezeichnung über die CRM-Oberfläche (GUI) wird vom
+# NÄCHSTEN Deploy automatisch wieder überschrieben, weil import_artikelstamm bei jedem
+# Start erneut aus der hier verlinkten Excel-Datei importiert (siehe Kommentar oben,
+# 14.10.2026) - Bezeichnungsänderungen MÜSSEN also immer hier in der Mastertabelle
+# gemacht werden, nie nur live im CRM.
 
 services:
   - type: web
@@ -137,7 +151,7 @@ services:
     startCommand: >
       python manage.py migrate &&
       python manage.py beispieldaten &&
-      python manage.py import_artikelstamm data/20261018b_LUAMO_Masterartikelstamm.xlsx &&
+      python manage.py import_artikelstamm data/20261020_LUAMO_Masterartikelstamm.xlsx &&
       gunicorn eckopack_crm.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: DJANGO_SECRET_KEY
