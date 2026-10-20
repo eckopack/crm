@@ -69,6 +69,7 @@ urlpatterns = [
     path("rechnungen/<int:pk>/versand/", views.rechnung_versand_senden_view, name="rechnung_versand"),
 
     path("emails/", views.EmailVersandListView.as_view(), name="email_versand_list"),
+    path("nachfass/", views.MusterboxNachfassStatusListView.as_view(), name="musterbox_nachfass_list"),
 
     path("artikel/", views.ArtikelListView.as_view(), name="artikel_list"),
     path("artikel/neu/", views.ArtikelCreateView.as_view(), name="artikel_create"),
