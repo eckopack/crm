@@ -1037,6 +1037,24 @@ class EmailVersandListView(LoginRequiredMixin, ListView):
         return qs
 
 
+class MusterboxNachfassStatusListView(LoginRequiredMixin, ListView):
+    """Globale Übersicht aller Musterbox-Nachfassketten mit ihrem Fälligkeitsdatum (20.10.2026,
+    auf Wunsch von Björn, als Ergänzung zur Anzeige auf der Deal-Detailseite: "die wollte ich
+    aber haben" - er wollte eine deal-übergreifende Liste, nicht nur die Einzelanzeige pro
+    Deal). Standardmäßig nur aktive Ketten, sortiert nach Fälligkeitsdatum (am dringendsten
+    zuerst) - über "Alle anzeigen" auch bereits beendete Ketten mit Beendigungsgrund."""
+    model = MusterboxNachfassStatus
+    template_name = "vertrieb/musterbox_nachfass_list.html"
+    context_object_name = "status_liste"
+    paginate_by = 50
+
+    def get_queryset(self):
+        qs = MusterboxNachfassStatus.objects.all().select_related("deal", "deal__firma")
+        if self.request.GET.get("alle") == "1":
+            return qs.order_by("-aktiv", "naechster_versand_am")
+        return qs.filter(aktiv=True).order_by("naechster_versand_am")
+
+
 # ---------------------------------------------------------------------------
 # Artikel (Artikelstamm)
 # ---------------------------------------------------------------------------

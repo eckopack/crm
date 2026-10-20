@@ -1,0 +1,54 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Nachfass-Übersicht – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Nachfass-Übersicht</h2>
+    <div>
+        {% if request.GET.alle == "1" %}
+        <a href="{% url 'vertrieb:musterbox_nachfass_list' %}" class="btn btn-outline-secondary">Nur aktive anzeigen</a>
+        {% else %}
+        <a href="?alle=1" class="btn btn-outline-secondary">Alle anzeigen</a>
+        {% endif %}
+    </div>
+</div>
+<p class="text-muted">
+    Die 8-wöchige Musterbox-Nachfasskette aller Deals mit Musterversand-Historie, sortiert nach
+    Fälligkeitsdatum. Die tatsächliche Mail wird erst beim nächsten wöchentlichen Cron-Lauf
+    (montags) nach Erreichen des Fälligkeitsdatums verschickt - siehe Email-Übersicht für bereits
+    versendete Mails.
+</p>
+
+<div class="card">
+    <table class="table table-hover mb-0">
+        <thead>
+        <tr>
+            <th>Deal</th>
+            <th>Sprache</th>
+            <th>Woche</th>
+            <th>Nächster Versand fällig am</th>
+            <th>Status</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for status in status_liste %}
+        <tr onclick="window.location='{{ status.deal.get_absolute_url }}'" style="cursor:pointer;">
+            <td>{{ status.deal.titel }} ({{ status.deal.firma.name }})</td>
+            <td>{{ status.get_sprache_display }}</td>
+            <td>{{ status.naechste_woche }}/8</td>
+            <td>{{ status.naechster_versand_am|date:"d.m.Y H:i" }}</td>
+            <td>
+                {% if status.aktiv %}
+                <span class="badge text-bg-success">Aktiv</span>
+                {% else %}
+                <span class="badge text-bg-secondary">Beendet: {{ status.get_beendet_grund_display }}</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-muted text-center py-3">Keine Nachfassketten vorhanden.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% include "vertrieb/_pagination.html" %}
+{% endblock %}
