@@ -302,10 +302,24 @@ def musterkarton_anfordern(request, pk):
         musterkarton_artikel = Artikel.objects.filter(artikelnummer=musterkarton_nr).first()
         beileger_artikel = Artikel.objects.filter(artikelnummer=beileger_nr).first()
 
+        if musterkarton_artikel:
+            # Sprachabhaengig wie artikel_daten_json (20.10.2026 behoben, siehe
+            # nurture.py Teil 6): der Musterkarton ist EIN einziger, zweisprachig
+            # bedruckter Artikel (siehe MUSTERKARTON_ARTIKEL-Kommentar in models.py) -
+            # anders als der Beileger unten (eigener Artikel PRO Sprache) muss die
+            # Bezeichnung hier aus bezeichnung_en gezogen werden, sonst landet bei
+            # einer englischen Musterbox trotzdem die deutsche Artikelbezeichnung auf
+            # Packschein, Lieferschein und im Lieferschein-PDF.
+            musterkarton_bezeichnung = (
+                musterkarton_artikel.bezeichnung_en
+                if sprache == "en" and musterkarton_artikel.bezeichnung_en
+                else musterkarton_artikel.bezeichnung
+            )
+        else:
+            musterkarton_bezeichnung = f"Musterkarton – ACHTUNG: Artikel {musterkarton_nr} fehlt im Artikelstamm"
         PackscheinPosition.objects.create(
             packschein=packschein, artikel=musterkarton_artikel, position=position,
-            bezeichnung=(musterkarton_artikel.bezeichnung if musterkarton_artikel
-                         else f"Musterkarton – ACHTUNG: Artikel {musterkarton_nr} fehlt im Artikelstamm"),
+            bezeichnung=musterkarton_bezeichnung,
             menge=1, einheit="stk",
             musterkarton_einzelart=einzelart,
         )
