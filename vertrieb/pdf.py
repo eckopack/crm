@@ -15,7 +15,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.styles import ParagraphStyle
-from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 # Briefpapier als Vektor-Zeichenfunktion statt fixem Bild (18.10.2026, siehe
 # _hintergrund_zeichnen unten): vorher wurde hier ein fertig gerendertes PNG
@@ -758,19 +758,85 @@ def rechnung_pdf_erzeugen(rechnung):
 # Doku zu den Amazon-Zweitlistungen) als Parameter.
 # ---------------------------------------------------------------------------
 
-STIL_ARTIKEL_TITEL = ParagraphStyle(
-    "ArtikelTitel", fontName="Helvetica-Bold", fontSize=10.5, leading=14, textColor=DUNKEL,
-    spaceBefore=10, spaceAfter=3,
+STIL_ARTIKEL_NR = ParagraphStyle("ArtikelNr", parent=STIL_TEXT, fontSize=8.5, leading=11)
+STIL_ARTIKEL_BEZEICHNUNG = ParagraphStyle(
+    "ArtikelBezeichnung", parent=STIL_TEXT, fontName="Helvetica-Bold", fontSize=9.5,
 )
 STIL_ARTIKEL_HINWEIS = ParagraphStyle(
-    "ArtikelHinweis", parent=STIL_TEXT, fontSize=8.5, textColor=GRAU, spaceAfter=2,
+    "ArtikelHinweis", parent=STIL_TEXT, fontSize=8.5, textColor=GRAU,
 )
+
+# Spaltenbreiten der Artikelliste-Tabelle, muessen INHALT_BREITE (467.5pt) ergeben -
+# siehe Modul-Kommentar zu den uebrigen Dokumenten.
+_ARTIKELLISTE_SPALTENBREITEN = [95, 160, 100, 112.5]
+_ARTIKELLISTE_GRUPPE_TRENNLINIE = colors.HexColor("#cfd2d1")
+_ARTIKELLISTE_ZEBRA = colors.HexColor("#f6f8f8")
+_ARTIKELLISTE_SUBZEILE_LINIE = colors.HexColor("#eeeeee")
+
+
+def _artikelliste_tabelle(label_ab_menge, label_preis, gruppen):
+    """Eine EINZIGE durchlaufende Tabelle (statt eines separaten Mini-Blocks je Artikel) -
+    21.10.2026, auf Wunsch von Björn: "mehr tabellarisch, aber gut lesbar". Artikelnummer/
+    Bezeichnung werden je Artikel über alle seine Preisstaffel-Zeilen hinweg vertikal
+    verbunden (SPAN) statt wiederholt - so liest sich die Liste wie eine echte Preistabelle
+    (Excel-artig gruppiert), nicht wie eine Kette einzelner kleiner Tabellen. repeatRows=1
+    sorgt zugleich dafür, dass die Spaltenköpfe bei einer längeren Liste auf jeder
+    Folgeseite automatisch wiederkehren (vorher gab es dort nur "Fortsetzung" ohne Köpfe).
+    Ein dezenter Zebra-Hintergrund je ZWEITEM Artikel (nicht je Zeile) macht die
+    Artikel-Gruppen zusätzlich zur SPAN-Klammer auf einen Blick unterscheidbar, ohne bei
+    Artikeln mit mehreren Preisstaffel-Zeilen unruhig zu wirken."""
+    kopf = [
+        Paragraph(f"<b>{label}</b>", STIL_TEXT_RECHTS if ausrichtung == "r" else STIL_TEXT)
+        for label, ausrichtung in (
+            ("Artikel-Nr." if label_ab_menge == "Ab Menge" else "Art. No.", "l"),
+            ("Bezeichnung" if label_ab_menge == "Ab Menge" else "Description", "l"),
+            (label_ab_menge, "l"),
+            (label_preis, "r"),
+        )
+    ]
+    daten = [kopf]
+    stil = [
+        ("LINEBELOW", (0, 0), (-1, 0), 1.0, MINT),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]
+
+    zeile = 1
+    for gruppen_index, (artikelnummer, bezeichnung, unterzeilen) in enumerate(gruppen):
+        start = zeile
+        for menge_text, preis_text in unterzeilen:
+            daten.append([
+                Paragraph(artikelnummer, STIL_ARTIKEL_NR),
+                Paragraph(bezeichnung, STIL_ARTIKEL_BEZEICHNUNG),
+                Paragraph(menge_text, STIL_TEXT),
+                Paragraph(preis_text, STIL_TEXT_RECHTS),
+            ])
+            zeile += 1
+        ende = zeile - 1
+
+        if ende > start:
+            stil.append(("SPAN", (0, start), (0, ende)))
+            stil.append(("SPAN", (1, start), (1, ende)))
+            for r in range(start, ende):
+                stil.append(("LINEBELOW", (2, r), (3, r), 0.3, _ARTIKELLISTE_SUBZEILE_LINIE))
+        if gruppen_index > 0:
+            stil.append(("LINEABOVE", (0, start), (-1, start), 0.6, _ARTIKELLISTE_GRUPPE_TRENNLINIE))
+        if gruppen_index % 2 == 1:
+            stil.append(("BACKGROUND", (0, start), (-1, ende), _ARTIKELLISTE_ZEBRA))
+
+        zeile = ende + 1
+
+    tabelle = Table(daten, colWidths=_ARTIKELLISTE_SPALTENBREITEN, repeatRows=1)
+    tabelle.setStyle(TableStyle(stil))
+    return tabelle
 
 
 def artikelliste_pdf_erzeugen(artikel_liste, sprache="de"):
-    """Erzeugt die zweisprachige Artikel-/Preisliste (Artikelnummer + Bezeichnung je
-    Artikel, darunter alle gepflegten Mengenstaffel-Preise aufsteigend nach Ab-Menge -
-    bewusst umgekehrt zur Preisstaffel.Meta.ordering (absteigend), die fürs interne
+    """Erzeugt die zweisprachige Artikel-/Preisliste als EINE durchlaufende Tabelle
+    (Artikelnummer/Bezeichnung je Artikel über seine Preisstaffel-Zeilen hinweg vertikal
+    verbunden, siehe _artikelliste_tabelle) - aufsteigend nach Ab-Menge sortiert, bewusst
+    umgekehrt zur Preisstaffel.Meta.ordering (absteigend), die fürs interne
     preis_fuer_menge()-Lookup praktisch ist, für einen Kunden beim Lesen aber unnatürlich
     wäre. Artikel ganz ohne Preisstaffel zeigen stattdessen den Flatrate-Verkaufspreis;
     fehlt auch der (verkaufspreis=None, z.B. unvollständig gepflegter Artikel), wird das
@@ -781,50 +847,47 @@ def artikelliste_pdf_erzeugen(artikel_liste, sprache="de"):
         titel = "PRICE LIST"
         meta_zeilen = [("As of", _datum(heute, sprache))]
         label_ab_menge, label_preis = "From qty.", "Unit price (net)"
-        label_preis_flatrate = "Unit price (net)"
         preis_auf_anfrage = "Price on request"
         fusshinweis = (
             "All prices are net in EUR, plus statutory VAT. Subject to errors and price "
             "changes. Please contact us for current availability and shipping costs."
         )
+        keine_artikel = "No articles available."
     else:
         titel = "ARTIKEL- UND PREISLISTE"
         meta_zeilen = [("Stand", _datum(heute))]
         label_ab_menge, label_preis = "Ab Menge", "Preis je Einheit (netto)"
-        label_preis_flatrate = "Preis je Einheit (netto)"
         preis_auf_anfrage = "Preis auf Anfrage"
         fusshinweis = (
             "Alle Preise netto in EUR, zzgl. der gesetzlichen Umsatzsteuer. Irrtümer und "
             "Preisänderungen vorbehalten. Aktuelle Verfügbarkeit und Versandkosten bitte "
             "bei uns erfragen."
         )
+        keine_artikel = "Keine Artikel vorhanden."
 
-    story = []
+    gruppen = []
     for artikel in artikel_liste:
         bezeichnung = artikel.bezeichnung
         if sprache == "en" and artikel.bezeichnung_en:
             bezeichnung = artikel.bezeichnung_en
-        story.append(Paragraph(f"{artikel.artikelnummer} – {bezeichnung}", STIL_ARTIKEL_TITEL))
-
         einheit_text = _EINHEIT_LABEL_EN.get(artikel.einheit, artikel.get_einheit_display()) if sprache == "en" else artikel.get_einheit_display()
+
         staffeln = list(artikel.preisstaffeln.order_by("ab_menge"))
         if staffeln:
-            spalten = [(label_ab_menge, INHALT_BREITE * 0.5, "l"), (label_preis, INHALT_BREITE * 0.5, "r")]
-            zeilen = [
-                [f"{_menge(s.ab_menge, sprache)} {einheit_text}", _eur_praezise(s.preis_netto, sprache)]
+            unterzeilen = [
+                (f"{_menge(s.ab_menge, sprache)} {einheit_text}", _eur_praezise(s.preis_netto, sprache))
                 for s in staffeln
             ]
-            story.append(_positionstabelle(spalten, zeilen))
         elif artikel.verkaufspreis is not None:
-            story.append(Paragraph(f"{label_preis_flatrate}: {_eur_praezise(artikel.verkaufspreis, sprache)}", STIL_ARTIKEL_HINWEIS))
+            unterzeilen = [("–", _eur_praezise(artikel.verkaufspreis, sprache))]
         else:
-            story.append(Paragraph(preis_auf_anfrage, STIL_ARTIKEL_HINWEIS))
+            unterzeilen = [("–", preis_auf_anfrage)]
+        gruppen.append((artikel.artikelnummer, bezeichnung, unterzeilen))
 
-        story.append(Spacer(1, 4))
-        story.append(HRFlowable(width=INHALT_BREITE, thickness=0.4, color=colors.HexColor("#dddddd"), spaceAfter=0))
-
-    if not artikel_liste:
-        keine_artikel = "No articles available." if sprache == "en" else "Keine Artikel vorhanden."
+    story = []
+    if gruppen:
+        story.append(_artikelliste_tabelle(label_ab_menge, label_preis, gruppen))
+    else:
         story.append(Paragraph(keine_artikel, STIL_TEXT))
 
     story.append(Spacer(1, 16))
