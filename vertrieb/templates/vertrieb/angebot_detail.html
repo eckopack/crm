@@ -32,12 +32,13 @@
     <div class="card-header fw-semibold">Positionen</div>
     <table class="table mb-0">
         <thead>
-        <tr><th>Pos.</th><th>Bezeichnung</th><th>Menge</th><th>Einheit</th><th>Einzelpreis</th><th>Gesamt</th></tr>
+        <tr><th>Pos.</th><th>Artikel-Nr.</th><th>Bezeichnung</th><th>Menge</th><th>Einheit</th><th>Einzelpreis</th><th>Gesamt</th></tr>
         </thead>
         <tbody>
         {% for p in angebot.positionen.all %}
         <tr>
             <td>{{ p.position }}</td>
+            <td>{{ p.artikel.artikelnummer|default:"–" }}</td>
             <td>{{ p.bezeichnung }}</td>
             <td>{{ p.menge }}</td>
             <td>{{ p.get_einheit_display }}</td>
@@ -45,12 +46,12 @@
             <td>{{ p.gesamtpreis|floatformat:2 }} €</td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="text-muted text-center py-3">Keine Positionen erfasst.</td></tr>
+        <tr><td colspan="7" class="text-muted text-center py-3">Keine Positionen erfasst.</td></tr>
         {% endfor %}
         </tbody>
         <tfoot>
         <tr class="fw-bold">
-            <td colspan="5" class="text-end">Gesamtsumme (netto)</td>
+            <td colspan="6" class="text-end">Gesamtsumme (netto)</td>
             <td>{{ angebot.gesamtsumme|floatformat:2 }} €</td>
         </tr>
         </tfoot>
