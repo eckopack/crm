@@ -871,6 +871,17 @@ class RechnungDetailView(LoginRequiredMixin, DetailView):
     template_name = "vertrieb/rechnung_detail.html"
     context_object_name = "rechnung"
 
+    def get_context_data(self, **kwargs):
+        # 20.10.2026, auf Wunsch von Björn: "ich habe aber gar keine Möglichkeit den
+        # Preis zu hinterlegen" - die Moeglichkeit (ueber "Bearbeiten") gab es technisch
+        # zwar schon, war aber nur als einmalige Flash-Message beim Lieferschein-Versand
+        # sichtbar und verschwand danach spurlos von der Rechnung selbst. Jetzt ein
+        # dauerhafter, bei jedem Aufruf neu berechneter Hinweis direkt auf der
+        # Rechnungs-Detailseite, solange mindestens eine Position noch keinen Preis hat.
+        context = super().get_context_data(**kwargs)
+        context["ungepreiste_positionen"] = self.object.positionen.filter(einzelpreis=0)
+        return context
+
 
 @login_required
 def rechnung_erstellen(request):
