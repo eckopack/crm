@@ -8,13 +8,14 @@ import os
 from decimal import Decimal
 
 from django.conf import settings
+from django.utils import timezone
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.styles import ParagraphStyle
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 # Briefpapier als Vektor-Zeichenfunktion statt fixem Bild (18.10.2026, siehe
 # _hintergrund_zeichnen unten): vorher wurde hier ein fertig gerendertes PNG
@@ -743,3 +744,101 @@ def rechnung_pdf_erzeugen(rechnung):
         meta_zeilen=meta_zeilen, spalten=spalten, zeilen=zeilen, summenzeilen=summenzeilen,
         notizen_titel=notizen_titel, notizen_text=notizen_text, sprache=sprache,
     )
+
+
+# ---------------------------------------------------------------------------
+# Artikel-/Preisliste (21.10.2026, auf Wunsch von Björn: "eine funktion ... in dem ich
+# unsere artikelliste samt preisstaffel mit eckopack briefpapier erzeugen und versenden
+# kann" - zweisprachig, auf dem normalen Kunden-Briefpapier wie Angebot/Lieferschein/
+# Rechnung, aber KEIN Bezug zu einem einzelnen Deal/einer Firma (anders als die anderen
+# Dokumente hier) - wird global über alle Großhandels-Artikel erzeugt und per freier
+# E-Mail-Eingabe versendet (siehe views.artikelliste_versenden). pdf.py bleibt bewusst
+# frei von Model-Importen (siehe übrige Funktionen oben) - der Aufrufer liefert bereits
+# die gefilterte/sortierte Artikel-Liste (vertriebskanal="standard", siehe Artikel-Model-
+# Doku zu den Amazon-Zweitlistungen) als Parameter.
+# ---------------------------------------------------------------------------
+
+STIL_ARTIKEL_TITEL = ParagraphStyle(
+    "ArtikelTitel", fontName="Helvetica-Bold", fontSize=10.5, leading=14, textColor=DUNKEL,
+    spaceBefore=10, spaceAfter=3,
+)
+STIL_ARTIKEL_HINWEIS = ParagraphStyle(
+    "ArtikelHinweis", parent=STIL_TEXT, fontSize=8.5, textColor=GRAU, spaceAfter=2,
+)
+
+
+def artikelliste_pdf_erzeugen(artikel_liste, sprache="de"):
+    """Erzeugt die zweisprachige Artikel-/Preisliste (Artikelnummer + Bezeichnung je
+    Artikel, darunter alle gepflegten Mengenstaffel-Preise aufsteigend nach Ab-Menge -
+    bewusst umgekehrt zur Preisstaffel.Meta.ordering (absteigend), die fürs interne
+    preis_fuer_menge()-Lookup praktisch ist, für einen Kunden beim Lesen aber unnatürlich
+    wäre. Artikel ganz ohne Preisstaffel zeigen stattdessen den Flatrate-Verkaufspreis;
+    fehlt auch der (verkaufspreis=None, z.B. unvollständig gepflegter Artikel), wird das
+    ausdrücklich als "Preis auf Anfrage"/"Price on request" ausgewiesen statt eine falsche
+    Zahl zu erfinden oder die Zeile stillschweigend wegzulassen."""
+    heute = timezone.localdate()
+    if sprache == "en":
+        titel = "PRICE LIST"
+        meta_zeilen = [("As of", _datum(heute, sprache))]
+        label_ab_menge, label_preis = "From qty.", "Unit price (net)"
+        label_preis_flatrate = "Unit price (net)"
+        preis_auf_anfrage = "Price on request"
+        fusshinweis = (
+            "All prices are net in EUR, plus statutory VAT. Subject to errors and price "
+            "changes. Please contact us for current availability and shipping costs."
+        )
+    else:
+        titel = "ARTIKEL- UND PREISLISTE"
+        meta_zeilen = [("Stand", _datum(heute))]
+        label_ab_menge, label_preis = "Ab Menge", "Preis je Einheit (netto)"
+        label_preis_flatrate = "Preis je Einheit (netto)"
+        preis_auf_anfrage = "Preis auf Anfrage"
+        fusshinweis = (
+            "Alle Preise netto in EUR, zzgl. der gesetzlichen Umsatzsteuer. Irrtümer und "
+            "Preisänderungen vorbehalten. Aktuelle Verfügbarkeit und Versandkosten bitte "
+            "bei uns erfragen."
+        )
+
+    story = []
+    for artikel in artikel_liste:
+        bezeichnung = artikel.bezeichnung
+        if sprache == "en" and artikel.bezeichnung_en:
+            bezeichnung = artikel.bezeichnung_en
+        story.append(Paragraph(f"{artikel.artikelnummer} – {bezeichnung}", STIL_ARTIKEL_TITEL))
+
+        einheit_text = _EINHEIT_LABEL_EN.get(artikel.einheit, artikel.get_einheit_display()) if sprache == "en" else artikel.get_einheit_display()
+        staffeln = list(artikel.preisstaffeln.order_by("ab_menge"))
+        if staffeln:
+            spalten = [(label_ab_menge, INHALT_BREITE * 0.5, "l"), (label_preis, INHALT_BREITE * 0.5, "r")]
+            zeilen = [
+                [f"{_menge(s.ab_menge, sprache)} {einheit_text}", _eur_praezise(s.preis_netto, sprache)]
+                for s in staffeln
+            ]
+            story.append(_positionstabelle(spalten, zeilen))
+        elif artikel.verkaufspreis is not None:
+            story.append(Paragraph(f"{label_preis_flatrate}: {_eur_praezise(artikel.verkaufspreis, sprache)}", STIL_ARTIKEL_HINWEIS))
+        else:
+            story.append(Paragraph(preis_auf_anfrage, STIL_ARTIKEL_HINWEIS))
+
+        story.append(Spacer(1, 4))
+        story.append(HRFlowable(width=INHALT_BREITE, thickness=0.4, color=colors.HexColor("#dddddd"), spaceAfter=0))
+
+    if not artikel_liste:
+        keine_artikel = "No articles available." if sprache == "en" else "Keine Artikel vorhanden."
+        story.append(Paragraph(keine_artikel, STIL_TEXT))
+
+    story.append(Spacer(1, 16))
+    story.append(Paragraph(fusshinweis, STIL_NOTIZEN))
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        topMargin=TOP_MARGIN, bottomMargin=BOTTOM_MARGIN,
+        leftMargin=RAND_LINKS, rightMargin=RAND_RECHTS,
+    )
+    doc.build(
+        story,
+        onFirstPage=_kopf_erste_seite([], meta_zeilen, titel, sprache),
+        onLaterPages=_kopf_folgeseite(titel, _datum(heute, sprache), sprache),
+    )
+    return buffer.getvalue()

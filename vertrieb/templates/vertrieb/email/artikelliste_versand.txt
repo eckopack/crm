@@ -1,0 +1,11 @@
+{% if sprache == "en" %}Hello{% else %}Guten Tag{% endif %},
+
+{% if sprache == "en" %}please find our current article and price list attached to this email, including all quantity price tiers.{% else %}anbei erhalten Sie unsere aktuelle Artikel- und Preisliste inklusive aller Mengenstaffel-Preise.{% endif %}
+
+{% if sprache == "en" %}You will find the list as a PDF attached to this email.{% else %}Die Liste finden Sie als PDF im Anhang dieser E-Mail.{% endif %}
+
+{% if sprache == "en" %}If you have any questions, feel free to reach out any time.{% else %}Bei Fragen melden Sie sich jederzeit gerne bei uns.{% endif %}
+
+{% if sprache == "en" %}Kind regards,
+Your ECKO-PACK Team{% else %}Mit freundlichen Grüßen
+Ihr ECKO-PACK Team{% endif %}

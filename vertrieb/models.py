@@ -766,6 +766,7 @@ MAILTYP_CHOICES = [
     ("lieferschein_bestaetigung", "Lieferschein-Versandbestätigung"),
     ("rechnung_bestaetigung", "Rechnung-Versandbestätigung"),
     ("musterbox_nachfass", "Musterbox-Nachfassmail"),
+    ("artikelliste", "Artikelliste (Preisliste)"),
 ]
 
 

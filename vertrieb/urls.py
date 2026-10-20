@@ -77,4 +77,6 @@ urlpatterns = [
     path("artikel/<int:pk>/bearbeiten/", views.ArtikelUpdateView.as_view(), name="artikel_update"),
     path("artikel/<int:pk>/loeschen/", views.ArtikelDeleteView.as_view(), name="artikel_delete"),
     path("artikel/<int:pk>/daten.json", views.artikel_daten_json, name="artikel_daten_json"),
+    path("artikel/preisliste/", views.artikelliste_versenden, name="artikelliste_versenden"),
+    path("artikel/preisliste/pdf/", views.artikelliste_pdf_download, name="artikelliste_pdf"),
 ]
