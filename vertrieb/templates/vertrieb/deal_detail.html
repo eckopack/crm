@@ -81,6 +81,12 @@
                     Bestätigungsmail gesendet am {{ musterversand.bestaetigungsmail_gesendet_am|date:"d.m.Y H:i" }}
                 </li>
                 {% endif %}
+                {% if deal.musterbox_nachfass_status.aktiv %}
+                <li class="list-group-item text-muted small">
+                    Nächste Nachfassmail (Woche {{ deal.musterbox_nachfass_status.naechste_woche }}/8) fällig am
+                    {{ deal.musterbox_nachfass_status.naechster_versand_am|date:"d.m.Y H:i" }}
+                </li>
+                {% endif %}
             </ul>
         </div>
         {% endif %}
