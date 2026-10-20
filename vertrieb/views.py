@@ -5,7 +5,9 @@ from decimal import Decimal, InvalidOperation
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.exceptions import ValidationError
 from django.core.management import call_command
+from django.core.validators import validate_email
 from django.db import models
 from django.db.models import Sum
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
@@ -1168,4 +1170,66 @@ def artikel_daten_json(request, pk):
         "mindestbestand": str(artikel.mindestbestand) if artikel.mindestbestand is not None else None,
         "unter_mindestbestand": artikel.unter_mindestbestand,
         "status": artikel.get_status_display() if artikel.status else "",
+    })
+
+
+# ---------------------------------------------------------------------------
+# Artikel-/Preisliste erzeugen & versenden (21.10.2026, auf Wunsch von Björn: "eine
+# funktion ... mit auswahl ob deutsch oder englisch, in dem ich unsere artikelliste samt
+# preisstaffel mit eckopack briefpapier erzeugen und versenden kann") - bewusst KEIN
+# Deal-/Firmenbezug: freie E-Mail-Eingabe statt Firma/Kontakt-Auswahl (anders als alle
+# übrigen Versandfunktionen in diesem Modul), siehe nurture.artikelliste_versenden.
+# Nur Großhandels-Artikel (vertriebskanal="standard") - Amazon-Zweitlistungen bleiben
+# analog zur Positionsauswahl in Angebot/Packschein/Lieferschein/Rechnung aussen vor
+# (siehe Artikel-Model-Doku).
+# ---------------------------------------------------------------------------
+
+def _artikelliste_standard_artikel():
+    return Artikel.objects.filter(vertriebskanal="standard").order_by("artikelnummer").prefetch_related("preisstaffeln")
+
+
+@login_required
+def artikelliste_pdf_download(request):
+    sprache = request.GET.get("sprache")
+    if sprache not in ("de", "en"):
+        sprache = "de"
+    pdf_bytes = pdf.artikelliste_pdf_erzeugen(_artikelliste_standard_artikel(), sprache=sprache)
+    dateiname = "ECKO-PACK_Price_List.pdf" if sprache == "en" else "ECKO-PACK_Artikel-Preisliste.pdf"
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'inline; filename="{dateiname}"'
+    return response
+
+
+@login_required
+def artikelliste_versenden(request):
+    """GET zeigt das Formular (Sprachwahl + freie E-Mail-Eingabe), POST verschickt die
+    Artikel-/Preisliste direkt per Mail (ohne Umweg über einen Deal) - siehe
+    nurture.artikelliste_versenden. Erfolg/Fehlschlag werden wie bei den übrigen
+    Mailversand-Views über Django-Messages zurückgemeldet und zusätzlich zentral in
+    EmailVersand protokolliert (deal=None, siehe models.EmailVersand)."""
+    if request.method == "POST":
+        sprache = request.POST.get("sprache")
+        if sprache not in ("de", "en"):
+            sprache = "de"
+        empfaenger = (request.POST.get("empfaenger") or "").strip()
+        if not empfaenger:
+            messages.warning(request, "Bitte eine Empfänger-E-Mail-Adresse eingeben.")
+        else:
+            try:
+                validate_email(empfaenger)
+            except ValidationError:
+                messages.warning(request, f"„{empfaenger}“ ist keine gültige E-Mail-Adresse.")
+                return redirect("vertrieb:artikelliste_versenden")
+            erfolg, fehler = nurture.artikelliste_versenden(empfaenger, sprache=sprache)
+            if erfolg:
+                messages.success(request, f"Artikel-/Preisliste wurde an {empfaenger} versendet.")
+            else:
+                messages.warning(
+                    request,
+                    f"Artikel-/Preisliste konnte NICHT an {empfaenger} versendet werden ({fehler}).",
+                )
+        return redirect("vertrieb:artikelliste_versenden")
+
+    return render(request, "vertrieb/artikelliste_versenden.html", {
+        "anzahl_artikel": _artikelliste_standard_artikel().count(),
     })

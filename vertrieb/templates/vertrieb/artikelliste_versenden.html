@@ -1,0 +1,52 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Artikel-/Preisliste versenden – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<h2 class="mb-3">Artikel-/Preisliste erzeugen &amp; versenden</h2>
+<p class="text-muted">
+    Erzeugt eine zweisprachige Artikel- und Preisliste (inkl. aller Mengenstaffel-Preise)
+    auf ECKO-PACK-Briefpapier für alle {{ anzahl_artikel }} Großhandels-Artikel
+    (Amazon-Zweitlistungen sind ausgeschlossen). Die Liste kann direkt als PDF angesehen
+    oder per E-Mail an eine beliebige Adresse versendet werden.
+</p>
+
+<div class="card mb-3" style="max-width: 560px;">
+    <div class="card-body">
+        <form method="get" action="{% url 'vertrieb:artikelliste_pdf' %}" target="_blank" class="mb-4 pb-4 border-bottom">
+            <label class="form-label fw-semibold">PDF ansehen</label>
+            <div class="d-flex gap-3 mb-2">
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="sprache" id="pdf_sprache_de" value="de" checked>
+                    <label class="form-check-label" for="pdf_sprache_de">Deutsch</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="sprache" id="pdf_sprache_en" value="en">
+                    <label class="form-check-label" for="pdf_sprache_en">Englisch</label>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-outline-primary">PDF in neuem Tab öffnen</button>
+        </form>
+
+        <form method="post">
+            {% csrf_token %}
+            <label class="form-label fw-semibold">Per E-Mail versenden</label>
+            <div class="d-flex gap-3 mb-2">
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="sprache" id="mail_sprache_de" value="de" checked>
+                    <label class="form-check-label" for="mail_sprache_de">Deutsch</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="sprache" id="mail_sprache_en" value="en">
+                    <label class="form-check-label" for="mail_sprache_en">Englisch</label>
+                </div>
+            </div>
+            <div class="mb-3">
+                <label for="empfaenger" class="form-label">Empfänger-E-Mail-Adresse</label>
+                <input type="email" name="empfaenger" id="empfaenger" class="form-control" placeholder="kunde@beispiel.de" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Jetzt versenden</button>
+        </form>
+    </div>
+</div>
+
+<a href="{% url 'vertrieb:artikel_list' %}" class="btn btn-outline-secondary">Zurück zur Artikelübersicht</a>
+{% endblock %}

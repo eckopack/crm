@@ -112,7 +112,7 @@ from django.utils import timezone
 
 from . import pdf
 from .models import (
-    Aktivitaet, EmailVersand, MUSTERKARTON_ARTIKEL, MusterboxNachfassStatus,
+    Aktivitaet, Artikel, EmailVersand, MUSTERKARTON_ARTIKEL, MusterboxNachfassStatus,
     MusterboxNachfassVorlage, Rechnung, RechnungPosition,
 )
 
@@ -600,5 +600,47 @@ def rechnung_versand_senden(rechnung):
     _mail_protokollieren(
         deal=deal, mailtyp="rechnung_bestaetigung", empfaenger=empfaenger, betreff=betreff,
         erfolg=True, rechnung=rechnung,
+    )
+    return True, None
+
+
+def artikelliste_versenden(empfaenger_email, sprache="de"):
+    """Verschickt die Artikel-/Preisliste (siehe pdf.artikelliste_pdf_erzeugen) als PDF-
+    Anhang an eine frei eingegebene E-Mail-Adresse (21.10.2026, auf Wunsch von Björn) -
+    bewusst OHNE Deal-/Firmenbezug, anders als alle übrigen Mailfunktionen in diesem Modul:
+    EmailVersand.deal ist nullable (siehe Model-Doku "Teil 8"), ein Protokolleintrag mit
+    deal=None ist also ausdrücklich vorgesehen. Gibt (erfolg: bool, fehlermeldung: str|None)
+    zurück, analog zu rechnung_versand_senden() oben."""
+    betreff = "ECKO-PACK price list" if sprache == "en" else "ECKO-PACK Artikel- und Preisliste"
+
+    kontext = {
+        "sprache": sprache,
+        "site_url": SITE_URL,
+        "logo_url": f"{SITE_URL}/static/img/eckopack-logo.png",
+    }
+    text_body = render_to_string("vertrieb/email/artikelliste_versand.txt", kontext)
+    html_body = render_to_string("vertrieb/email/artikelliste_versand.html", kontext)
+
+    artikel_liste = Artikel.objects.filter(vertriebskanal="standard").order_by("artikelnummer").prefetch_related("preisstaffeln")
+
+    try:
+        pdf_bytes = pdf.artikelliste_pdf_erzeugen(artikel_liste, sprache=sprache)
+        mail = EmailMultiAlternatives(betreff, text_body, settings.DEFAULT_FROM_EMAIL, [empfaenger_email])
+        mail.attach_alternative(html_body, "text/html")
+        dateiname = "ECKO-PACK_Price_List.pdf" if sprache == "en" else "ECKO-PACK_Artikel-Preisliste.pdf"
+        mail.attach(dateiname, pdf_bytes, "application/pdf")
+        mail.send(fail_silently=False)
+    except Exception as exc:
+        logger.exception(
+            "Artikelliste-Mail (inkl. PDF) konnte nicht gesendet werden (Empfaenger %s)", empfaenger_email,
+        )
+        _mail_protokollieren(
+            deal=None, mailtyp="artikelliste", empfaenger=empfaenger_email, betreff=betreff,
+            erfolg=False, fehlermeldung=str(exc),
+        )
+        return False, str(exc)
+
+    _mail_protokollieren(
+        deal=None, mailtyp="artikelliste", empfaenger=empfaenger_email, betreff=betreff, erfolg=True,
     )
     return True, None
