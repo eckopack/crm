@@ -583,7 +583,10 @@ def packschein_erstellen(request):
 
         if angebot_quelle and angebot_quelle.positionen.exists():
             positionen_initial = [
-                {"position": p.position, "bezeichnung": p.bezeichnung, "menge": p.menge, "einheit": p.einheit}
+                {
+                    "artikel": p.artikel_id, "position": p.position, "bezeichnung": p.bezeichnung,
+                    "menge": p.menge, "einheit": p.einheit,
+                }
                 for p in angebot_quelle.positionen.all()
             ]
             FormSetVorbefuellt = inlineformset_factory(
@@ -723,7 +726,10 @@ def lieferschein_erstellen(request):
 
         if quelle_positionen is not None and quelle_positionen.exists():
             positionen_initial = [
-                {"position": p.position, "bezeichnung": p.bezeichnung, "menge": p.menge, "einheit": p.einheit}
+                {
+                    "artikel": p.artikel_id, "position": p.position, "bezeichnung": p.bezeichnung,
+                    "menge": p.menge, "einheit": p.einheit,
+                }
                 for p in quelle_positionen
             ]
             FormSetVorbefuellt = inlineformset_factory(
@@ -961,7 +967,7 @@ def rechnung_erstellen(request):
             for p in quelle_positionen:
                 einzelpreis = getattr(p, "einzelpreis", 0) or 0
                 positionen_initial.append({
-                    "position": p.position, "bezeichnung": p.bezeichnung,
+                    "artikel": p.artikel_id, "position": p.position, "bezeichnung": p.bezeichnung,
                     "menge": p.menge, "einheit": p.einheit, "einzelpreis": einzelpreis,
                 })
             FormSetVorbefuellt = inlineformset_factory(
