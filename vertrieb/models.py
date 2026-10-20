@@ -643,6 +643,15 @@ class Rechnung(models.Model):
                    "vorbefüllt, ist aber frei überschreibbar.",
     )
     notizen = models.TextField("Notizen/Zahlungshinweis", blank=True)
+    # bestaetigungsmail_gesendet_am (20.10.2026, auf Wunsch von Björn): analog zu
+    # Packschein/Lieferschein.bestaetigungsmail_gesendet_am - gesetzt von
+    # nurture.rechnung_versand_senden(), sowohl beim automatischen Versand direkt nach
+    # Lieferschein-Versand (siehe views.lieferschein_versand_bestaetigen) als auch beim
+    # manuellen Nachsenden-Button auf der Rechnungs-Detailseite (fuer den Fall, dass die
+    # Automatik mangels Positionspreisen nicht automatisch versenden konnte, siehe dort).
+    bestaetigungsmail_gesendet_am = models.DateTimeField(
+        "Rechnungs-Mail an Kunde gesendet am", null=True, blank=True, editable=False,
+    )
     erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
 
     class Meta:
@@ -735,6 +744,61 @@ class RechnungPosition(models.Model):
     @property
     def bruttobetrag(self):
         return self.nettobetrag + self.steuerbetrag
+
+
+MAILTYP_CHOICES = [
+    ("musterversand_bestaetigung", "Musterversand-Bestätigung"),
+    ("lieferschein_bestaetigung", "Lieferschein-Versandbestätigung"),
+    ("rechnung_bestaetigung", "Rechnung-Versandbestätigung"),
+    ("musterbox_nachfass", "Musterbox-Nachfassmail"),
+]
+
+
+class EmailVersand(models.Model):
+    """Protokolliert JEDEN Versuch, eine automatische Kundenmail zu verschicken - egal ob
+    erfolgreich oder fehlgeschlagen (20.10.2026, auf Wunsch von Björn: "alle emailaktivitaeten
+    sehen koennen, um einen ueberblick zu haben").
+
+    Bisher gab es dafuer nur verstreute Einzelfelder auf den jeweiligen Dokumenten
+    (Packschein/Lieferschein.bestaetigungsmail_gesendet_am) und reine Log-Zeilen bei
+    Fehlschlag (nur im Render-Log sichtbar, nicht im CRM selbst) - keine zentrale, fuer
+    Björn einsehbare Uebersicht, und v.a. keine Spur von FEHLGESCHLAGENEN Versuchen im
+    CRM. Wird von nurture.py bei jedem Mailversand (erfolgreich oder nicht) angelegt, nie
+    nachtraeglich geaendert - reines Protokoll, wie ein Journal."""
+
+    deal = models.ForeignKey(
+        Deal, verbose_name="Deal", on_delete=models.CASCADE, related_name="email_versaende",
+        null=True, blank=True,
+    )
+    mailtyp = models.CharField("Mailtyp", max_length=30, choices=MAILTYP_CHOICES)
+    empfaenger = models.EmailField("Empfänger", blank=True)
+    betreff = models.CharField("Betreff", max_length=300, blank=True)
+    erfolg = models.BooleanField("Erfolgreich versendet")
+    fehlermeldung = models.TextField("Fehlermeldung", blank=True)
+    versendet_am = models.DateTimeField("Versucht am", auto_now_add=True)
+
+    # Optionale Verknuepfung zum auslösenden Dokument, fuer die Uebersicht je Vorgang.
+    packschein = models.ForeignKey(
+        Packschein, verbose_name="Packschein", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="email_versaende",
+    )
+    lieferschein = models.ForeignKey(
+        Lieferschein, verbose_name="Lieferschein", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="email_versaende",
+    )
+    rechnung = models.ForeignKey(
+        Rechnung, verbose_name="Rechnung", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="email_versaende",
+    )
+
+    class Meta:
+        verbose_name = "E-Mail-Versand"
+        verbose_name_plural = "E-Mail-Versände"
+        ordering = ["-versendet_am"]
+
+    def __str__(self):
+        status = "OK" if self.erfolg else "FEHLER"
+        return f"[{status}] {self.get_mailtyp_display()} an {self.empfaenger or '–'}"
 
 
 MATERIALTYP_CHOICES = [
@@ -1064,6 +1128,7 @@ MUSTERBOX_NACHFASS_ENDE_CHOICES = [
     ("angebot", "Deal erreichte die Angebotsphase (oder weiter)"),
     ("abgelaufen", "8 Wochen ohne Reaktion"),
     ("verloren", "Deal als verloren markiert"),
+    ("manuell", "Manuell abgebrochen"),
 ]
 
 

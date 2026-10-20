@@ -1,0 +1,16 @@
+{% if sprache == "en" %}Hello{% else %}Guten Tag{% endif %}{% if ansprechpartner %} {{ ansprechpartner.vorname }} {{ ansprechpartner.nachname }}{% endif %},
+
+{% if sprache == "en" %}please find attached the invoice for your recent order from ECKO-PACK.{% else %}anbei erhalten Sie die Rechnung zu Ihrer Bestellung bei ECKO-PACK.{% endif %}
+
+{% if sprache == "en" %}Invoice no.{% else %}Rechnungsnummer{% endif %}: {{ rechnung.nummer }}
+{% if sprache == "en" %}Invoice date{% else %}Rechnungsdatum{% endif %}: {{ rechnung.rechnungsdatum|date:"d.m.Y" }}
+{% if sprache == "en" %}Due date{% else %}Fällig am{% endif %}: {{ rechnung.faelligkeitsdatum|date:"d.m.Y" }}
+{% if sprache == "en" %}Total (gross){% else %}Gesamtbetrag (brutto){% endif %}: {{ rechnung.bruttosumme|floatformat:2 }} €
+
+{% if sprache == "en" %}You will find the invoice as a PDF attached to this email.{% else %}Die Rechnung finden Sie als PDF im Anhang dieser E-Mail.{% endif %}
+
+{% if sprache == "en" %}If you have any questions about this invoice, feel free to reach out any time.{% else %}Bei Fragen zu dieser Rechnung melden Sie sich jederzeit gerne bei uns.{% endif %}
+
+{% if sprache == "en" %}Kind regards,
+Your ECKO-PACK Team{% else %}Mit freundlichen Grüßen
+Ihr ECKO-PACK Team{% endif %}

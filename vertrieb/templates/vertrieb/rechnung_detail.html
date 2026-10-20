@@ -16,6 +16,13 @@
         {% endif %}
     </div>
     <div class="d-print-none">
+        {% if rechnung.status == "entwurf" %}
+        <form method="post" action="{% url 'vertrieb:rechnung_versand' rechnung.pk %}" class="d-inline"
+              onclick="return confirm('Rechnung {{ rechnung.nummer }} jetzt per Mail an den Kunden versenden?');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary">Jetzt versenden</button>
+        </form>
+        {% endif %}
         <a href="{% url 'vertrieb:rechnung_pdf' rechnung.pk %}" target="_blank" class="btn btn-outline-primary">PDF</a>
         {% if rechnung.ist_bearbeitbar %}
         <a href="{% url 'vertrieb:rechnung_update' rechnung.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
@@ -23,6 +30,11 @@
         <a href="{% url 'vertrieb:rechnung_delete' rechnung.pk %}" class="btn btn-outline-danger">Löschen</a>
     </div>
 </div>
+{% if rechnung.bestaetigungsmail_gesendet_am %}
+<div class="text-muted small mb-3">
+    Rechnungs-Mail an Kunde gesendet am {{ rechnung.bestaetigungsmail_gesendet_am|date:"d.m.Y H:i" }}.
+</div>
+{% endif %}
 
 <div class="card mb-3" style="max-width:300px;">
     <ul class="list-group list-group-flush">

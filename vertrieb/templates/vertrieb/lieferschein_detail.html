@@ -14,12 +14,18 @@
         <span class="badge text-bg-light border">{{ lieferschein.get_sprache_display }}</span>
     </div>
     <div class="d-print-none">
-        {% if lieferschein.tatsaechlich_versendet %}
+        {% with rechnung=lieferschein.rechnungen.first %}
+        {% if rechnung %}
+        <a href="{{ rechnung.get_absolute_url }}" class="btn btn-outline-primary">
+            Rechnung: {{ rechnung.nummer }} ({{ rechnung.get_status_display }})
+        </a>
+        {% elif lieferschein.tatsaechlich_versendet %}
         <a href="{% url 'vertrieb:rechnung_create' %}?lieferschein={{ lieferschein.pk }}" class="btn btn-primary">Rechnung erstellen</a>
         {% else %}
         <a href="{% url 'vertrieb:lieferschein_versand' lieferschein.pk %}" class="btn btn-success">Als versendet markieren</a>
         <button type="button" class="btn btn-primary" disabled title="Erst nach Eingabe der Trackingnummer möglich">Rechnung erstellen</button>
         {% endif %}
+        {% endwith %}
         <a href="{% url 'vertrieb:lieferschein_pdf' lieferschein.pk %}" target="_blank" class="btn btn-outline-primary">PDF</a>
         <a href="{% url 'vertrieb:lieferschein_update' lieferschein.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
         <a href="{% url 'vertrieb:lieferschein_delete' lieferschein.pk %}" class="btn btn-outline-danger">Löschen</a>

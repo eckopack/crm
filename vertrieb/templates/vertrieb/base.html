@@ -75,6 +75,7 @@
                 <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:lieferschein_list' %}">Lieferscheine</a></li>
                 <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:rechnung_list' %}">Rechnungen</a></li>
                 <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:artikel_list' %}">Artikel</a></li>
+                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:email_versand_list' %}">Emails</a></li>
             </ul>
             {% if user.is_authenticated %}
             <ul class="navbar-nav">

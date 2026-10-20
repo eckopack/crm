@@ -23,7 +23,8 @@ from .forms import (
 )
 from .models import (
     DEAL_PHASE_CHOICES, MUSTERKARTON_ARTIKEL, PHASE_STANDARD_WAHRSCHEINLICHKEIT,
-    Aktivitaet, Angebot, Artikel, Deal, Firma, Kontakt, Packschein, PackscheinPosition, Lieferschein, Rechnung,
+    Aktivitaet, Angebot, Artikel, Deal, EmailVersand, Firma, Kontakt, MusterboxNachfassStatus,
+    Packschein, PackscheinPosition, Lieferschein, Rechnung,
 )
 from django.forms import inlineformset_factory
 
@@ -231,6 +232,9 @@ class DealDetailView(LoginRequiredMixin, DetailView):
         context["musterversand"] = (
             self.object.packscheine.filter(ist_musterversand=True).order_by("-erstellt_am").first()
         )
+        # Email-Verlauf dieses Deals (20.10.2026, auf Wunsch von Björn) - siehe
+        # views.EmailVersandListView für die globale Übersicht aller Deals.
+        context["email_versaende"] = self.object.email_versaende.all()[:20]
         return context
 
 
@@ -347,6 +351,28 @@ def musterkarton_anfordern(request, pk):
         f"Packschein {packschein.nummer} für Musterkarton-Versand ({art_text}) angelegt, inkl. passendem Beileger.",
     )
     return redirect(packschein.get_absolute_url())
+
+
+@login_required
+def musterbox_nachfass_abbrechen(request, pk):
+    """Bricht die laufende 8-wöchige Musterbox-Nachfasskette eines Deals manuell ab (20.10.2026,
+    auf Wunsch von Björn: "manuell eingreifen ... evtl. Vorgang löschen" - bewusst NICHT das
+    Löschen des Packscheins/Lieferscheins selbst, sondern nur das Beenden der automatischen
+    Werbe-Kette an den Kunden, siehe models.MusterboxNachfassStatus). Setzt denselben
+    aktiv/beendet_am/beendet_grund-Mechanismus wie management/commands/nachfass_pruefen.py,
+    nur mit einem neuen Grund ('manuell') statt 'angebot'/'abgelaufen'/'verloren'."""
+    deal = get_object_or_404(Deal, pk=pk)
+    status = getattr(deal, "musterbox_nachfass_status", None)
+    if request.method == "POST":
+        if status is not None and status.aktiv:
+            status.aktiv = False
+            status.beendet_am = timezone.now()
+            status.beendet_grund = "manuell"
+            status.save(update_fields=["aktiv", "beendet_am", "beendet_grund"])
+            messages.success(request, "Musterbox-Nachfasskette wurde manuell abgebrochen.")
+        else:
+            messages.info(request, "Für diesen Deal läuft keine aktive Musterbox-Nachfasskette.")
+    return redirect(deal.get_absolute_url())
 
 
 class DealCreateView(LoginRequiredMixin, CreateView):
@@ -735,10 +761,14 @@ def lieferschein_bearbeiten(request, pk):
 def lieferschein_versand_bestaetigen(request, pk):
     """Trackingnummer eintragen und Lieferschein auf 'versendet' setzen (17.10.2026,
     auf Wunsch von Björn - analog zu packschein_versand_bestaetigen). Löst die
-    Versand-Bestätigungsmail an den Kunden aus (siehe nurture.lieferschein_versand_abgeschlossen)
-    und schaltet damit zugleich die Rechnungserstellung zu diesem Lieferschein frei
-    (siehe rechnung_erstellen) sowie das Ende der Nachfass-Kette des Deals (siehe
-    management/commands/nachfass_pruefen.py)."""
+    Versand-Bestätigungsmail an den Kunden aus (siehe nurture.lieferschein_versand_abgeschlossen),
+    das Ende der Nachfass-Kette des Deals (siehe management/commands/nachfass_pruefen.py) sowie
+    seit 20.10.2026 (auf Wunsch von Björn, siehe nurture.py Teil 7) die automatische
+    Rechnungserstellung zu diesem Lieferschein - fuer Muster UND echte Bestellungen
+    gleichermassen. Hat jede Position einen ermittelbaren Preis, wird die Rechnung direkt
+    mitverschickt; fehlt bei mindestens einer Position der Preis, bleibt die Rechnung als
+    Entwurf liegen und muss nach manueller Preis-Korrektur ueber den "Jetzt versenden"-Button
+    auf der Rechnungs-Detailseite verschickt werden (siehe rechnung_versand_senden_view)."""
     lieferschein = get_object_or_404(Lieferschein, pk=pk)
     if request.method == "POST":
         form = LieferscheinVersandForm(request.POST, instance=lieferschein)
@@ -764,6 +794,31 @@ def lieferschein_versand_bestaetigen(request, pk):
                     f"({fehler}). Rechnung kann trotzdem erstellt werden - bitte Kunden ggf. "
                     f"manuell informieren.",
                 )
+
+            rechnung, ungepreiste_positionen = nurture.rechnung_automatisch_erstellen(lieferschein)
+            if ungepreiste_positionen:
+                messages.warning(
+                    request,
+                    f"Rechnung {rechnung.nummer} wurde als Entwurf angelegt, aber NICHT automatisch "
+                    f"versendet: für folgende Positionen fehlt ein Preis (kein verknüpfter Artikel "
+                    f"oder Artikel ohne Verkaufspreis) - {'; '.join(ungepreiste_positionen)}. Bitte "
+                    f"auf der Rechnung Preise nachtragen und dann über \"Jetzt versenden\" verschicken.",
+                )
+            elif rechnung.status == "entwurf":
+                erfolg_re, fehler_re = nurture.rechnung_versand_senden(rechnung)
+                if erfolg_re:
+                    messages.success(
+                        request,
+                        f"Rechnung {rechnung.nummer} wurde automatisch erstellt und per Mail an den "
+                        f"Kunden versendet.",
+                    )
+                else:
+                    messages.warning(
+                        request,
+                        f"Rechnung {rechnung.nummer} wurde automatisch erstellt, konnte aber NICHT "
+                        f"per Mail versendet werden ({fehler_re}). Bitte über \"Jetzt versenden\" auf "
+                        f"der Rechnungs-Detailseite erneut versuchen.",
+                    )
             return redirect(lieferschein.get_absolute_url())
     else:
         form = LieferscheinVersandForm(instance=lieferschein, initial={"versendet_am": timezone.now().date()})
@@ -937,6 +992,49 @@ def rechnung_pdf_download(request, pk):
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
     response["Content-Disposition"] = f'inline; filename="{rechnung.nummer}.pdf"'
     return response
+
+
+@login_required
+def rechnung_versand_senden_view(request, pk):
+    """Verschickt eine Rechnung manuell per Mail (20.10.2026, auf Wunsch von Björn, siehe
+    nurture.py Teil 7) - fuer den Fall, dass die Automatik bei Lieferschein-Versand mangels
+    Positionspreisen nicht automatisch versenden konnte (rechnung bleibt dann als Entwurf
+    liegen), oder um eine manuell erstellte Rechnung (views.rechnung_erstellen) ebenfalls
+    per Mail zu verschicken statt nur als PDF herunterzuladen."""
+    rechnung = get_object_or_404(Rechnung, pk=pk)
+    if request.method == "POST":
+        if rechnung.status != "entwurf":
+            messages.info(request, f"Rechnung {rechnung.nummer} wurde bereits versendet.")
+        else:
+            erfolg, fehler = nurture.rechnung_versand_senden(rechnung)
+            if erfolg:
+                messages.success(request, f"Rechnung {rechnung.nummer} wurde per Mail an den Kunden versendet.")
+            else:
+                messages.warning(
+                    request,
+                    f"Rechnung {rechnung.nummer} konnte NICHT per Mail versendet werden ({fehler}).",
+                )
+    return redirect(rechnung.get_absolute_url())
+
+
+# ---------------------------------------------------------------------------
+# Email-Übersicht
+# ---------------------------------------------------------------------------
+
+class EmailVersandListView(LoginRequiredMixin, ListView):
+    """Übersicht ALLER automatischen Kundenmails - erfolgreich und fehlgeschlagen (20.10.2026,
+    auf Wunsch von Björn: "alle emailaktivitaeten sehen koennen, um einen ueberblick zu
+    haben"). Siehe models.EmailVersand / nurture._mail_protokollieren."""
+    model = EmailVersand
+    template_name = "vertrieb/email_versand_list.html"
+    context_object_name = "email_versaende"
+    paginate_by = 50
+
+    def get_queryset(self):
+        qs = EmailVersand.objects.all().select_related("deal", "deal__firma")
+        if self.request.GET.get("nur_fehler") == "1":
+            qs = qs.filter(erfolg=False)
+        return qs
 
 
 # ---------------------------------------------------------------------------

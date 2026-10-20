@@ -12,6 +12,13 @@
         <span class="badge text-bg-light border">{{ deal.get_phase_display }}</span>
     </div>
     <div class="d-print-none">
+        {% if deal.musterbox_nachfass_status.aktiv %}
+        <form method="post" action="{% url 'vertrieb:musterbox_nachfass_abbrechen' deal.pk %}" class="d-inline"
+              onclick="return confirm('Laufende Musterbox-Nachfasskette (Woche {{ deal.musterbox_nachfass_status.naechste_woche }}) wirklich abbrechen? Es werden dann keine weiteren automatischen Nachfassmails an den Kunden mehr verschickt.');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-danger">Nachfass-Kette abbrechen</button>
+        </form>
+        {% endif %}
         {% if musterversand %}
         <a href="{{ musterversand.get_absolute_url }}" class="btn btn-outline-info">
             Musterversand: {{ musterversand.get_status_display }}
@@ -101,7 +108,7 @@
                 {% endfor %}
             </ul>
         </div>
-        <div class="card">
+        <div class="card mb-3">
             <div class="card-header d-flex justify-content-between">
                 <span class="fw-semibold">Aktivitäten</span>
                 <a href="{% url 'vertrieb:aktivitaet_create' %}?deal={{ deal.pk }}" class="btn btn-sm btn-outline-primary">+ Aktivität</a>
@@ -117,6 +124,29 @@
                 </li>
                 {% empty %}
                 <li class="list-group-item text-muted">Keine Aktivitäten hinterlegt.</li>
+                {% endfor %}
+            </ul>
+        </div>
+        <div class="card">
+            <div class="card-header d-flex justify-content-between">
+                <span class="fw-semibold">Email-Verlauf</span>
+                <a href="{% url 'vertrieb:email_versand_list' %}" class="small">Alle Deals ansehen</a>
+            </div>
+            <ul class="list-group list-group-flush">
+                {% for e in email_versaende %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <span>
+                        {{ e.get_mailtyp_display }}
+                        <span class="small text-muted">· {{ e.versendet_am|date:"d.m.Y H:i" }}</span>
+                    </span>
+                    {% if e.erfolg %}
+                    <span class="badge text-bg-success">Versendet</span>
+                    {% else %}
+                    <span class="badge text-bg-danger" title="{{ e.fehlermeldung }}">Fehler</span>
+                    {% endif %}
+                </li>
+                {% empty %}
+                <li class="list-group-item text-muted">Noch keine E-Mails für diesen Deal.</li>
                 {% endfor %}
             </ul>
         </div>

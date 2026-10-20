@@ -26,6 +26,7 @@ urlpatterns = [
     path("deals/neu/", views.DealCreateView.as_view(), name="deal_create"),
     path("deals/<int:pk>/", views.DealDetailView.as_view(), name="deal_detail"),
     path("deals/<int:pk>/musterkarton/", views.musterkarton_anfordern, name="musterkarton_anfordern"),
+    path("deals/<int:pk>/nachfass-abbrechen/", views.musterbox_nachfass_abbrechen, name="musterbox_nachfass_abbrechen"),
     path("deals/<int:pk>/bearbeiten/", views.DealUpdateView.as_view(), name="deal_update"),
     path("deals/<int:pk>/loeschen/", views.DealDeleteView.as_view(), name="deal_delete"),
 
@@ -65,6 +66,9 @@ urlpatterns = [
     path("rechnungen/<int:pk>/bearbeiten/", views.rechnung_bearbeiten, name="rechnung_update"),
     path("rechnungen/<int:pk>/loeschen/", views.RechnungDeleteView.as_view(), name="rechnung_delete"),
     path("rechnungen/<int:pk>/pdf/", views.rechnung_pdf_download, name="rechnung_pdf"),
+    path("rechnungen/<int:pk>/versand/", views.rechnung_versand_senden_view, name="rechnung_versand"),
+
+    path("emails/", views.EmailVersandListView.as_view(), name="email_versand_list"),
 
     path("artikel/", views.ArtikelListView.as_view(), name="artikel_list"),
     path("artikel/neu/", views.ArtikelCreateView.as_view(), name="artikel_create"),

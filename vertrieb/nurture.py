@@ -60,10 +60,49 @@ zweisprachig (Betreff + Templates). Separat davon, bei derselben Gelegenheit ent
 views.musterkarton_anfordern setzte die Bezeichnung der Musterkarton-Position IMMER aus
 Artikel.bezeichnung (Deutsch) statt sprachabhaengig aus bezeichnung_en - anders als beim
 Beileger (eigener Artikel pro Sprache, daher dort unbemerkt), siehe Fix dort.
+
+Teil 7 (20.10.2026, auf Wunsch von Björn): Bei derselben Gelegenheit aufgefallen - zu einem
+versendeten Lieferschein (egal ob Musterversand oder echte Bestellung) wurde nie
+automatisch eine Rechnung erzeugt oder verschickt, nur ueber den manuellen Button
+"Rechnung erstellen" (views.rechnung_erstellen), und selbst eine manuell erstellte Rechnung
+wurde vom CRM nie per Mail verschickt (nur PDF-Download). Neu:
+
+1. rechnung_automatisch_erstellen(lieferschein) wird von views.lieferschein_versand_
+   bestaetigen direkt nach der Versand-Bestaetigungsmail aufgerufen (fuer Muster UND echte
+   Bestellungen gleichermassen - beide landen hier) und legt eine Rechnung mit den
+   Lieferschein-Positionen an. Preisermittlung bewusst vorsichtig: pro Position wird der
+   Preis NUR gesetzt, wenn die Position einen Artikel verknuepft hat (Artikel.
+   preis_fuer_menge(), inkl. Mengenstaffel, plus Artikel.ust_satz) - LieferscheinPosition
+   traegt selbst keinen Preis (reines Lieferdokument), und beim Anlegen eines Lieferscheins
+   aus einem Packschein (views.lieferschein_erstellen) wird die Artikel-Verknuepfung aus der
+   Positions-Vorbefuellung aktuell NICHT uebernommen - ist sie bei einer Position nicht
+   gesetzt, bleibt der Preis unbekannt.
+2. rechnung_versand_senden(rechnung) verschickt die (HTML-gestaltete, zweisprachige)
+   Rechnungs-Mail mit PDF-Anhang analog zu lieferschein_versand_abgeschlossen() und setzt
+   bei Erfolg rechnung.status auf 'versendet' (damit greift automatisch die bestehende
+   GoBD-Sperre, siehe Rechnung.ist_bearbeitbar).
+3. rechnung_automatisch_erstellen() + views.lieferschein_versand_bestaetigen verschicken die
+   Rechnung automatisch NUR, wenn ALLE Positionen einen Preis haben - sonst bleibt die
+   Rechnung als Entwurf liegen (Preise manuell nachtragen), und der Nutzer sieht im UI genau,
+   welche Positionen betroffen sind. Der manuelle "Jetzt versenden"-Button auf der
+   Rechnungs-Detailseite (views.rechnung_versand_senden_view) ruft danach denselben
+   rechnung_versand_senden() auf - KEIN Freitext-/Preis-Risiko: lieber eine Rechnung zu viel
+   im Entwurf liegen lassen als automatisch eine mit 0,00 EUR oder falschem Steuersatz an
+   einen Kunden verschicken.
+
+Teil 8 (20.10.2026, auf Wunsch von Björn: "alle emailaktivitaeten sehen koennen, um einen
+ueberblick zu haben, und um auch manuell einzugreifen"): JEDER Mailversand (die drei
+bestehenden aus Teil 1/2/3 oben sowie die neue Rechnungs-Mail aus Teil 7) protokolliert sich
+jetzt zusaetzlich als models.EmailVersand-Datensatz - erfolgreich oder fehlgeschlagen,
+inkl. Fehlermeldung. Siehe views.EmailVersandListView fuer die Uebersichtsseite im CRM
+sowie den Email-Verlauf-Abschnitt auf der Deal-Detailseite. Protokollierung ist selbst
+best effort (siehe _mail_protokollieren) - ein Fehler beim Schreiben des Protokolls darf
+niemals den eigentlichen Mailversand zum Scheitern bringen.
 """
 
 import logging
 from datetime import timedelta
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
@@ -72,9 +111,31 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 
 from . import pdf
-from .models import Aktivitaet, MUSTERKARTON_ARTIKEL, MusterboxNachfassStatus, MusterboxNachfassVorlage
+from .models import (
+    Aktivitaet, EmailVersand, MUSTERKARTON_ARTIKEL, MusterboxNachfassStatus,
+    MusterboxNachfassVorlage, Rechnung, RechnungPosition,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _mail_protokollieren(*, deal, mailtyp, empfaenger, betreff, erfolg, fehlermeldung="",
+                          packschein=None, lieferschein=None, rechnung=None):
+    """Legt einen EmailVersand-Protokolleintrag an - siehe Teil 8 oben. Best effort: ein
+    Fehler HIER (z.B. DB kurz nicht erreichbar) darf den bereits erfolgten/versuchten
+    Mailversand nicht nachtraeglich als Fehlschlag erscheinen lassen, deshalb eigenes
+    try/except statt den Aufrufer platzen zu lassen."""
+    try:
+        EmailVersand.objects.create(
+            deal=deal, mailtyp=mailtyp, empfaenger=empfaenger or "", betreff=betreff or "",
+            erfolg=erfolg, fehlermeldung=fehlermeldung or "",
+            packschein=packschein, lieferschein=lieferschein, rechnung=rechnung,
+        )
+    except Exception:
+        logger.exception(
+            "E-Mail-Versand konnte nicht protokolliert werden (Mailtyp %s, Deal %s)",
+            mailtyp, deal.pk if deal else None,
+        )
 
 # Versanddienstleister-Anzeigetext fuer die englische Versandbestaetigung - die Choices in
 # models.VERSANDDIENSTLEISTER_CHOICES sind deutsch beschriftet (zwei davon tatsaechlich
@@ -149,18 +210,31 @@ def musterversand_abgeschlossen(packschein):
             mail = EmailMultiAlternatives(betreff, text_body, settings.DEFAULT_FROM_EMAIL, [empfaenger])
             mail.attach_alternative(html_body, "text/html")
             mail.send(fail_silently=False)
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "Musterversand-Bestaetigungsmail konnte nicht gesendet werden (Packschein %s)",
                 packschein.nummer,
             )
+            _mail_protokollieren(
+                deal=deal, mailtyp="musterversand_bestaetigung", empfaenger=empfaenger, betreff=betreff,
+                erfolg=False, fehlermeldung=str(exc), packschein=packschein,
+            )
         else:
             packschein.bestaetigungsmail_gesendet_am = timezone.now()
             packschein.save(update_fields=["bestaetigungsmail_gesendet_am"])
+            _mail_protokollieren(
+                deal=deal, mailtyp="musterversand_bestaetigung", empfaenger=empfaenger, betreff=betreff,
+                erfolg=True, packschein=packschein,
+            )
     else:
         logger.warning(
             "Kein Empfaenger (E-Mail) fuer Musterversand-Bestaetigungsmail gefunden (Packschein %s, Deal %s)",
             packschein.nummer, deal.pk,
+        )
+        _mail_protokollieren(
+            deal=deal, mailtyp="musterversand_bestaetigung", empfaenger="", betreff="",
+            erfolg=False, fehlermeldung="keine E-Mail-Adresse für Firma/Ansprechpartner hinterlegt",
+            packschein=packschein,
         )
 
     Aktivitaet.objects.create(
@@ -223,6 +297,10 @@ def lieferschein_versand_abgeschlossen(lieferschein):
             "Kein Empfaenger (E-Mail) fuer Versand-Bestaetigungsmail gefunden (Lieferschein %s, Deal %s)",
             lieferschein.nummer, deal.pk,
         )
+        _mail_protokollieren(
+            deal=deal, mailtyp="lieferschein_bestaetigung", empfaenger="", betreff="",
+            erfolg=False, fehlermeldung=meldung, lieferschein=lieferschein,
+        )
         return False, meldung
 
     sprache = lieferschein.sprache
@@ -260,10 +338,18 @@ def lieferschein_versand_abgeschlossen(lieferschein):
             "Versand-Bestaetigungsmail (inkl. Lieferschein-PDF) konnte nicht gesendet werden (Lieferschein %s)",
             lieferschein.nummer,
         )
+        _mail_protokollieren(
+            deal=deal, mailtyp="lieferschein_bestaetigung", empfaenger=empfaenger, betreff=betreff,
+            erfolg=False, fehlermeldung=str(exc), lieferschein=lieferschein,
+        )
         return False, str(exc)
 
     lieferschein.bestaetigungsmail_gesendet_am = timezone.now()
     lieferschein.save(update_fields=["bestaetigungsmail_gesendet_am"])
+    _mail_protokollieren(
+        deal=deal, mailtyp="lieferschein_bestaetigung", empfaenger=empfaenger, betreff=betreff,
+        erfolg=True, lieferschein=lieferschein,
+    )
     return True, None
 
 
@@ -321,6 +407,10 @@ def musterbox_nachfass_senden(deal, status):
             "Kein Empfaenger (E-Mail) fuer Musterbox-Nachfassmail gefunden (Deal %s, Woche %s)",
             deal.pk, status.naechste_woche,
         )
+        _mail_protokollieren(
+            deal=deal, mailtyp="musterbox_nachfass", empfaenger="", betreff="",
+            erfolg=False, fehlermeldung=meldung,
+        )
         return False, meldung
 
     vorlage = MusterboxNachfassVorlage.fuer_woche(status.naechste_woche, status.sprache)
@@ -329,6 +419,10 @@ def musterbox_nachfass_senden(deal, status):
         logger.error(
             "Musterbox-Nachfassmail: keine Vorlage fuer Woche %s/%s (Deal %s) - bitte im Admin anlegen",
             status.naechste_woche, status.sprache, deal.pk,
+        )
+        _mail_protokollieren(
+            deal=deal, mailtyp="musterbox_nachfass", empfaenger=empfaenger, betreff="",
+            erfolg=False, fehlermeldung=meldung,
         )
         return False, meldung
 
@@ -348,6 +442,10 @@ def musterbox_nachfass_senden(deal, status):
             "Musterbox-Nachfassmail-Vorlage (Woche %s/%s) konnte nicht gerendert werden (Deal %s) - "
             "vermutlich ein Tippfehler in einem {{ Platzhalter }} im Admin",
             status.naechste_woche, status.sprache, deal.pk,
+        )
+        _mail_protokollieren(
+            deal=deal, mailtyp="musterbox_nachfass", empfaenger=empfaenger, betreff="",
+            erfolg=False, fehlermeldung=str(exc),
         )
         return False, str(exc)
 
@@ -370,6 +468,137 @@ def musterbox_nachfass_senden(deal, status):
             "Musterbox-Nachfassmail (Woche %s) konnte nicht gesendet werden (Deal %s)",
             status.naechste_woche, deal.pk,
         )
+        _mail_protokollieren(
+            deal=deal, mailtyp="musterbox_nachfass", empfaenger=empfaenger, betreff=betreff,
+            erfolg=False, fehlermeldung=str(exc),
+        )
         return False, str(exc)
 
+    _mail_protokollieren(
+        deal=deal, mailtyp="musterbox_nachfass", empfaenger=empfaenger, betreff=betreff, erfolg=True,
+    )
+    return True, None
+
+
+def rechnung_automatisch_erstellen(lieferschein):
+    """Legt zu einem soeben versendeten Lieferschein automatisch eine Rechnung an (siehe
+    Teil 7 oben) - fuer Muster UND echte Bestellungen gleichermassen, aufgerufen von
+    views.lieferschein_versand_bestaetigen.
+
+    Gibt (rechnung, ungepreiste_positionen) zurueck. ungepreiste_positionen ist eine Liste
+    von Klartexten ("Position 1 (LUAMO Musterkarton Besteck)") fuer jede Position, deren
+    Preis NICHT ermittelt werden konnte (keine Artikel-Verknuepfung auf der
+    Lieferschein-Position, oder Artikel ohne Verkaufspreis/Preisstaffel) - ist diese Liste
+    nicht leer, bleibt rechnung.status='entwurf' und der Aufrufer darf NICHT automatisch
+    versenden (siehe rechnung_versand_senden unten).
+
+    Idempotent: existiert zu diesem Lieferschein bereits eine Rechnung (egal welcher
+    Status), wird NICHTS angelegt - gibt dann (bestehende Rechnung, []) zurueck, damit ein
+    versehentliches Doppel-Auftreten (z.B. erneuter POST) keine zweite Rechnung erzeugt.
+    """
+    bestehende = lieferschein.rechnungen.first()
+    if bestehende is not None:
+        return bestehende, []
+
+    deal = lieferschein.deal
+    rechnung = Rechnung.objects.create(
+        deal=deal, angebot=lieferschein.angebot, lieferschein=lieferschein,
+        sprache=lieferschein.sprache,
+        notizen=(
+            "Automatisch erzeugt beim Versand (siehe Lieferschein "
+            f"{lieferschein.nummer})." if lieferschein.sprache != "en" else
+            f"Automatically created on shipment (see delivery note {lieferschein.nummer})."
+        ),
+    )
+
+    ungepreiste_positionen = []
+    for p in lieferschein.positionen.all():
+        einzelpreis = None
+        steuersatz = Decimal("19.00")
+        if p.artikel is not None:
+            preis = p.artikel.preis_fuer_menge(p.menge)
+            if preis is not None:
+                einzelpreis = preis
+                steuersatz = p.artikel.ust_satz
+        if einzelpreis is None:
+            ungepreiste_positionen.append(f"Position {p.position} ({p.bezeichnung})")
+            einzelpreis = Decimal("0")
+        RechnungPosition.objects.create(
+            rechnung=rechnung, artikel=p.artikel, position=p.position, bezeichnung=p.bezeichnung,
+            menge=p.menge, einheit=p.einheit, einzelpreis=einzelpreis, steuersatz=steuersatz,
+        )
+
+    return rechnung, ungepreiste_positionen
+
+
+def rechnung_versand_senden(rechnung):
+    """Verschickt die (HTML-gestaltete, zweisprachige) Rechnungs-Mail mit PDF-Anhang an den
+    Kunden - analog zu lieferschein_versand_abgeschlossen() oben (siehe Teil 7). Wird sowohl
+    automatisch direkt nach rechnung_automatisch_erstellen() aufgerufen (wenn alle
+    Positionen einen Preis haben) als auch ueber den manuellen "Jetzt versenden"-Button auf
+    der Rechnungs-Detailseite (views.rechnung_versand_senden_view) - z.B. nachdem Björn
+    fehlende Preise nachgetragen hat.
+
+    Setzt bei Erfolg rechnung.status='versendet' (damit greift automatisch die bestehende
+    GoBD-Sperre, siehe Rechnung.ist_bearbeitbar) und rechnung.bestaetigungsmail_gesendet_am.
+
+    Gibt (erfolg: bool, fehlermeldung: str|None) zurueck - wie lieferschein_versand_
+    abgeschlossen() bewusst NICHT fail-silent, der aufrufende View soll das sofort im UI
+    zeigen koennen."""
+    deal = rechnung.deal
+    empfaenger = _empfaenger_email(deal)
+
+    if not empfaenger:
+        meldung = "keine E-Mail-Adresse für Firma/Ansprechpartner hinterlegt"
+        logger.warning(
+            "Kein Empfaenger (E-Mail) fuer Rechnungs-Mail gefunden (Rechnung %s, Deal %s)",
+            rechnung.nummer, deal.pk,
+        )
+        _mail_protokollieren(
+            deal=deal, mailtyp="rechnung_bestaetigung", empfaenger="", betreff="",
+            erfolg=False, fehlermeldung=meldung, rechnung=rechnung,
+        )
+        return False, meldung
+
+    sprache = rechnung.sprache
+    if sprache == "en":
+        betreff = f"Your invoice is ready – ECKO-PACK ({rechnung.nummer})"
+    else:
+        betreff = f"Ihre Rechnung – ECKO-PACK ({rechnung.nummer})"
+
+    kontext = {
+        "rechnung": rechnung,
+        "deal": deal,
+        "firma": deal.firma,
+        "ansprechpartner": deal.kontakt,
+        "sprache": sprache,
+        "site_url": SITE_URL,
+        "logo_url": f"{SITE_URL}/static/img/eckopack-logo.png",
+    }
+    text_body = render_to_string("vertrieb/email/rechnung_bestaetigung.txt", kontext)
+    html_body = render_to_string("vertrieb/email/rechnung_bestaetigung.html", kontext)
+
+    try:
+        rechnung_pdf_bytes = pdf.rechnung_pdf_erzeugen(rechnung)
+        mail = EmailMultiAlternatives(betreff, text_body, settings.DEFAULT_FROM_EMAIL, [empfaenger])
+        mail.attach_alternative(html_body, "text/html")
+        mail.attach(f"{rechnung.nummer}.pdf", rechnung_pdf_bytes, "application/pdf")
+        mail.send(fail_silently=False)
+    except Exception as exc:
+        logger.exception(
+            "Rechnungs-Mail (inkl. PDF) konnte nicht gesendet werden (Rechnung %s)", rechnung.nummer,
+        )
+        _mail_protokollieren(
+            deal=deal, mailtyp="rechnung_bestaetigung", empfaenger=empfaenger, betreff=betreff,
+            erfolg=False, fehlermeldung=str(exc), rechnung=rechnung,
+        )
+        return False, str(exc)
+
+    rechnung.status = "versendet"
+    rechnung.bestaetigungsmail_gesendet_am = timezone.now()
+    rechnung.save(update_fields=["status", "bestaetigungsmail_gesendet_am"])
+    _mail_protokollieren(
+        deal=deal, mailtyp="rechnung_bestaetigung", empfaenger=empfaenger, betreff=betreff,
+        erfolg=True, rechnung=rechnung,
+    )
     return True, None
