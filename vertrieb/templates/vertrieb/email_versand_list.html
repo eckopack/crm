@@ -1,0 +1,53 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Email-Übersicht – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Email-Übersicht</h2>
+    <div>
+        {% if request.GET.nur_fehler == "1" %}
+        <a href="{% url 'vertrieb:email_versand_list' %}" class="btn btn-outline-secondary">Alle anzeigen</a>
+        {% else %}
+        <a href="?nur_fehler=1" class="btn btn-outline-danger">Nur Fehler anzeigen</a>
+        {% endif %}
+    </div>
+</div>
+<p class="text-muted">
+    Jeder automatische Mailversand des CRM (Musterversand-, Lieferschein- und
+    Rechnungs-Bestätigung sowie die wöchentliche Musterbox-Nachfassmail) - erfolgreich oder
+    fehlgeschlagen.
+</p>
+
+<div class="card">
+    <table class="table table-hover mb-0">
+        <thead>
+        <tr><th>Versucht am</th><th>Typ</th><th>Deal</th><th>Empfänger</th><th>Betreff</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+        {% for e in email_versaende %}
+        <tr{% if e.deal %} onclick="window.location='{{ e.deal.get_absolute_url }}'" style="cursor:pointer;"{% endif %}>
+            <td>{{ e.versendet_am|date:"d.m.Y H:i" }}</td>
+            <td>{{ e.get_mailtyp_display }}</td>
+            <td>{% if e.deal %}{{ e.deal.titel }} ({{ e.deal.firma.name }}){% else %}–{% endif %}</td>
+            <td>{{ e.empfaenger|default:"–" }}</td>
+            <td>{{ e.betreff|default:"–" }}</td>
+            <td>
+                {% if e.erfolg %}
+                <span class="badge text-bg-success">Versendet</span>
+                {% else %}
+                <span class="badge text-bg-danger" title="{{ e.fehlermeldung }}">Fehler</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% if not e.erfolg and e.fehlermeldung %}
+        <tr{% if e.deal %} onclick="window.location='{{ e.deal.get_absolute_url }}'" style="cursor:pointer;"{% endif %}>
+            <td colspan="6" class="small text-danger pt-0">{{ e.fehlermeldung }}</td>
+        </tr>
+        {% endif %}
+        {% empty %}
+        <tr><td colspan="6" class="text-muted text-center py-3">Noch keine E-Mails protokolliert.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% include "vertrieb/_pagination.html" %}
+{% endblock %}
