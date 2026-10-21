@@ -519,6 +519,21 @@ class Lieferschein(models.Model):
         Packschein, verbose_name="Packschein", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="lieferscheine"
     )
+    rahmenvereinbarung = models.ForeignKey(
+        "Rahmenvereinbarung", verbose_name="Rahmenvereinbarung", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="lieferscheine",
+        help_text=(
+            "21.10.2026, Björns Großkunden-Jahresmengenanfrage: ist dieser Lieferschein ein "
+            "Abruf aus einer Rahmenvereinbarung (siehe dort), wird beim automatischen Erzeugen "
+            "der zugehörigen Rechnung NICHT die normale mengenabhängige Preisstaffel des "
+            "Artikels angewendet, sondern der in der Rahmenvereinbarung für diesen Artikel "
+            "eingefrorene Preis - unabhängig davon, wie klein diese einzelne Teillieferung "
+            "ist (siehe nurture.rechnung_automatisch_erstellen). So bekommt ein Großkunde "
+            "über das ganze Jahr verteilte Teilabrufe konsequent zum vereinbarten "
+            "Jahresmengen-Preis, statt bei jedem kleineren Einzelabruf automatisch in eine "
+            "teurere, kleinere Mengenstaffel zu fallen."
+        ),
+    )
     datum = models.DateField("Lieferdatum", default=timezone.localdate)
     status = models.CharField("Status", max_length=20, choices=LIEFERSCHEIN_STATUS_CHOICES, default="entwurf")
     # Versand-/Tracking-Erfassung (17.10.2026, auf Wunsch von Björn): bewusst dieselben
@@ -614,6 +629,165 @@ class LieferscheinPosition(models.Model):
 
     def __str__(self):
         return self.bezeichnung
+
+
+class Rahmenvereinbarung(models.Model):
+    """Jahresmengenvereinbarung mit einem Großkunden (21.10.2026, auf Wunsch von Björn:
+    Großkunde will Jahresmengen abnehmen, die in einzelnen Teillieferungen übers Jahr
+    verteilt abgerufen werden - "Chargen" im kaufmännischen Sinn, bewusst NICHT das
+    gleichnamige Charge-Model der Materialwirtschaft/Rezeptur weiter unten, mit dem das
+    nichts zu tun hat).
+
+    Pro Artikel wird hier eine Jahresmenge UND ein zu diesem Zeitpunkt eingefrorener
+    Preis hinterlegt (siehe RahmenvereinbarungPosition) - eingefroren deshalb, damit eine
+    spätere Preisänderung im Artikelstamm eine bereits laufende Vereinbarung nicht
+    rückwirkend verändert. Lieferscheine, die über diese Rahmenvereinbarung abgerufen
+    werden (Lieferschein.rahmenvereinbarung), ziehen beim automatischen Erzeugen der
+    Rechnung konsequent diesen eingefrorenen Preis, unabhängig von der tatsächlichen
+    Größe der einzelnen Teillieferung (siehe nurture.rechnung_automatisch_erstellen) -
+    das verhindert, dass ein kleiner monatlicher Abruf automatisch in eine teurere,
+    kleinere Mengenstaffel fällt, obwohl der Kunde übers Jahr die große Menge abnimmt.
+
+    Bewusst KEINE harte Obergrenze/Blockade, wenn die Jahresmenge überschritten wird
+    (Björns ausdrückliche Entscheidung 21.10.2026) - RahmenvereinbarungPosition.restmenge
+    kann negativ werden, das ist beabsichtigt und wird in der UI nur als Hinweis
+    angezeigt, nicht verhindert.
+
+    Bonusstaffel (ebenfalls 21.10.2026, auf Wunsch von Björn, als Alternative zu einem
+    weiter gesenkten Stückpreis): eine zusätzliche, nach der insgesamt abgerufenen Menge
+    gestaffelte prozentuale Rückvergütung auf den gesamten bisher abgerufenen Umsatz
+    dieser Rahmenvereinbarung (über alle Positionen hinweg) - siehe Bonusstaffel unten
+    und Rahmenvereinbarung.aktueller_bonus_prozent/bonus_betrag."""
+    nummer = models.CharField("Vereinbarungsnummer", max_length=30, unique=True, blank=True)
+    deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.CASCADE, related_name="rahmenvereinbarungen")
+    gueltig_ab = models.DateField("Gültig ab", default=timezone.localdate)
+    gueltig_bis = models.DateField("Gültig bis", null=True, blank=True)
+    notizen = models.TextField("Notizen/Konditionen", blank=True)
+    erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Rahmenvereinbarung"
+        verbose_name_plural = "Rahmenvereinbarungen"
+        ordering = ["-gueltig_ab", "-nummer"]
+
+    def __str__(self):
+        return self.nummer or f"Rahmenvereinbarung (Entwurf) – {self.deal}"
+
+    def get_absolute_url(self):
+        return reverse("vertrieb:rahmenvereinbarung_detail", args=[self.pk])
+
+    def save(self, *args, **kwargs):
+        if not self.nummer:
+            jahr = (self.gueltig_ab or timezone.now().date()).year
+            letzte = Rahmenvereinbarung.objects.filter(nummer__startswith=f"RV-{jahr}-").order_by("-nummer").first()
+            if letzte and letzte.nummer.split("-")[-1].isdigit():
+                naechste = int(letzte.nummer.split("-")[-1]) + 1
+            else:
+                naechste = 1
+            self.nummer = f"RV-{jahr}-{naechste:04d}"
+        super().save(*args, **kwargs)
+
+    @property
+    def ist_aktiv(self):
+        heute = timezone.localdate()
+        if self.gueltig_bis is not None and heute > self.gueltig_bis:
+            return False
+        return heute >= self.gueltig_ab
+
+    @property
+    def gesamt_abgerufene_menge(self):
+        return sum((p.abgerufene_menge for p in self.positionen.all()), start=Decimal("0"))
+
+    @property
+    def gesamt_abgerufener_umsatz(self):
+        return sum((p.abgerufener_umsatz for p in self.positionen.all()), start=Decimal("0"))
+
+    @property
+    def aktueller_bonus_prozent(self):
+        """Wie Artikel.preis_fuer_menge(): die höchste Bonusstaffel, deren Mindestmenge
+        die bisher insgesamt abgerufene Menge (über alle Positionen) nicht übersteigt."""
+        menge = self.gesamt_abgerufene_menge
+        stufe = self.bonusstaffeln.filter(ab_menge__lte=menge).order_by("-ab_menge").first()
+        return stufe.bonus_prozent if stufe else Decimal("0")
+
+    @property
+    def bonus_betrag(self):
+        """Bisher aufgelaufener Bonusbetrag (EUR) auf Basis des schon abgerufenen
+        Umsatzes - KEIN Endjahres-Stichtagswert, sondern die laufende Summe, falls Björn
+        zwischendurch nachsehen will, wie viel Bonus aktuell aufgelaufen wäre."""
+        return (self.gesamt_abgerufener_umsatz * self.aktueller_bonus_prozent / Decimal("100")).quantize(Decimal("0.01"))
+
+
+class RahmenvereinbarungPosition(models.Model):
+    rahmenvereinbarung = models.ForeignKey(Rahmenvereinbarung, on_delete=models.CASCADE, related_name="positionen")
+    artikel = models.ForeignKey(
+        "Artikel", verbose_name="Artikel", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="rahmenvereinbarungpositionen",
+    )
+    position = models.PositiveIntegerField("Pos.", default=1)
+    bezeichnung = models.CharField("Bezeichnung", max_length=300)
+    jahresmenge = models.DecimalField(
+        "Jahresmenge (Stück/Einheit)", max_digits=12, decimal_places=2, default=0,
+        help_text="Die mit dem Kunden vereinbarte Zielmenge für die Laufzeit dieser Rahmenvereinbarung - rein informativ für die Resteinlösung-Anzeige, keine harte Grenze.",
+    )
+    einheit = models.CharField("Einheit", max_length=10, choices=EINHEIT_CHOICES, default="stk")
+    # decimal_places=5: siehe Kommentar bei AngebotPosition.einzelpreis - derselbe Grund
+    # (Bruchteilscent-Preise bei Stückgut-Artikeln).
+    einzelpreis = models.DecimalField(
+        "Eingefrorener Einzelpreis (EUR, netto)", max_digits=14, decimal_places=5, default=0,
+        help_text="Beim Anlegen aus der passenden Preisstaffel des Artikels vorgeschlagen, bleibt aber über die gesamte Laufzeit der Rahmenvereinbarung fest - spätere Preisstaffel-Änderungen am Artikel wirken sich NICHT rückwirkend aus.",
+    )
+
+    class Meta:
+        verbose_name = "Rahmenvereinbarungsposition"
+        verbose_name_plural = "Rahmenvereinbarungspositionen"
+        ordering = ["position"]
+
+    def __str__(self):
+        return self.bezeichnung
+
+    @property
+    def abgerufene_menge(self):
+        """Summe der Mengen aller Lieferschein-Positionen, deren Lieferschein auf diese
+        Rahmenvereinbarung verweist UND denselben Artikel betrifft (siehe
+        Lieferschein.rahmenvereinbarung)."""
+        if self.artikel_id is None:
+            return Decimal("0")
+        ergebnis = LieferscheinPosition.objects.filter(
+            lieferschein__rahmenvereinbarung_id=self.rahmenvereinbarung_id, artikel_id=self.artikel_id,
+        ).aggregate(summe=models.Sum("menge"))
+        return ergebnis["summe"] or Decimal("0")
+
+    @property
+    def restmenge(self):
+        """Kann negativ werden (Jahresmenge überschritten) - bewusst keine harte Grenze,
+        siehe Rahmenvereinbarung-Doku oben. Negative Werte zeigt die UI als Hinweis an."""
+        return self.jahresmenge - self.abgerufene_menge
+
+    @property
+    def abgerufener_umsatz(self):
+        return self.abgerufene_menge * self.einzelpreis
+
+
+class Bonusstaffel(models.Model):
+    """Eine Rückvergütungsstufe einer Rahmenvereinbarung (z. B. "ab 5.000.000 Stück
+    insgesamt: 0,3 % Bonus auf den abgerufenen Umsatz") - wie Preisstaffel beim Artikel,
+    nur bezogen auf die insgesamt abgerufene Menge ALLER Positionen einer
+    Rahmenvereinbarung zusammen, nicht auf eine einzelne Bestellung/Position (21.10.2026,
+    auf Wunsch von Björn, als Alternative zu einem weiter gesenkten Stückpreis bei
+    Mega-Abnehmern - siehe Rahmenvereinbarung-Doku oben)."""
+    rahmenvereinbarung = models.ForeignKey(Rahmenvereinbarung, on_delete=models.CASCADE, related_name="bonusstaffeln")
+    ab_menge = models.DecimalField("Ab insgesamt abgerufener Menge (Stück/Einheit)", max_digits=12, decimal_places=2)
+    bonus_prozent = models.DecimalField("Bonus (%, auf abgerufenen Umsatz)", max_digits=5, decimal_places=2)
+
+    class Meta:
+        verbose_name = "Bonusstaffel"
+        verbose_name_plural = "Bonusstaffeln"
+        ordering = ["-ab_menge"]
+        unique_together = [("rahmenvereinbarung", "ab_menge")]
+
+    def __str__(self):
+        return f"ab {self.ab_menge} Stück → {self.bonus_prozent} %"
 
 
 class Rechnung(models.Model):

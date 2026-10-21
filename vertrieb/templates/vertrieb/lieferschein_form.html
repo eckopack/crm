@@ -6,6 +6,14 @@
 <p class="text-muted">Positionen aus Packschein {{ packschein_quelle.nummer }} übernommen – bei Bedarf anpassen.</p>
 {% elif angebot_quelle %}
 <p class="text-muted">Positionen aus Angebot {{ angebot_quelle.nummer }} übernommen – bei Bedarf anpassen.</p>
+{% elif rahmenvereinbarung_quelle %}
+<p class="text-muted">
+    Artikel aus Rahmenvereinbarung {{ rahmenvereinbarung_quelle.nummer }} übernommen.
+    <strong>Bitte die Menge auf die tatsächlich jetzt ausgelieferte Teilmenge dieses Abrufs
+    anpassen</strong> – hier steht noch nicht die Jahresmenge, sondern nur ein Platzhalter.
+    Der bei der Rahmenvereinbarung hinterlegte Preis gilt unabhängig von der hier
+    eingetragenen Menge.
+</p>
 {% endif %}
 
 <form method="post">

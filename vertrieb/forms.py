@@ -2,8 +2,9 @@ from django import forms
 from django.forms import inlineformset_factory
 
 from .models import (
-    Aktivitaet, Angebot, AngebotPosition, Artikel, Deal, Firma, Kontakt,
+    Aktivitaet, Angebot, AngebotPosition, Artikel, Bonusstaffel, Deal, Firma, Kontakt,
     Packschein, PackscheinPosition, Lieferschein, LieferscheinPosition,
+    Rahmenvereinbarung, RahmenvereinbarungPosition,
     Rechnung, RechnungPosition,
 )
 
@@ -141,6 +142,58 @@ AngebotPositionFormSet = inlineformset_factory(
 )
 
 
+class RahmenvereinbarungForm(BootstrapFormMixin, forms.ModelForm):
+    class Meta:
+        model = Rahmenvereinbarung
+        fields = ["deal", "gueltig_ab", "gueltig_bis", "notizen"]
+        widgets = {
+            "notizen": forms.Textarea(attrs={"rows": 3}),
+            "gueltig_ab": date_input(),
+            "gueltig_bis": date_input(),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()
+        self.fields["gueltig_bis"].required = False
+
+
+class RahmenvereinbarungPositionForm(BootstrapFormMixin, forms.ModelForm):
+    class Meta:
+        model = RahmenvereinbarungPosition
+        fields = ["artikel", "position", "bezeichnung", "jahresmenge", "einheit", "einzelpreis"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()
+        self.fields["artikel"].required = False
+        self.fields["artikel"].queryset = _artikel_fuer_positionsauswahl()
+        self.fields["artikel"].widget.attrs["class"] = (
+            self.fields["artikel"].widget.attrs.get("class", "") + " artikel-auswahl"
+        )
+
+
+RahmenvereinbarungPositionFormSet = inlineformset_factory(
+    Rahmenvereinbarung, RahmenvereinbarungPosition, form=RahmenvereinbarungPositionForm,
+    extra=1, can_delete=True,
+)
+
+
+class BonusstaffelForm(BootstrapFormMixin, forms.ModelForm):
+    class Meta:
+        model = Bonusstaffel
+        fields = ["ab_menge", "bonus_prozent"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()
+
+
+BonusstaffelFormSet = inlineformset_factory(
+    Rahmenvereinbarung, Bonusstaffel, form=BonusstaffelForm, extra=1, can_delete=True,
+)
+
+
 class PackscheinForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Packschein
@@ -201,7 +254,10 @@ PackscheinPositionFormSet = inlineformset_factory(
 class LieferscheinForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Lieferschein
-        fields = ["deal", "angebot", "packschein", "datum", "status", "sprache", "notizen"]
+        fields = [
+            "deal", "angebot", "packschein", "rahmenvereinbarung", "datum", "status",
+            "sprache", "notizen",
+        ]
         widgets = {
             "notizen": forms.Textarea(attrs={"rows": 3}),
             "datum": date_input(),
@@ -212,6 +268,7 @@ class LieferscheinForm(BootstrapFormMixin, forms.ModelForm):
         self._bootstrapify()
         self.fields["angebot"].required = False
         self.fields["packschein"].required = False
+        self.fields["rahmenvereinbarung"].required = False
 
 
 class LieferscheinVersandForm(BootstrapFormMixin, forms.ModelForm):

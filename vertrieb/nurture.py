@@ -495,6 +495,16 @@ def rechnung_automatisch_erstellen(lieferschein):
     Idempotent: existiert zu diesem Lieferschein bereits eine Rechnung (egal welcher
     Status), wird NICHTS angelegt - gibt dann (bestehende Rechnung, []) zurueck, damit ein
     versehentliches Doppel-Auftreten (z.B. erneuter POST) keine zweite Rechnung erzeugt.
+
+    Rahmenvereinbarung (21.10.2026, Björns Großkunden-Jahresmengenanfrage): ist dieser
+    Lieferschein ein Abruf aus einer Rahmenvereinbarung (lieferschein.rahmenvereinbarung
+    gesetzt), wird für jede Position NICHT die normale mengenabhängige Preisstaffel des
+    Artikels angewendet (artikel.preis_fuer_menge), sondern - falls die Rahmenvereinbarung
+    für genau diesen Artikel eine Position enthält - deren eingefrorener Preis. Das
+    verhindert, dass ein kleiner monatlicher Teilabruf automatisch in eine teurere,
+    kleinere Mengenstaffel fällt, obwohl der Kunde übers Jahr die vereinbarte Großmenge
+    abnimmt. Positionen mit einem Artikel, der NICHT Teil der Rahmenvereinbarung ist,
+    fallen weiterhin auf die normale preis_fuer_menge()-Logik zurück.
     """
     bestehende = lieferschein.rechnungen.first()
     if bestehende is not None:
@@ -511,15 +521,28 @@ def rechnung_automatisch_erstellen(lieferschein):
         ),
     )
 
+    rahmenvereinbarungspreise = {}
+    if lieferschein.rahmenvereinbarung_id is not None:
+        rahmenvereinbarungspreise = {
+            rp.artikel_id: rp.einzelpreis
+            for rp in lieferschein.rahmenvereinbarung.positionen.all()
+            if rp.artikel_id is not None
+        }
+
     ungepreiste_positionen = []
     for p in lieferschein.positionen.all():
         einzelpreis = None
         steuersatz = Decimal("19.00")
         if p.artikel is not None:
-            preis = p.artikel.preis_fuer_menge(p.menge)
-            if preis is not None:
-                einzelpreis = preis
+            gebundener_preis = rahmenvereinbarungspreise.get(p.artikel_id)
+            if gebundener_preis is not None:
+                einzelpreis = gebundener_preis
                 steuersatz = p.artikel.ust_satz
+            else:
+                preis = p.artikel.preis_fuer_menge(p.menge)
+                if preis is not None:
+                    einzelpreis = preis
+                    steuersatz = p.artikel.ust_satz
         if einzelpreis is None:
             ungepreiste_positionen.append(f"Position {p.position} ({p.bezeichnung})")
             einzelpreis = Decimal("0")
