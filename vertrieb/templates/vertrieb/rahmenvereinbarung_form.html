@@ -1,0 +1,149 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Rahmenvereinbarung {% if rahmenvereinbarung %}bearbeiten{% else %}anlegen{% endif %}{% endblock %}
+{% block content %}
+<h2 class="mb-3">Rahmenvereinbarung {% if rahmenvereinbarung %}bearbeiten{% else %}anlegen{% endif %}</h2>
+
+<form method="post">
+    {% csrf_token %}
+    <div class="card mb-3" style="max-width: 700px;">
+        <div class="card-body">
+            {% include "vertrieb/_form_fields.html" %}
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header fw-semibold">Positionen (Jahresmenge je Artikel, eingefrorener Preis)</div>
+        <div class="card-body">
+            {{ formset.management_form }}
+            {% if formset.non_form_errors %}
+                <div class="alert alert-danger">{{ formset.non_form_errors }}</div>
+            {% endif %}
+            <p class="text-muted small">
+                Der Einzelpreis wird für die gesamte Jahresmenge dieses Artikels fest eingefroren
+                – unabhängig von der Größe der einzelnen Teillieferung. Bei automatischer
+                Rechnungserstellung aus einem Lieferschein, der dieser Rahmenvereinbarung
+                zugeordnet ist, wird dieser Preis verwendet statt der normalen Mengenstaffel.
+            </p>
+            <table class="table" id="positionen-tabelle">
+                <thead>
+                <tr>
+                    <th>Pos.</th><th>Artikel</th><th>Bezeichnung</th><th>Jahresmenge</th><th>Einheit</th><th>Einzelpreis</th>
+                    {% if formset.can_delete %}<th>Löschen</th>{% endif %}
+                </tr>
+                </thead>
+                <tbody>
+                {% for pform in formset %}
+                <tr>
+                    {% for hidden in pform.hidden_fields %}{{ hidden }}{% endfor %}
+                    <td>{{ pform.position }}</td>
+                    <td>
+                        {{ pform.artikel }}
+                        <div class="small text-muted" id="{{ pform.artikel.id_for_label }}-hinweis"></div>
+                        <select class="form-select form-select-sm mt-1 vk-staffel-auswahl" id="{{ pform.artikel.id_for_label }}-staffeln" style="display:none;"></select>
+                    </td>
+                    <td>{{ pform.bezeichnung }}</td>
+                    <td>{{ pform.jahresmenge }}</td>
+                    <td>{{ pform.einheit }}</td>
+                    <td>{{ pform.einzelpreis }}</td>
+                    {% if formset.can_delete %}<td>{{ pform.DELETE }}</td>{% endif %}
+                </tr>
+                {% for field in pform %}{% for error in field.errors %}
+                <tr><td colspan="7" class="text-danger small">{{ field.label }}: {{ error }}</td></tr>
+                {% endfor %}{% endfor %}
+                {% endfor %}
+                </tbody>
+            </table>
+            <button type="button" id="position-hinzufuegen-btn" class="btn btn-outline-secondary btn-sm">+ Position hinzufügen</button>
+            <template id="leere-position-vorlage">
+                <tr>
+                    {% for hidden in formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}
+                    <td>{{ formset.empty_form.position }}</td>
+                    <td>
+                        {{ formset.empty_form.artikel }}
+                        <div class="small text-muted" id="{{ formset.empty_form.artikel.id_for_label }}-hinweis"></div>
+                        <select class="form-select form-select-sm mt-1 vk-staffel-auswahl" id="{{ formset.empty_form.artikel.id_for_label }}-staffeln" style="display:none;"></select>
+                    </td>
+                    <td>{{ formset.empty_form.bezeichnung }}</td>
+                    <td>{{ formset.empty_form.jahresmenge }}</td>
+                    <td>{{ formset.empty_form.einheit }}</td>
+                    <td>{{ formset.empty_form.einzelpreis }}</td>
+                    {% if formset.can_delete %}<td>{{ formset.empty_form.DELETE }}</td>{% endif %}
+                </tr>
+            </template>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header fw-semibold">Bonusstaffel (Rückvergütung auf kumulierte Gesamtmenge, optional)</div>
+        <div class="card-body">
+            {{ bonus_formset.management_form }}
+            {% if bonus_formset.non_form_errors %}
+                <div class="alert alert-danger">{{ bonus_formset.non_form_errors }}</div>
+            {% endif %}
+            <p class="text-muted small">
+                Ab der angegebenen kumulierten Gesamtmenge (alle Positionen zusammen, über die
+                Laufzeit) erhält der Kunde den angegebenen Prozentsatz als Rückvergütung auf den
+                abgerufenen Umsatz – der eingefrorene Stückpreis ändert sich dadurch nicht.
+            </p>
+            <table class="table" id="bonusstaffel-tabelle">
+                <thead>
+                <tr><th>Ab Gesamtmenge</th><th>Bonus in %</th>{% if bonus_formset.can_delete %}<th>Löschen</th>{% endif %}</tr>
+                </thead>
+                <tbody>
+                {% for bform in bonus_formset %}
+                <tr>
+                    {% for hidden in bform.hidden_fields %}{{ hidden }}{% endfor %}
+                    <td>{{ bform.ab_menge }}</td>
+                    <td>{{ bform.bonus_prozent }}</td>
+                    {% if bonus_formset.can_delete %}<td>{{ bform.DELETE }}</td>{% endif %}
+                </tr>
+                {% for field in bform %}{% for error in field.errors %}
+                <tr><td colspan="3" class="text-danger small">{{ field.label }}: {{ error }}</td></tr>
+                {% endfor %}{% endfor %}
+                {% endfor %}
+                </tbody>
+            </table>
+            <button type="button" id="bonusstaffel-hinzufuegen-btn" class="btn btn-outline-secondary btn-sm">+ Bonusstufe hinzufügen</button>
+            <template id="leere-bonusstaffel-vorlage">
+                <tr>
+                    {% for hidden in bonus_formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}
+                    <td>{{ bonus_formset.empty_form.ab_menge }}</td>
+                    <td>{{ bonus_formset.empty_form.bonus_prozent }}</td>
+                    {% if bonus_formset.can_delete %}<td>{{ bonus_formset.empty_form.DELETE }}</td>{% endif %}
+                </tr>
+            </template>
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Speichern</button>
+    <a href="{% url 'vertrieb:rahmenvereinbarung_list' %}" class="btn btn-outline-secondary">Abbrechen</a>
+</form>
+{% endblock %}
+{% block extra_js %}
+{% include "vertrieb/_artikel_auswahl_js.html" %}
+<script>
+(function() {
+    // Eigenständig vom generischen "+ Position hinzufügen"-Handler in
+    // _artikel_auswahl_js.html (der sucht pauschal das ERSTE "*-TOTAL_FORMS"-Feld auf der
+    // Seite, also das der Positionen-Formset) - hier gezielt über den exakten Feldnamen
+    // "bonusstaffeln-TOTAL_FORMS" (= related_name der FK auf Bonusstaffel, siehe models.py),
+    // damit auf dieser Seite mit zwei Formsets nicht versehentlich das falsche erwischt wird.
+    var btn = document.getElementById("bonusstaffel-hinzufuegen-btn");
+    if (!btn) return;
+    var totalForms = document.querySelector("input[name='bonusstaffeln-TOTAL_FORMS']");
+    var tbody = document.querySelector("#bonusstaffel-tabelle tbody");
+    var vorlage = document.getElementById("leere-bonusstaffel-vorlage");
+    btn.addEventListener("click", function() {
+        if (!totalForms || !tbody || !vorlage) return;
+        var index = parseInt(totalForms.value, 10);
+        var html = vorlage.innerHTML.split("__prefix__").join(String(index));
+        var wrapper = document.createElement("tbody");
+        wrapper.innerHTML = html;
+        var neueZeile = wrapper.querySelector("tr");
+        if (!neueZeile) return;
+        tbody.appendChild(neueZeile);
+        totalForms.value = String(index + 1);
+    });
+})();
+</script>
+{% endblock %}

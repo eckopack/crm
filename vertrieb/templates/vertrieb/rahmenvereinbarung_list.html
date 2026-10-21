@@ -1,0 +1,42 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Rahmenvereinbarungen – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Rahmenvereinbarungen</h2>
+    <a href="{% url 'vertrieb:rahmenvereinbarung_create' %}" class="btn btn-primary">+ Neue Rahmenvereinbarung</a>
+</div>
+<p class="text-muted">
+    Jahresmengen-Vereinbarungen für Großkunden: pro Artikel wird ein fester Preis für die
+    gesamte Jahresmenge eingefroren, unabhängig davon, wie klein die einzelne Teillieferung
+    (Charge/Abruf) ausfällt. Siehe Detailseite für Restmenge und aktuellen Bonus.
+</p>
+
+<div class="card">
+    <table class="table table-hover mb-0">
+        <thead>
+        <tr><th>Nummer</th><th>Deal</th><th>Firma</th><th>Gültig ab</th><th>Gültig bis</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+        {% for rv in rahmenvereinbarungen %}
+        <tr onclick="window.location='{{ rv.get_absolute_url }}'" style="cursor:pointer;">
+            <td>{{ rv.nummer }}</td>
+            <td>{{ rv.deal.titel }}</td>
+            <td>{{ rv.deal.firma.name }}</td>
+            <td>{{ rv.gueltig_ab|date:"d.m.Y" }}</td>
+            <td>{{ rv.gueltig_bis|date:"d.m.Y"|default:"–" }}</td>
+            <td>
+                {% if rv.ist_aktiv %}
+                <span class="badge text-bg-success">aktiv</span>
+                {% else %}
+                <span class="badge text-bg-secondary">inaktiv</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-muted text-center py-3">Noch keine Rahmenvereinbarungen erstellt.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% include "vertrieb/_pagination.html" %}
+{% endblock %}

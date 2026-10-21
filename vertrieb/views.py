@@ -19,14 +19,17 @@ from django.views.generic import CreateView, DeleteView, DetailView, ListView, U
 
 from . import nurture, pdf
 from .forms import (
-    AktivitaetForm, AngebotForm, AngebotPositionFormSet, ArtikelForm, DealForm, FirmaForm, KontaktForm,
+    AktivitaetForm, AngebotForm, AngebotPositionFormSet, ArtikelForm,
+    BonusstaffelFormSet, DealForm, FirmaForm, KontaktForm,
     PackscheinForm, PackscheinPositionFormSet, PackscheinVersandForm,
-    LieferscheinForm, LieferscheinPositionFormSet, LieferscheinVersandForm, RechnungForm, RechnungPositionFormSet,
+    LieferscheinForm, LieferscheinPositionFormSet, LieferscheinVersandForm,
+    RahmenvereinbarungForm, RahmenvereinbarungPositionFormSet,
+    RechnungForm, RechnungPositionFormSet,
 )
 from .models import (
     DEAL_PHASE_CHOICES, MUSTERKARTON_ARTIKEL, PHASE_STANDARD_WAHRSCHEINLICHKEIT,
     Aktivitaet, Angebot, Artikel, Deal, EmailVersand, Firma, Kontakt, MusterboxNachfassStatus,
-    Packschein, PackscheinPosition, Lieferschein, Rechnung,
+    Packschein, PackscheinPosition, Lieferschein, Rahmenvereinbarung, Rechnung,
 )
 from django.forms import inlineformset_factory
 
@@ -538,6 +541,92 @@ def angebot_pdf_download(request, pk):
 
 
 # ---------------------------------------------------------------------------
+# Rahmenvereinbarung (Jahresmengen-Vertrag für Großkunden, 21.10.2026 - siehe
+# Model-Doku: friert pro Artikel einen Preis für die ganze Jahresmenge ein,
+# unabhängig von der Größe der einzelnen Teillieferung/Charge; Bonusstaffel
+# honoriert sehr hohe Gesamtabnahme über eine Rückvergütung statt über einen
+# weiter abgesenkten Stückpreis)
+# ---------------------------------------------------------------------------
+
+class RahmenvereinbarungListView(LoginRequiredMixin, ListView):
+    model = Rahmenvereinbarung
+    template_name = "vertrieb/rahmenvereinbarung_list.html"
+    context_object_name = "rahmenvereinbarungen"
+    paginate_by = 25
+
+    def get_queryset(self):
+        return Rahmenvereinbarung.objects.all().select_related("deal", "deal__firma")
+
+
+class RahmenvereinbarungDetailView(LoginRequiredMixin, DetailView):
+    model = Rahmenvereinbarung
+    template_name = "vertrieb/rahmenvereinbarung_detail.html"
+    context_object_name = "rahmenvereinbarung"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["positionen"] = self.object.positionen.all().select_related("artikel")
+        context["bonusstaffeln"] = self.object.bonusstaffeln.all()
+        return context
+
+
+@login_required
+def rahmenvereinbarung_erstellen(request):
+    if request.method == "POST":
+        form = RahmenvereinbarungForm(request.POST)
+        if form.is_valid():
+            rahmenvereinbarung = form.save()
+            formset = RahmenvereinbarungPositionFormSet(request.POST, instance=rahmenvereinbarung)
+            bonus_formset = BonusstaffelFormSet(request.POST, instance=rahmenvereinbarung)
+            if formset.is_valid() and bonus_formset.is_valid():
+                formset.save()
+                bonus_formset.save()
+                return redirect(rahmenvereinbarung.get_absolute_url())
+        else:
+            formset = RahmenvereinbarungPositionFormSet(request.POST)
+            bonus_formset = BonusstaffelFormSet(request.POST)
+    else:
+        initial = {}
+        deal_id = request.GET.get("deal")
+        if deal_id:
+            initial["deal"] = deal_id
+        form = RahmenvereinbarungForm(initial=initial)
+        formset = RahmenvereinbarungPositionFormSet()
+        bonus_formset = BonusstaffelFormSet()
+    return render(request, "vertrieb/rahmenvereinbarung_form.html", {
+        "form": form, "formset": formset, "bonus_formset": bonus_formset,
+    })
+
+
+@login_required
+def rahmenvereinbarung_bearbeiten(request, pk):
+    rahmenvereinbarung = get_object_or_404(Rahmenvereinbarung, pk=pk)
+    if request.method == "POST":
+        form = RahmenvereinbarungForm(request.POST, instance=rahmenvereinbarung)
+        formset = RahmenvereinbarungPositionFormSet(request.POST, instance=rahmenvereinbarung)
+        bonus_formset = BonusstaffelFormSet(request.POST, instance=rahmenvereinbarung)
+        if form.is_valid() and formset.is_valid() and bonus_formset.is_valid():
+            form.save()
+            formset.save()
+            bonus_formset.save()
+            return redirect(rahmenvereinbarung.get_absolute_url())
+    else:
+        form = RahmenvereinbarungForm(instance=rahmenvereinbarung)
+        formset = RahmenvereinbarungPositionFormSet(instance=rahmenvereinbarung)
+        bonus_formset = BonusstaffelFormSet(instance=rahmenvereinbarung)
+    return render(request, "vertrieb/rahmenvereinbarung_form.html", {
+        "form": form, "formset": formset, "bonus_formset": bonus_formset,
+        "rahmenvereinbarung": rahmenvereinbarung,
+    })
+
+
+class RahmenvereinbarungDeleteView(LoginRequiredMixin, DeleteView):
+    model = Rahmenvereinbarung
+    template_name = "vertrieb/confirm_delete.html"
+    success_url = reverse_lazy("vertrieb:rahmenvereinbarung_list")
+
+
+# ---------------------------------------------------------------------------
 # Packschein (internes Kommissionier-/Packdokument fürs Lager)
 # ---------------------------------------------------------------------------
 
@@ -691,6 +780,11 @@ def lieferschein_erstellen(request):
     if packschein_id:
         packschein_quelle = get_object_or_404(Packschein, pk=packschein_id)
 
+    rahmenvereinbarung_quelle = None
+    rahmenvereinbarung_id = request.GET.get("rahmenvereinbarung")
+    if rahmenvereinbarung_id:
+        rahmenvereinbarung_quelle = get_object_or_404(Rahmenvereinbarung, pk=rahmenvereinbarung_id)
+
     if request.method == "POST":
         form = LieferscheinForm(request.POST)
         if form.is_valid():
@@ -722,11 +816,36 @@ def lieferschein_erstellen(request):
                 "sprache": angebot_quelle.sprache,
             }
             quelle_positionen = angebot_quelle.positionen.all()
+        elif rahmenvereinbarung_quelle:
+            # 21.10.2026, Björns Großkunden-Jahresmengenanfrage: ein Lieferschein als
+            # Abruf aus einer Rahmenvereinbarung. Artikel/Bezeichnung/Einheit werden aus
+            # der vereinbarten Position übernommen, die Menge bewusst NICHT mit der
+            # Jahresmenge vorbefüllt - die tatsächliche Teillieferungsmenge dieser
+            # konkreten Charge ist etwas anderes und muss vom Nutzer eingetragen werden
+            # (siehe Formular-Hinweis im Template).
+            initial = {
+                "deal": rahmenvereinbarung_quelle.deal_id,
+                "rahmenvereinbarung": rahmenvereinbarung_quelle.pk,
+            }
+            quelle_positionen = rahmenvereinbarung_quelle.positionen.all()
         elif deal_id:
             initial = {"deal": deal_id}
         form = LieferscheinForm(initial=initial)
 
-        if quelle_positionen is not None and quelle_positionen.exists():
+        if rahmenvereinbarung_quelle and quelle_positionen is not None and quelle_positionen.exists():
+            positionen_initial = [
+                {
+                    "artikel": p.artikel_id, "position": p.position, "bezeichnung": p.bezeichnung,
+                    "einheit": p.einheit,
+                }
+                for p in quelle_positionen
+            ]
+            FormSetVorbefuellt = inlineformset_factory(
+                Lieferschein, Lieferschein.positionen.rel.related_model,
+                form=LieferscheinPositionFormSet.form, extra=len(positionen_initial), can_delete=True,
+            )
+            formset = FormSetVorbefuellt(initial=positionen_initial)
+        elif quelle_positionen is not None and quelle_positionen.exists():
             positionen_initial = [
                 {
                     "artikel": p.artikel_id, "position": p.position, "bezeichnung": p.bezeichnung,
@@ -744,6 +863,7 @@ def lieferschein_erstellen(request):
     return render(request, "vertrieb/lieferschein_form.html", {
         "form": form, "formset": formset,
         "angebot_quelle": angebot_quelle, "packschein_quelle": packschein_quelle,
+        "rahmenvereinbarung_quelle": rahmenvereinbarung_quelle,
     })
 
 

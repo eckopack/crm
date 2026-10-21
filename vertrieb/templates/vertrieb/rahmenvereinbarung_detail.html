@@ -1,0 +1,87 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}{{ rahmenvereinbarung.nummer }} – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2>{{ rahmenvereinbarung.nummer }}</h2>
+        <div class="text-muted">
+            Deal: <a href="{{ rahmenvereinbarung.deal.get_absolute_url }}">{{ rahmenvereinbarung.deal.titel }}</a>
+            · Firma: <a href="{{ rahmenvereinbarung.deal.firma.get_absolute_url }}">{{ rahmenvereinbarung.deal.firma.name }}</a>
+        </div>
+        {% if rahmenvereinbarung.ist_aktiv %}
+        <span class="badge text-bg-success">aktiv</span>
+        {% else %}
+        <span class="badge text-bg-secondary">inaktiv</span>
+        {% endif %}
+    </div>
+    <div class="d-print-none">
+        <a href="{% url 'vertrieb:lieferschein_create' %}?rahmenvereinbarung={{ rahmenvereinbarung.pk }}" class="btn btn-primary">Lieferschein (Abruf) erstellen</a>
+        <a href="{% url 'vertrieb:rahmenvereinbarung_update' rahmenvereinbarung.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
+        <a href="{% url 'vertrieb:rahmenvereinbarung_delete' rahmenvereinbarung.pk %}" class="btn btn-outline-danger">Löschen</a>
+    </div>
+</div>
+
+<div class="card mb-3" style="max-width:420px;">
+    <ul class="list-group list-group-flush">
+        <li class="list-group-item"><strong>Gültig ab:</strong> {{ rahmenvereinbarung.gueltig_ab|date:"d.m.Y" }}</li>
+        <li class="list-group-item"><strong>Gültig bis:</strong> {{ rahmenvereinbarung.gueltig_bis|date:"d.m.Y"|default:"unbefristet" }}</li>
+        <li class="list-group-item"><strong>Aktueller Bonus:</strong> {{ rahmenvereinbarung.aktueller_bonus_prozent }}% ({{ rahmenvereinbarung.bonus_betrag|floatformat:2 }} €)</li>
+    </ul>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header fw-semibold">Positionen (Jahresmengen &amp; eingefrorener Preis)</div>
+    <table class="table mb-0">
+        <thead>
+        <tr>
+            <th>Pos.</th><th>Artikel-Nr.</th><th>Bezeichnung</th><th>Jahresmenge</th><th>Einheit</th>
+            <th>Eingefrorener Preis</th><th>Abgerufen</th><th>Restmenge</th><th>Umsatz (Abruf)</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for p in positionen %}
+        <tr>
+            <td>{{ p.position }}</td>
+            <td>{{ p.artikel.artikelnummer|default:"–" }}</td>
+            <td>{{ p.bezeichnung }}</td>
+            <td>{{ p.jahresmenge }}</td>
+            <td>{{ p.get_einheit_display }}</td>
+            <td>{{ p.einzelpreis|floatformat:-5 }} €</td>
+            <td>{{ p.abgerufene_menge }}</td>
+            <td{% if p.restmenge < 0 %} class="text-danger fw-semibold"{% endif %}>
+                {{ p.restmenge }}
+                {% if p.restmenge < 0 %}<br><span class="small">Jahresmenge überschritten</span>{% endif %}
+            </td>
+            <td>{{ p.abgerufener_umsatz|floatformat:2 }} €</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="9" class="text-muted text-center py-3">Keine Positionen erfasst.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header fw-semibold">Bonusstaffel (Rückvergütung auf kumulierte Gesamtmenge)</div>
+    <table class="table mb-0">
+        <thead><tr><th>Ab Gesamtmenge</th><th>Bonus</th></tr></thead>
+        <tbody>
+        {% for b in bonusstaffeln %}
+        <tr{% if rahmenvereinbarung.gesamt_abgerufene_menge >= b.ab_menge %} class="table-success"{% endif %}>
+            <td>{{ b.ab_menge }}</td>
+            <td>{{ b.bonus_prozent }}%</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="2" class="text-muted text-center py-3">Keine Bonusstaffel hinterlegt.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if rahmenvereinbarung.notizen %}
+<div class="card">
+    <div class="card-header fw-semibold">Notizen/Konditionen</div>
+    <div class="card-body">{{ rahmenvereinbarung.notizen|linebreaks }}</div>
+</div>
+{% endif %}
+{% endblock %}
