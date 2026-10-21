@@ -13,8 +13,10 @@
         {% else %}
         <span class="badge text-bg-secondary">inaktiv</span>
         {% endif %}
+        <span class="badge text-bg-light border">{{ rahmenvereinbarung.get_sprache_display }}</span>
     </div>
     <div class="d-print-none">
+        <a href="{% url 'vertrieb:angebot_create' %}?rahmenvereinbarung={{ rahmenvereinbarung.pk }}" class="btn btn-primary">Angebot erstellen</a>
         <a href="{% url 'vertrieb:lieferschein_create' %}?rahmenvereinbarung={{ rahmenvereinbarung.pk }}" class="btn btn-primary">Lieferschein (Abruf) erstellen</a>
         <a href="{% url 'vertrieb:rahmenvereinbarung_update' rahmenvereinbarung.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
         <a href="{% url 'vertrieb:rahmenvereinbarung_delete' rahmenvereinbarung.pk %}" class="btn btn-outline-danger">Löschen</a>
@@ -77,6 +79,25 @@
         </tbody>
     </table>
 </div>
+
+{% if angebote %}
+<div class="card mb-3">
+    <div class="card-header fw-semibold">Daraus erzeugte Angebote</div>
+    <table class="table mb-0">
+        <thead><tr><th>Nummer</th><th>Datum</th><th>Status</th><th>Summe</th></tr></thead>
+        <tbody>
+        {% for a in angebote %}
+        <tr onclick="window.location='{{ a.get_absolute_url }}'" style="cursor:pointer;">
+            <td>{{ a.nummer }}</td>
+            <td>{{ a.datum|date:"d.m.Y" }}</td>
+            <td><span class="badge text-bg-light border">{{ a.get_status_display }}</span></td>
+            <td>{{ a.gesamtsumme|floatformat:2 }} €</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
 
 {% if rahmenvereinbarung.notizen %}
 <div class="card">
