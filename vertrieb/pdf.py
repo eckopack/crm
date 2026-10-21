@@ -85,6 +85,54 @@ STIL_TEXT_RECHTS = ParagraphStyle("TextRechts", parent=STIL_TEXT, alignment=TA_R
 STIL_NOTIZEN = ParagraphStyle("Notizen", fontName="Helvetica", fontSize=9.5, leading=13, textColor=DUNKEL, spaceBefore=4)
 
 
+def _artikelnummer_umbrechen(text, verfuegbare_breite, font_name, font_size):
+    """Bricht eine Artikelnummer für die Anzeige in einer schmalen Tabellenspalte NUR an
+    vorhandenen Bindestrichen um (21.10.2026, Björns Rückmeldung: "brich bitte bei allen
+    Belegen die Artikel Nr. immer beim '-' so sieht das echt dämlich aus!"). Vorher
+    überließen wir reportlab seinen Standard-Zeilenumbruch für zu lange "Wörter"
+    (splitLongWords), der rein zeichenweise bricht - mitten in einer Zahl oder einem
+    Silbenteil, siehe z.B. die Verschlechterung "ART-XYZ-999" / "9-LANGECODE" (bricht die
+    Ziffernfolge "9999" mitten durch).
+
+    Passt nichts an (gibt den - XML-escapten - Text unverändert zurück), wenn die
+    Artikelnummer ohnehin in die Spalte passt; sonst wird vor jedem Bindestrich, an dem
+    ein Umbruch nötig wird, ein <br/> eingefügt (reportlab-Paragraph-Markup), der
+    Bindestrich bleibt dabei am Ende der jeweiligen Zeile stehen, statt zusätzlich
+    verdoppelt oder durch ein unsichtbares Zeichen ersetzt zu werden (beides wurde
+    ausprobiert: ein Soft-Hyphen direkt hinter dem vorhandenen Bindestrich ergab ein
+    hässliches doppeltes "--", ein Zero-Width-Space wird von Helvetica/reportlabs
+    Standard-14-Schriften gar nicht dargestellt und erzeugt ein kaputtes Glyphen-Kästchen)."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    from xml.sax.saxutils import escape as _xml_escape
+
+    text = str(text)
+    if not text or stringWidth(text, font_name, font_size) <= verfuegbare_breite:
+        return _xml_escape(text)
+
+    segmente = []
+    rest = text
+    while "-" in rest:
+        pos = rest.index("-") + 1
+        segmente.append(rest[:pos])
+        rest = rest[pos:]
+    if rest:
+        segmente.append(rest)
+
+    zeilen = []
+    aktuelle_zeile = ""
+    for segment in segmente:
+        kandidat = aktuelle_zeile + segment
+        if aktuelle_zeile and stringWidth(kandidat, font_name, font_size) > verfuegbare_breite:
+            zeilen.append(aktuelle_zeile)
+            aktuelle_zeile = segment
+        else:
+            aktuelle_zeile = kandidat
+    if aktuelle_zeile:
+        zeilen.append(aktuelle_zeile)
+
+    return "<br/>".join(_xml_escape(z) for z in zeilen)
+
+
 _MONATE_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
@@ -378,23 +426,37 @@ def _kopf_folgeseite_artikelliste(titel, nummer, sprache, empfaenger_name):
     return zeichnen
 
 
-def _positionstabelle(spalten, zeilen):
+def _positionstabelle(spalten, zeilen, artikelnummer_spalte=1):
     """spalten: Liste von (Kopfzeile, Breite, Ausrichtung ('l'|'r')).
-    zeilen: Liste von Zeilen, jede Zeile eine Liste von Werten passend zu spalten."""
+    zeilen: Liste von Zeilen, jede Zeile eine Liste von Werten passend zu spalten.
+
+    artikelnummer_spalte (21.10.2026, siehe _artikelnummer_umbrechen): Index der
+    Artikel-Nr.-Spalte - bei allen vier Aufrufern (Angebot/Lieferschein/Rechnung/
+    Packschein) konsistent Spalte 1 (0 = Pos.). Diese eine Spalte bricht bei Bedarf
+    gezielt an vorhandenen Bindestrichen um statt reportlabs Standardumbruch mitten im
+    Zeichen; None deaktiviert das (z.B. falls eine Tabelle mal keine Artikelnummer zeigt)."""
     kopf = []
     for label, _, ausrichtung in spalten:
         stil = STIL_TEXT_RECHTS if ausrichtung == "r" else STIL_TEXT
         kopf.append(Paragraph(f"<b>{label}</b>", stil))
 
+    breiten = [b for _, b, _ in spalten]
+    artikelnummer_breite = None
+    if artikelnummer_spalte is not None and artikelnummer_spalte < len(breiten):
+        artikelnummer_breite = breiten[artikelnummer_spalte] - 6  # LEFTPADDING+RIGHTPADDING unten
+
     daten = [kopf]
     for zeile in zeilen:
         formatiert = []
-        for wert, (_, _, ausrichtung) in zip(zeile, spalten):
+        for i, (wert, (_, _, ausrichtung)) in enumerate(zip(zeile, spalten)):
             stil = STIL_TEXT_RECHTS if ausrichtung == "r" else STIL_TEXT
-            formatiert.append(Paragraph(str(wert), stil))
+            if i == artikelnummer_spalte and artikelnummer_breite is not None:
+                text = _artikelnummer_umbrechen(wert, artikelnummer_breite, stil.fontName, stil.fontSize)
+            else:
+                text = str(wert)
+            formatiert.append(Paragraph(text, stil))
         daten.append(formatiert)
 
-    breiten = [b for _, b, _ in spalten]
     tabelle = Table(daten, colWidths=breiten, repeatRows=1)
     tabelle.setStyle(TableStyle([
         ("LINEBELOW", (0, 0), (-1, 0), 1.0, MINT),
@@ -846,9 +908,15 @@ def _artikelliste_tabelle(label_ab_menge, label_preis, label_preis_1000, gruppen
     zeile = 1
     for gruppen_index, (artikelnummer, bezeichnung, unterzeilen) in enumerate(gruppen):
         start = zeile
+        # Artikel-Nr. bricht gezielt an Bindestrichen um (siehe _artikelnummer_umbrechen),
+        # Breite abzgl. Standard-Zellpadding (hier keine LEFTPADDING/RIGHTPADDING-Overrides
+        # in `stil` oben, also reportlabs Default 6+6pt).
+        artikelnummer_text = _artikelnummer_umbrechen(
+            artikelnummer, _ARTIKELLISTE_SPALTENBREITEN[0] - 12, STIL_ARTIKEL_NR.fontName, STIL_ARTIKEL_NR.fontSize,
+        )
         for menge_text, preis_text, preis_1000_text in unterzeilen:
             daten.append([
-                Paragraph(artikelnummer, STIL_ARTIKEL_NR),
+                Paragraph(artikelnummer_text, STIL_ARTIKEL_NR),
                 Paragraph(bezeichnung, STIL_ARTIKEL_BEZEICHNUNG),
                 Paragraph(menge_text, STIL_TEXT),
                 Paragraph(preis_text, STIL_TEXT_RECHTS),
