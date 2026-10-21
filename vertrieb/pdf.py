@@ -430,6 +430,18 @@ def _summentabelle(zeilen, fett_letzte=True):
     return tabelle
 
 
+# Ex-Works-Klausel (21.10.2026, auf Wunsch von Björn: "Bitte erstelle alle Preislisten und
+# Angebote, die wir verschicken, so, dass da im Fußtext steht, Preise gelten Ex-Works, also
+# ab Lager, zuzüglich Verpackung und Fracht. Das muss da bitte unterstehen.") - erscheint
+# auf Angebot (angebot_pdf_erzeugen) und Artikel-/Preisliste (artikelliste_pdf_erzeugen) als
+# eigene Zeile unterhalb des jeweils schon vorhandenen Fußhinweises. Bewusst NICHT auf
+# Lieferschein (zeigt ohnehin keine Preise) oder Rechnung (dort wären die tatsächlich
+# vereinbarten Lieferbedingungen maßgeblich, nicht diese allgemeine Standardklausel) -
+# siehe Rückfrage an Björn dazu.
+_FUSSHINWEIS_EXWORKS_DE = "Alle Preise verstehen sich Ex-Works (ab Lager), zuzüglich Verpackung und Fracht."
+_FUSSHINWEIS_EXWORKS_EN = "All prices are Ex Works (ex warehouse), plus packaging and freight."
+
+
 def _dokument_pdf_bytes(*, titel, nummer, empfaenger_zeilen, meta_zeilen, spalten, zeilen,
                          summenzeilen=None, notizen_titel=None, notizen_text=None, fusshinweis=None,
                          sprache="de"):
@@ -631,6 +643,8 @@ def angebot_pdf_erzeugen(angebot):
         summen_label = "Gesamtsumme (netto, zzgl. gesetzl. USt.)"
         notizen_titel = "Konditionen" if angebot.notizen else None
 
+    fusshinweis = _FUSSHINWEIS_EXWORKS_EN if sprache == "en" else _FUSSHINWEIS_EXWORKS_DE
+
     zeilen = []
     for p in angebot.positionen.all():
         einheit_text = _EINHEIT_LABEL_EN.get(p.einheit, p.get_einheit_display()) if sprache == "en" else p.get_einheit_display()
@@ -641,7 +655,8 @@ def angebot_pdf_erzeugen(angebot):
     return _dokument_pdf_bytes(
         titel=titel, nummer=angebot.nummer, empfaenger_zeilen=empfaenger_zeilen,
         meta_zeilen=meta_zeilen, spalten=spalten, zeilen=zeilen, summenzeilen=summenzeilen,
-        notizen_titel=notizen_titel, notizen_text=angebot.notizen, sprache=sprache,
+        notizen_titel=notizen_titel, notizen_text=angebot.notizen,
+        fusshinweis=fusshinweis, sprache=sprache,
     )
 
 
@@ -887,6 +902,7 @@ def artikelliste_pdf_erzeugen(artikel_liste, sprache="de", empfaenger_zeilen=Non
         fusshinweis = (
             "All prices are net in EUR, plus statutory VAT. Subject to errors and price "
             "changes. Please contact us for current availability and shipping costs."
+            f"<br/>{_FUSSHINWEIS_EXWORKS_EN}"
         )
         keine_artikel = "No articles available."
     else:
@@ -899,6 +915,7 @@ def artikelliste_pdf_erzeugen(artikel_liste, sprache="de", empfaenger_zeilen=Non
             "Alle Preise netto in EUR, zzgl. der gesetzlichen Umsatzsteuer. Irrtümer und "
             "Preisänderungen vorbehalten. Aktuelle Verfügbarkeit und Versandkosten bitte "
             "bei uns erfragen."
+            f"<br/>{_FUSSHINWEIS_EXWORKS_DE}"
         )
         keine_artikel = "Keine Artikel vorhanden."
 
