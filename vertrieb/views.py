@@ -1193,7 +1193,8 @@ def artikelliste_pdf_download(request):
     sprache = request.GET.get("sprache")
     if sprache not in ("de", "en"):
         sprache = "de"
-    pdf_bytes = pdf.artikelliste_pdf_erzeugen(_artikelliste_standard_artikel(), sprache=sprache)
+    aufschlag_prozent, _fehler = _aufschlag_prozent_parsen(request.GET.get("aufschlag"))
+    pdf_bytes = pdf.artikelliste_pdf_erzeugen(_artikelliste_standard_artikel(), sprache=sprache, aufschlag_prozent=aufschlag_prozent)
     dateiname = "ECKO-PACK_Price_List.pdf" if sprache == "en" else "ECKO-PACK_Artikel-Preisliste.pdf"
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
     response["Content-Disposition"] = f'inline; filename="{dateiname}"'
@@ -1209,25 +1210,66 @@ def _empfaenger_zeilen_aus_textarea(request):
     return [zeile.strip() for zeile in rohtext.splitlines() if zeile.strip()]
 
 
+def _aufschlag_prozent_parsen(rohwert):
+    """Parst das optionale Aufschlag-Feld der Preisliste (21.10.2026, auf Wunsch von
+    Björn: Preisliste mit Agenten-Provision, "ich muss in der Lage sein, die Preisliste
+    so rauszugeben, dass ich ... 5% Provision aufschlage"). Deutsche Komma-Eingabe ("5,5")
+    wird wie an den übrigen Zahlenfeldern dieser App akzeptiert. Leer/None bedeutet
+    ausdrücklich "kein Aufschlag", nicht "0 wurde eingegeben" - beides landet aber auf
+    demselben None-Rückgabewert, da 0% ohnehin keine sichtbare Auswirkung hätte.
+
+    Gibt (Decimal|None, Fehlermeldung|None) zurück. -100% oder weniger würde Preise auf
+    0 oder negativ drücken (unsinnig für einen Aufschlag), + Obergrenze bei 500% als grobe
+    Tippfehler-Bremse (z. B. versehentlich "500" statt "5,00" eingegeben)."""
+    rohwert = (rohwert or "").strip()
+    if not rohwert:
+        return None, None
+    try:
+        wert = Decimal(rohwert.replace(",", "."))
+    except InvalidOperation:
+        return None, f"„{rohwert}“ ist kein gültiger Prozentwert für den Aufschlag."
+    if wert <= Decimal("-100"):
+        return None, "Der Aufschlag darf nicht -100% oder weniger betragen (Preis würde 0 oder negativ)."
+    if wert > Decimal("500"):
+        return None, f"{wert}% erscheint unplausibel hoch für einen Aufschlag - bitte prüfen."
+    if wert == 0:
+        return None, None
+    return wert, None
+
+
 @login_required
 def artikelliste_versenden(request):
-    """GET zeigt das Formular (Sprachwahl + optionale Anschrift + freie E-Mail-Eingabe).
-    POST unterscheidet per "aktion"-Feld zwei Buttons desselben Formulars: "ansehen"
-    liefert das PDF direkt zur Ansicht (wie zuvor artikelliste_pdf_download, aber jetzt
-    inklusive der eingegebenen Anschrift fürs Briefpapier), "senden" verschickt die
-    Artikel-/Preisliste direkt per Mail (ohne Umweg über einen Deal) - siehe
-    nurture.artikelliste_versenden. Erfolg/Fehlschlag werden wie bei den übrigen
-    Mailversand-Views über Django-Messages zurückgemeldet und zusätzlich zentral in
-    EmailVersand protokolliert (deal=None, siehe models.EmailVersand)."""
+    """GET zeigt das Formular (Sprachwahl + optionale Anschrift + freie E-Mail-Eingabe +
+    optionaler Preisaufschlag). POST unterscheidet per "aktion"-Feld zwei Buttons
+    desselben Formulars: "ansehen" liefert das PDF direkt zur Ansicht (wie zuvor
+    artikelliste_pdf_download, aber jetzt inklusive der eingegebenen Anschrift fürs
+    Briefpapier), "senden" verschickt die Artikel-/Preisliste direkt per Mail (ohne
+    Umweg über einen Deal) - siehe nurture.artikelliste_versenden. Erfolg/Fehlschlag
+    werden wie bei den übrigen Mailversand-Views über Django-Messages zurückgemeldet und
+    zusätzlich zentral in EmailVersand protokolliert (deal=None, siehe
+    models.EmailVersand).
+
+    aufschlag_prozent (21.10.2026, Björns Agenten-Provisions-Anfrage): optionales
+    Prozent-Eingabefeld, das auf JEDEN Preis der erzeugten Liste aufgeschlagen wird (siehe
+    pdf.artikelliste_pdf_erzeugen) - z.B. um die Liste 1:1 an einen Vertriebsagenten
+    weiterzugeben, der seinerseits eine Provision in dieser Höhe einbehält. Ein
+    ungültiger/unplausibler Wert blockiert bewusst "ansehen" UND "senden" (statt
+    stillschweigend auf 0% zurückzufallen), da ein versehentlich falscher Aufschlag auf
+    einem Preisdokument, das an Dritte geht, teuer werden kann."""
     if request.method == "POST":
         sprache = request.POST.get("sprache")
         if sprache not in ("de", "en"):
             sprache = "de"
         empfaenger_zeilen = _empfaenger_zeilen_aus_textarea(request)
+        aufschlag_prozent, aufschlag_fehler = _aufschlag_prozent_parsen(request.POST.get("aufschlag_prozent"))
+        if aufschlag_fehler:
+            messages.warning(request, aufschlag_fehler)
+            return redirect("vertrieb:artikelliste_versenden")
 
         if request.POST.get("aktion") == "ansehen":
             pdf_bytes = pdf.artikelliste_pdf_erzeugen(
                 _artikelliste_standard_artikel(), sprache=sprache, empfaenger_zeilen=empfaenger_zeilen,
+                aufschlag_prozent=aufschlag_prozent,
             )
             dateiname = "ECKO-PACK_Price_List.pdf" if sprache == "en" else "ECKO-PACK_Artikel-Preisliste.pdf"
             response = HttpResponse(pdf_bytes, content_type="application/pdf")
@@ -1243,9 +1285,12 @@ def artikelliste_versenden(request):
             except ValidationError:
                 messages.warning(request, f"„{empfaenger}“ ist keine gültige E-Mail-Adresse.")
                 return redirect("vertrieb:artikelliste_versenden")
-            erfolg, fehler = nurture.artikelliste_versenden(empfaenger, sprache=sprache, empfaenger_zeilen=empfaenger_zeilen)
+            erfolg, fehler = nurture.artikelliste_versenden(
+                empfaenger, sprache=sprache, empfaenger_zeilen=empfaenger_zeilen, aufschlag_prozent=aufschlag_prozent,
+            )
             if erfolg:
-                messages.success(request, f"Artikel-/Preisliste wurde an {empfaenger} versendet.")
+                hinweis_aufschlag = f" (mit {aufschlag_prozent}% Aufschlag)" if aufschlag_prozent else ""
+                messages.success(request, f"Artikel-/Preisliste wurde an {empfaenger} versendet{hinweis_aufschlag}.")
             else:
                 messages.warning(
                     request,

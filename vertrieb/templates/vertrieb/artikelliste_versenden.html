@@ -32,6 +32,15 @@
                 <div class="form-text">Erscheint im Anschriftenfeld oben links auf dem Briefpapier (wie bei Angebot/Lieferschein/Rechnung). Leer lassen für eine Vorschau ohne Empfänger.</div>
             </div>
 
+            <div class="mb-3">
+                <label for="aufschlag_prozent" class="form-label fw-semibold">Aufschlag für Agenten/Provision in % (optional)</label>
+                <input type="text" inputmode="decimal" name="aufschlag_prozent" id="aufschlag_prozent" class="form-control" style="max-width: 160px;" placeholder="z. B. 5">
+                <div class="form-text">
+                    Schlägt den eingegebenen Prozentsatz auf <strong>jeden</strong> Preis der Liste auf (Preis je Stück und 1.000er-Stückpreis, bei allen Mengenstaffeln) – gedacht für Preislisten, die an Vertriebsagenten weitergegeben werden, deren Provision bereits im Preis enthalten sein soll. Die Liste sieht dabei optisch exakt wie gewohnt aus, es gibt keinen Hinweis auf dem PDF, dass ein Aufschlag enthalten ist.
+                    <strong>Leer lassen für die normalen Preise</strong> – das Feld merkt sich nichts zwischen zwei Aufrufen.
+                </div>
+            </div>
+
             <div class="d-flex gap-2 mb-4 pb-4 border-bottom">
                 <button type="submit" name="aktion" value="ansehen" formtarget="_blank" class="btn btn-outline-primary">PDF ansehen</button>
             </div>
