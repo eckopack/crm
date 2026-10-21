@@ -663,6 +663,17 @@ class RahmenvereinbarungDeleteView(LoginRequiredMixin, DeleteView):
     success_url = reverse_lazy("vertrieb:rahmenvereinbarung_list")
 
 
+def rahmenvereinbarung_pdf_download(request, pk):
+    """22.10.2026, Björns Anfrage nach einem "ordentlichen Vertragswerk mit Paragraphen":
+    liefert das Rahmenvertrags-PDF (pdf.rahmenvertrag_pdf_erzeugen) - siehe dort und in
+    vertragstexte.py den Hinweis, dass die Klauseln ein ungeprüfter Entwurf sind."""
+    rahmenvereinbarung = get_object_or_404(Rahmenvereinbarung, pk=pk)
+    pdf_bytes = pdf.rahmenvertrag_pdf_erzeugen(rahmenvereinbarung)
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'inline; filename="{rahmenvereinbarung.nummer}.pdf"'
+    return response
+
+
 # ---------------------------------------------------------------------------
 # Packschein (internes Kommissionier-/Packdokument fürs Lager)
 # ---------------------------------------------------------------------------

@@ -17,6 +17,11 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+# vertragstexte: reines Text-/Klausel-Modul (keine Models), siehe Kommentar dort zum
+# Entwurfscharakter der Klauseln. Separater Import statt Inline-Text hier, damit der
+# komplette Vertragswortlaut an einer Stelle gepflegt wird (22.10.2026, Rahmenvertrag-PDF).
+from . import vertragstexte
+
 # Briefpapier als Vektor-Zeichenfunktion statt fixem Bild (18.10.2026, siehe
 # _hintergrund_zeichnen unten): vorher wurde hier ein fertig gerendertes PNG
 # (briefpapier.png, nur Deutsch) per drawImage() als Hintergrund eingeklebt. Björns
@@ -1051,5 +1056,196 @@ def artikelliste_pdf_erzeugen(artikel_liste, sprache="de", empfaenger_zeilen=Non
         story,
         onFirstPage=_kopf_erste_seite(empfaenger_zeilen or [], meta_zeilen, titel, sprache),
         onLaterPages=_kopf_folgeseite_artikelliste(titel, _datum(heute, sprache), sprache, empfaenger_name),
+    )
+    return buffer.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Rahmenvertrag-PDF (22.10.2026, auf Wunsch von Björn: "ich will auch, dass das Angebot
+# bzw. Rahmenvertrag in einen ordentlichen Rahmen eingebracht wird mit Paragraphen ...
+# damit wir einen professionellen Eindruck bei so großen Kunden machen.") - anders als
+# die übrigen Dokumente oben KEIN reiner Daten-/Preisausdruck, sondern ein echtes
+# Vertragswerk mit §-Klauseln (siehe vertragstexte.py). WICHTIG, siehe Modul-Kommentar
+# in vertragstexte.py: die Klauseln sind ein technischer ENTWURF, keine anwaltlich
+# geprüfte Vorlage - deshalb der deutlich sichtbare Entwurfs-Hinweis (Banner) ganz oben
+# auf Seite 1, der nicht kommentarlos entfernt werden darf.
+# ---------------------------------------------------------------------------
+
+_ENTWURFSHINWEIS_HINTERGRUND = colors.HexColor("#fff3cd")
+_ENTWURFSHINWEIS_RAND = colors.HexColor("#ffe69c")
+_ENTWURFSHINWEIS_TEXTFARBE = colors.HexColor("#664d03")
+
+STIL_ENTWURFSHINWEIS = ParagraphStyle(
+    "Entwurfshinweis", fontName="Helvetica-Bold", fontSize=9, leading=12.5,
+    textColor=_ENTWURFSHINWEIS_TEXTFARBE,
+)
+STIL_VERTRAGSTEXT = ParagraphStyle("Vertragstext", parent=STIL_TEXT, spaceAfter=4)
+STIL_PARAGRAPH_UEBERSCHRIFT = ParagraphStyle(
+    "ParagraphUeberschrift", fontName="Helvetica-Bold", fontSize=10.5, leading=14,
+    textColor=DUNKEL, spaceBefore=10, spaceAfter=3,
+)
+
+
+def _unterschriftenzeile_vertrag(name_links, name_rechts, sprache="de"):
+    """Unterschriftenblock für zwei benannte Vertragsparteien (Lieferant/Kunde) - anders
+    als die generische, Packschein-spezifische _unterschriftenzeile() oben (feste Labels
+    "Kommissioniert von"/"Kontrolliert von"), zeigt dieser Block den jeweiligen Firmennamen
+    fett über der Unterschriftenlinie, mit Platz dazwischen für die tatsächliche
+    Unterschrift."""
+    stil_name = ParagraphStyle("UnterschriftName", parent=STIL_TEXT, fontName="Helvetica-Bold")
+    fuer = "For" if sprache == "en" else "Für"
+    label = "Place, Date, Signature" if sprache == "en" else "Ort, Datum, Unterschrift"
+    daten = [
+        [Paragraph(f"{fuer} {name_links}", stil_name), Paragraph(f"{fuer} {name_rechts}", stil_name)],
+        ["", ""],
+        [Paragraph(label, STIL_TEXT), Paragraph(label, STIL_TEXT)],
+    ]
+    tabelle = Table(daten, colWidths=[INHALT_BREITE / 2, INHALT_BREITE / 2], rowHeights=[16, 40, 16])
+    tabelle.setStyle(TableStyle([
+        ("LINEABOVE", (0, 2), (0, 2), 0.6, GRAU),
+        ("LINEABOVE", (1, 2), (1, 2), 0.6, GRAU),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (1, 0), (1, 0), 0),
+        ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
+    ]))
+    return tabelle
+
+
+def rahmenvertrag_pdf_erzeugen(rahmenvereinbarung):
+    """Erzeugt das Rahmenvertrags-PDF: Entwurfs-Banner, Präambel, §1-§11 (Standard-
+    klauseln aus vertragstexte.paragraphen(), inhaltlich auf Björns vier Entscheidungen
+    vom 22.10.2026 festgelegt: unverbindliche Zielmenge, keine Exklusivität, 1 Jahr
+    Laufzeit mit automatischer Verlängerung/3 Monate Kündigungsfrist), die Jahresmengen-/
+    Preistabelle (eingefügt nach §3), die Bonusstaffel-Tabelle (eingefügt nach §4), optional
+    "Besondere Vereinbarungen" aus rahmenvereinbarung.notizen, und ein Unterschriftenblock
+    für Lieferant und Kunde.
+
+    WICHTIG: trägt oben auf Seite 1 einen deutlich sichtbaren "ENTWURF – NICHT
+    RECHTSGEPRÜFT"-Hinweis (vertragstexte.ENTWURFSHINWEIS_DE/_EN). Dieser Hinweis darf
+    nicht entfernt werden, ohne dass tatsächlich eine anwaltliche Prüfung stattgefunden
+    hat - siehe Modul-Kommentar in vertragstexte.py."""
+    sprache = rahmenvereinbarung.sprache
+    deal = rahmenvereinbarung.deal
+    firma = deal.firma
+    kunde_name = firma.name
+    empfaenger_zeilen = _empfaenger_zeilen(firma, deal.kontakt, sprache)
+
+    gueltig_bis_text = _datum(rahmenvereinbarung.gueltig_bis, sprache) if rahmenvereinbarung.gueltig_bis else None
+
+    if sprache == "en":
+        titel = "FRAMEWORK SUPPLY AGREEMENT"
+        meta_zeilen = [
+            ("Agreement No.", rahmenvereinbarung.nummer),
+            ("Valid from", _datum(rahmenvereinbarung.gueltig_ab, sprache)),
+            ("Valid until", gueltig_bis_text or "open-ended (auto-renewal)"),
+        ]
+        spalten = [
+            ("No.", 32, "l"), ("Art. No.", 65, "l"), ("Description", 125.5, "l"), ("Annual Qty.", 80, "r"),
+            ("Unit", 55, "r"), ("Frozen Price", 110, "r"),
+        ]
+        bonus_spalten = [("From cumulative qty.", 300, "l"), ("Bonus", 167.5, "r")]
+        positionen_titel = "§3 Annual Quantities and Prices – Detail"
+        bonus_titel = "§4 Bonus Tiers – Detail"
+        besondere_titel = "Special Agreements"
+        keine_positionen = "No positions on file."
+        keine_bonusstaffel = "No bonus tiers on file."
+    else:
+        titel = "RAHMENVERTRAG"
+        meta_zeilen = [
+            ("Vertragsnummer", rahmenvereinbarung.nummer),
+            ("Gültig ab", _datum(rahmenvereinbarung.gueltig_ab)),
+            ("Gültig bis", gueltig_bis_text or "unbefristet (automat. Verlängerung)"),
+        ]
+        spalten = [
+            ("Pos.", 32, "l"), ("Artikel-Nr.", 65, "l"), ("Bezeichnung", 125.5, "l"), ("Jahresmenge", 80, "r"),
+            ("Einheit", 55, "r"), ("Eingefrorener Preis", 110, "r"),
+        ]
+        bonus_spalten = [("Ab Gesamtmenge", 300, "l"), ("Bonus", 167.5, "r")]
+        positionen_titel = "§3 Jahresmengen und Preise – Detail"
+        bonus_titel = "§4 Bonusstaffel – Detail"
+        besondere_titel = "Besondere Vereinbarungen"
+        keine_positionen = "Keine Positionen hinterlegt."
+        keine_bonusstaffel = "Keine Bonusstaffel hinterlegt."
+
+    entwurfshinweis_text = vertragstexte.ENTWURFSHINWEIS_EN if sprache == "en" else vertragstexte.ENTWURFSHINWEIS_DE
+    banner = Table([[Paragraph(entwurfshinweis_text, STIL_ENTWURFSHINWEIS)]], colWidths=[INHALT_BREITE])
+    banner.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), _ENTWURFSHINWEIS_HINTERGRUND),
+        ("BOX", (0, 0), (-1, -1), 0.75, _ENTWURFSHINWEIS_RAND),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+    ]))
+
+    positionen_zeilen = []
+    for p in rahmenvereinbarung.positionen.all():
+        einheit_text = _EINHEIT_LABEL_EN.get(p.einheit, p.get_einheit_display()) if sprache == "en" else p.get_einheit_display()
+        artikelnummer = p.artikel.artikelnummer if p.artikel_id else "–"
+        positionen_zeilen.append([
+            p.position, artikelnummer, p.bezeichnung, _menge(p.jahresmenge, sprache), einheit_text,
+            _eur_praezise(p.einzelpreis, sprache),
+        ])
+
+    bonus_zeilen = [
+        [_menge(b.ab_menge, sprache), _satz_text(b.bonus_prozent, sprache)]
+        for b in rahmenvereinbarung.bonusstaffeln.order_by("ab_menge")
+    ]
+
+    paragraphen_liste = vertragstexte.paragraphen(
+        kunde_name=kunde_name,
+        gueltig_ab=_datum(rahmenvereinbarung.gueltig_ab, sprache),
+        gueltig_bis=gueltig_bis_text,
+        zahlungsziel_tage=7,
+        sprache=sprache,
+    )
+
+    story = [
+        banner, Spacer(1, 14),
+        Paragraph(vertragstexte.praeambel(kunde_name, sprache), STIL_VERTRAGSTEXT),
+        Spacer(1, 8),
+    ]
+
+    for index, (ueberschrift, text) in enumerate(paragraphen_liste):
+        story.append(Paragraph(f"<b>{ueberschrift}</b>", STIL_PARAGRAPH_UEBERSCHRIFT))
+        story.append(Paragraph(text, STIL_VERTRAGSTEXT))
+        if index == 2:  # direkt nach §3 (Preise): Jahresmengen-/Preistabelle je Artikel
+            story.append(Spacer(1, 4))
+            story.append(Paragraph(f"<b>{positionen_titel}</b>", STIL_PARAGRAPH_UEBERSCHRIFT))
+            if positionen_zeilen:
+                story.append(_positionstabelle(spalten, positionen_zeilen))
+            else:
+                story.append(Paragraph(keine_positionen, STIL_VERTRAGSTEXT))
+            story.append(Spacer(1, 4))
+        elif index == 3:  # direkt nach §4 (Bonusstaffel): die konkreten Stufen
+            story.append(Spacer(1, 4))
+            story.append(Paragraph(f"<b>{bonus_titel}</b>", STIL_PARAGRAPH_UEBERSCHRIFT))
+            if bonus_zeilen:
+                story.append(_positionstabelle(bonus_spalten, bonus_zeilen, artikelnummer_spalte=None))
+            else:
+                story.append(Paragraph(keine_bonusstaffel, STIL_VERTRAGSTEXT))
+            story.append(Spacer(1, 4))
+
+    if rahmenvereinbarung.notizen:
+        story.append(Spacer(1, 8))
+        story.append(Paragraph(f"<b>{besondere_titel}</b>", STIL_PARAGRAPH_UEBERSCHRIFT))
+        for absatz in str(rahmenvereinbarung.notizen).split("\n"):
+            if absatz.strip():
+                story.append(Paragraph(absatz, STIL_VERTRAGSTEXT))
+
+    story.append(Spacer(1, 36))
+    story.append(_unterschriftenzeile_vertrag(vertragstexte.LIEFERANT_NAME, kunde_name, sprache))
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        topMargin=TOP_MARGIN, bottomMargin=BOTTOM_MARGIN,
+        leftMargin=RAND_LINKS, rightMargin=RAND_RECHTS,
+    )
+    doc.build(
+        story,
+        onFirstPage=_kopf_erste_seite(empfaenger_zeilen, meta_zeilen, titel, sprache),
+        onLaterPages=_kopf_folgeseite(titel, rahmenvereinbarung.nummer, sprache),
     )
     return buffer.getvalue()
