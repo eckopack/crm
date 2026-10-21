@@ -18,9 +18,17 @@
     <div class="d-print-none">
         <a href="{% url 'vertrieb:angebot_create' %}?rahmenvereinbarung={{ rahmenvereinbarung.pk }}" class="btn btn-primary">Angebot erstellen</a>
         <a href="{% url 'vertrieb:lieferschein_create' %}?rahmenvereinbarung={{ rahmenvereinbarung.pk }}" class="btn btn-primary">Lieferschein (Abruf) erstellen</a>
+        <a href="{% url 'vertrieb:rahmenvereinbarung_pdf' rahmenvereinbarung.pk %}" target="_blank" class="btn btn-outline-primary">Rahmenvertrag-PDF (Entwurf)</a>
         <a href="{% url 'vertrieb:rahmenvereinbarung_update' rahmenvereinbarung.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
         <a href="{% url 'vertrieb:rahmenvereinbarung_delete' rahmenvereinbarung.pk %}" class="btn btn-outline-danger">Löschen</a>
     </div>
+</div>
+
+<div class="alert alert-warning d-print-none" role="alert">
+    <strong>Entwurf, nicht rechtsgeprüft:</strong> Der Rahmenvertrag-PDF-Text (§1–§11) ist ein
+    automatisiert erzeugter Klauselentwurf auf Basis der hier hinterlegten Jahresmengen,
+    Preise und Bonusstaffel. Vor dem ersten Versand an einen echten Kunden bitte anwaltlich
+    prüfen lassen – das PDF selbst trägt denselben Hinweis oben auf Seite 1.
 </div>
 
 <div class="card mb-3" style="max-width:420px;">

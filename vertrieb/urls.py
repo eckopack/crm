@@ -49,6 +49,7 @@ urlpatterns = [
     path("rahmenvereinbarungen/<int:pk>/", views.RahmenvereinbarungDetailView.as_view(), name="rahmenvereinbarung_detail"),
     path("rahmenvereinbarungen/<int:pk>/bearbeiten/", views.rahmenvereinbarung_bearbeiten, name="rahmenvereinbarung_update"),
     path("rahmenvereinbarungen/<int:pk>/loeschen/", views.RahmenvereinbarungDeleteView.as_view(), name="rahmenvereinbarung_delete"),
+    path("rahmenvereinbarungen/<int:pk>/vertrag-pdf/", views.rahmenvereinbarung_pdf_download, name="rahmenvereinbarung_pdf"),
 
     path("packscheine/", views.PackscheinListView.as_view(), name="packschein_list"),
     path("packscheine/neu/", views.packschein_erstellen, name="packschein_create"),
