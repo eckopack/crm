@@ -942,7 +942,7 @@ def _artikelliste_tabelle(label_ab_menge, label_preis, label_preis_1000, gruppen
     return tabelle
 
 
-def artikelliste_pdf_erzeugen(artikel_liste, sprache="de", empfaenger_zeilen=None):
+def artikelliste_pdf_erzeugen(artikel_liste, sprache="de", empfaenger_zeilen=None, aufschlag_prozent=None):
     """Erzeugt die zweisprachige Artikel-/Preisliste als EINE durchlaufende Tabelle
     (Artikelnummer/Bezeichnung je Artikel über seine Preisstaffel-Zeilen hinweg vertikal
     verbunden, siehe _artikelliste_tabelle) - aufsteigend nach Ab-Menge sortiert, bewusst
@@ -959,7 +959,24 @@ def artikelliste_pdf_erzeugen(artikel_liste, sprache="de", empfaenger_zeilen=Non
     Rechnung, siehe _kopf_erste_seite) - anders als dort aber KEIN Firma/Kontakt-Objekt,
     sondern freier Text, weil die Preisliste (anders als die übrigen Dokumente) keinen
     Deal-/Firmenbezug hat (siehe Modul-Kommentar oben). Leer/None lässt das Feld frei,
-    z.B. für eine reine interne Vorschau ohne Empfänger."""
+    z.B. für eine reine interne Vorschau ohne Empfänger.
+
+    aufschlag_prozent (21.10.2026, auf Wunsch von Björn: Preisliste mit Agenten-Provision
+    "ich muss in der Lage sein, die Preisliste so rauszugeben, dass ich ... 5% Provision
+    aufschlage"): optionaler Decimal/Zahl, z.B. Decimal("5") für +5% auf JEDEN gezeigten
+    Preis (Preis je Stück UND den daraus abgeleiteten 1.000er-Stückpreis, sowohl bei
+    Preisstaffeln als auch beim Flatrate-Verkaufspreis). None oder 0 lässt die Preise
+    unverändert - das PDF sieht dann exakt wie die normale Preisliste aus, es gibt bewusst
+    KEINEN Hinweis auf dem Dokument, dass ein Aufschlag enthalten ist (die Liste soll 1:1
+    an den Agenten bzw. dessen Kunden weitergereicht werden können). "Preis auf Anfrage"-
+    Zeilen (kein verkaufspreis gepflegt) bleiben unverändert, da dort keine Zahl existiert,
+    auf die ein Aufschlag angewendet werden könnte."""
+    aufschlag_faktor = None
+    if aufschlag_prozent:
+        aufschlag_faktor = (Decimal("100") + Decimal(aufschlag_prozent)) / Decimal("100")
+
+    def _mit_aufschlag(preis):
+        return preis * aufschlag_faktor if aufschlag_faktor is not None else preis
     heute = timezone.localdate()
     if sprache == "en":
         titel = "PRICE LIST"
@@ -999,14 +1016,15 @@ def artikelliste_pdf_erzeugen(artikel_liste, sprache="de", empfaenger_zeilen=Non
             unterzeilen = [
                 (
                     f"{_menge(s.ab_menge, sprache)} {einheit_text}",
-                    _eur_praezise(s.preis_netto, sprache),
-                    _eur(s.preis_netto * 1000, sprache),
+                    _eur_praezise(_mit_aufschlag(s.preis_netto), sprache),
+                    _eur(_mit_aufschlag(s.preis_netto) * 1000, sprache),
                 )
                 for s in staffeln
             ]
         elif artikel.verkaufspreis is not None:
+            preis_mit_aufschlag = _mit_aufschlag(artikel.verkaufspreis)
             unterzeilen = [(
-                "–", _eur_praezise(artikel.verkaufspreis, sprache), _eur(artikel.verkaufspreis * 1000, sprache),
+                "–", _eur_praezise(preis_mit_aufschlag, sprache), _eur(preis_mit_aufschlag * 1000, sprache),
             )]
         else:
             unterzeilen = [("–", preis_auf_anfrage, "–")]
