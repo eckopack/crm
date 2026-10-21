@@ -2,6 +2,13 @@
 {% block title %}Angebot {% if angebot %}bearbeiten{% else %}anlegen{% endif %}{% endblock %}
 {% block content %}
 <h2 class="mb-3">Angebot {% if angebot %}bearbeiten{% else %}anlegen{% endif %}</h2>
+{% if rahmenvereinbarung_quelle %}
+<p class="text-muted">
+    Positionen aus Rahmenvereinbarung {{ rahmenvereinbarung_quelle.nummer }} übernommen,
+    jeweils mit der vollen Jahresmenge und dem dort eingefrorenen Preis – so, wie es dem
+    Kunden als Jahresmengen-Angebot zugestellt wird. Bei Bedarf anpassen.
+</p>
+{% endif %}
 
 <form method="post">
     {% csrf_token %}

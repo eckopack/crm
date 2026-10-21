@@ -7,6 +7,9 @@
         <div class="text-muted">
             Deal: <a href="{{ angebot.deal.get_absolute_url }}">{{ angebot.deal.titel }}</a>
             · Firma: <a href="{{ angebot.deal.firma.get_absolute_url }}">{{ angebot.deal.firma.name }}</a>
+            {% if angebot.rahmenvereinbarung %}
+            · Rahmenvereinbarung: <a href="{{ angebot.rahmenvereinbarung.get_absolute_url }}">{{ angebot.rahmenvereinbarung.nummer }}</a>
+            {% endif %}
         </div>
         <span class="badge text-bg-light border">{{ angebot.get_status_display }}</span>
         <span class="badge text-bg-light border">{{ angebot.get_sprache_display }}</span>

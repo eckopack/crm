@@ -299,6 +299,17 @@ class Aktivitaet(models.Model):
 class Angebot(models.Model):
     nummer = models.CharField("Angebotsnummer", max_length=30, unique=True, blank=True)
     deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.CASCADE, related_name="angebote")
+    rahmenvereinbarung = models.ForeignKey(
+        "Rahmenvereinbarung", verbose_name="Rahmenvereinbarung", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="angebote",
+        help_text=(
+            "22.10.2026, Björns Rückfrage: ist dieses Angebot aus einer Rahmenvereinbarung "
+            "erzeugt (siehe dort), dokumentiert es dem Kunden gegenüber die dort "
+            "vereinbarte Jahresmenge je Artikel zum eingefrorenen Preis - rein "
+            "informativ/zur Nachverfolgung, keine automatische Logik hängt daran "
+            "(anders als bei Lieferschein.rahmenvereinbarung)."
+        ),
+    )
     datum = models.DateField("Datum", default=timezone.localdate)
     gueltig_bis = models.DateField("Gültig bis", null=True, blank=True)
     status = models.CharField("Status", max_length=20, choices=ANGEBOT_STATUS_CHOICES, default="entwurf")
@@ -662,6 +673,16 @@ class Rahmenvereinbarung(models.Model):
     deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.CASCADE, related_name="rahmenvereinbarungen")
     gueltig_ab = models.DateField("Gültig ab", default=timezone.localdate)
     gueltig_bis = models.DateField("Gültig bis", null=True, blank=True)
+    sprache = models.CharField(
+        "Sprache", max_length=2, choices=SPRACHE_CHOICES, default="de",
+        help_text=(
+            "22.10.2026, Björns Rückfrage zum Rahmenvereinbarungs-Workflow: bestimmt die "
+            "Sprache des daraus erzeugten Angebots-PDFs sowie - bei der Artikelauswahl in "
+            "den Positionen - ob die deutsche oder englische Anzeige-Bezeichnung "
+            "vorgeschlagen wird (siehe Artikel.bezeichnung_en). Analog zu Angebot.sprache: "
+            "ändert NICHT die Kalkulation, nur die Anzeige/das Dokument."
+        ),
+    )
     notizen = models.TextField("Notizen/Konditionen", blank=True)
     erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
 

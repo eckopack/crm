@@ -485,6 +485,11 @@ class AngebotDetailView(LoginRequiredMixin, DetailView):
 
 @login_required
 def angebot_erstellen(request):
+    rahmenvereinbarung_quelle = None
+    rahmenvereinbarung_id = request.GET.get("rahmenvereinbarung")
+    if rahmenvereinbarung_id:
+        rahmenvereinbarung_quelle = get_object_or_404(Rahmenvereinbarung, pk=rahmenvereinbarung_id)
+
     if request.method == "POST":
         form = AngebotForm(request.POST)
         if form.is_valid():
@@ -501,12 +506,43 @@ def angebot_erstellen(request):
         # auswählen müssen) - Angebotsdatum = heute, Gültigkeit standardmäßig 4
         # Wochen. Reiner Vorschlag, beide Felder bleiben frei überschreibbar.
         initial = {"datum": heute, "gueltig_bis": heute + timedelta(weeks=4)}
-        deal_id = request.GET.get("deal")
-        if deal_id:
-            initial["deal"] = deal_id
+        quelle_positionen = None
+        if rahmenvereinbarung_quelle:
+            # 22.10.2026, Björns Rückfrage: das Angebot ist das Dokument, das dem
+            # Kunden tatsächlich zugestellt wird - hier daher bewusst MIT der vollen
+            # Jahresmenge und dem eingefrorenen Preis vorbefüllt (anders als beim
+            # Lieferschein-Abruf aus einer Rahmenvereinbarung, wo die Menge absichtlich
+            # NICHT vorbefüllt wird, siehe lieferschein_erstellen).
+            initial.update({
+                "deal": rahmenvereinbarung_quelle.deal_id,
+                "rahmenvereinbarung": rahmenvereinbarung_quelle.pk,
+                "sprache": rahmenvereinbarung_quelle.sprache,
+            })
+            quelle_positionen = rahmenvereinbarung_quelle.positionen.all()
+        else:
+            deal_id = request.GET.get("deal")
+            if deal_id:
+                initial["deal"] = deal_id
         form = AngebotForm(initial=initial)
-        formset = AngebotPositionFormSet()
-    return render(request, "vertrieb/angebot_form.html", {"form": form, "formset": formset})
+
+        if quelle_positionen is not None and quelle_positionen.exists():
+            positionen_initial = [
+                {
+                    "artikel": p.artikel_id, "position": p.position, "bezeichnung": p.bezeichnung,
+                    "menge": p.jahresmenge, "einheit": p.einheit, "einzelpreis": p.einzelpreis,
+                }
+                for p in quelle_positionen
+            ]
+            FormSetVorbefuellt = inlineformset_factory(
+                Angebot, Angebot.positionen.rel.related_model,
+                form=AngebotPositionFormSet.form, extra=len(positionen_initial), can_delete=True,
+            )
+            formset = FormSetVorbefuellt(initial=positionen_initial)
+        else:
+            formset = AngebotPositionFormSet()
+    return render(request, "vertrieb/angebot_form.html", {
+        "form": form, "formset": formset, "rahmenvereinbarung_quelle": rahmenvereinbarung_quelle,
+    })
 
 
 @login_required
@@ -567,6 +603,7 @@ class RahmenvereinbarungDetailView(LoginRequiredMixin, DetailView):
         context = super().get_context_data(**kwargs)
         context["positionen"] = self.object.positionen.all().select_related("artikel")
         context["bonusstaffeln"] = self.object.bonusstaffeln.all()
+        context["angebote"] = self.object.angebote.all()
         return context
 
 

@@ -110,7 +110,7 @@ class AktivitaetForm(BootstrapFormMixin, forms.ModelForm):
 class AngebotForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Angebot
-        fields = ["deal", "datum", "gueltig_bis", "status", "sprache", "notizen"]
+        fields = ["deal", "rahmenvereinbarung", "datum", "gueltig_bis", "status", "sprache", "notizen"]
         widgets = {
             "notizen": forms.Textarea(attrs={"rows": 3}),
             "datum": date_input(),
@@ -120,6 +120,7 @@ class AngebotForm(BootstrapFormMixin, forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._bootstrapify()
+        self.fields["rahmenvereinbarung"].required = False
 
 
 class AngebotPositionForm(BootstrapFormMixin, forms.ModelForm):
@@ -145,7 +146,7 @@ AngebotPositionFormSet = inlineformset_factory(
 class RahmenvereinbarungForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Rahmenvereinbarung
-        fields = ["deal", "gueltig_ab", "gueltig_bis", "notizen"]
+        fields = ["deal", "sprache", "gueltig_ab", "gueltig_bis", "notizen"]
         widgets = {
             "notizen": forms.Textarea(attrs={"rows": 3}),
             "gueltig_ab": date_input(),
