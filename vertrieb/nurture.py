@@ -587,6 +587,93 @@ def angebot_nachfass_senden(angebot, status):
     return True, None
 
 
+def angebot_versand_senden(angebot):
+    """Verschickt das Angebot selbst (PDF-Anhang) mit einem eigens formulierten,
+    zweisprachigen Anschreiben an den Kunden (24.10.2026, auf Wunsch von Björn:
+    "jetzt muss noch der ursprüngliche angebot versand organisiert werden ... per email
+    und anschreiben"). Analog zu rechnung_versand_senden oben, aber fuer den ERSTEN
+    Kundenkontakt zu diesem Angebot - deshalb ein ausfuehrlicheres LUAMO-Absatz als in der
+    Nachfasskette (dort reicht ein kurzer Reminder, hier ist es ggf. die erste Beruehrung
+    mit der Marke).
+
+    Ausgeloest ueber den manuellen "Jetzt versenden"-Button auf der Angebots-Detailseite
+    (views.angebot_versand_senden_view) - bewusst KEIN Automatismus beim Anlegen des
+    Angebots, da Björn das Anschreiben/den Zeitpunkt selbst steuern will (anders als z.B.
+    bei lieferschein_versand_bestaetigen -> rechnung_automatisch_erstellen).
+
+    Setzt bei Erfolg angebot.status='versendet' - das loest automatisch (siehe
+    signals.angebot_status_wechsel) die bereits bestehende 3-stufige Angebot-Nachfasskette
+    aus (AngebotNachfassStatus, naechster_schritt=1) - sowie
+    angebot.versandmail_gesendet_am.
+
+    Der Inhalt des Anschreibens (inkl. LUAMO-Absatz) ist Björn als Entwurf gezeigt und von
+    ihm ausdruecklich freigegeben worden ("bitte umsetzen"); die Frage, ob der LUAMO-Absatz
+    nur bei den Geschaeftsbereichen Nachhaltige Verpackung/Einweg-Serviceprodukte erscheinen
+    soll, hat Björn mit "immer" beantwortet - der Absatz steht deshalb unabhaengig vom
+    deal.geschaeftsbereich in JEDEM Angebots-Anschreiben (gleiche bewusste Entscheidung wie
+    schon bei der Nachfasskette, siehe Migration 0024).
+
+    Fail-safe wie rechnung_versand_senden: NICHT fail-silent, der aufrufende View zeigt
+    Erfolg/Fehlschlag sofort im UI. Gibt (erfolg: bool, fehlermeldung: str|None) zurueck."""
+    deal = angebot.deal
+    empfaenger = _empfaenger_email(deal)
+
+    if not empfaenger:
+        meldung = "keine E-Mail-Adresse für Firma/Ansprechpartner hinterlegt"
+        logger.warning(
+            "Kein Empfaenger (E-Mail) fuer Angebot-Versandmail gefunden (Angebot %s, Deal %s)",
+            angebot.nummer, deal.pk,
+        )
+        _mail_protokollieren(
+            deal=deal, mailtyp="angebot_versand", empfaenger="", betreff="",
+            erfolg=False, fehlermeldung=meldung, angebot=angebot,
+        )
+        return False, meldung
+
+    sprache = angebot.sprache
+    if sprache == "en":
+        betreff = f"Your quote from ECKO-PACK ({angebot.nummer})"
+    else:
+        betreff = f"Ihr Angebot von ECKO-PACK ({angebot.nummer})"
+
+    kontext = {
+        "angebot": angebot,
+        "deal": deal,
+        "firma": deal.firma,
+        "ansprechpartner": deal.kontakt,
+        "sprache": sprache,
+        "site_url": SITE_URL,
+        "logo_url": f"{SITE_URL}/static/img/eckopack-logo.png",
+    }
+    text_body = render_to_string("vertrieb/email/angebot_versand.txt", kontext)
+    html_body = render_to_string("vertrieb/email/angebot_versand.html", kontext)
+
+    try:
+        angebot_pdf_bytes = pdf.angebot_pdf_erzeugen(angebot)
+        mail = EmailMultiAlternatives(betreff, text_body, settings.DEFAULT_FROM_EMAIL, [empfaenger])
+        mail.attach_alternative(html_body, "text/html")
+        mail.attach(f"{angebot.nummer}.pdf", angebot_pdf_bytes, "application/pdf")
+        mail.send(fail_silently=False)
+    except Exception as exc:
+        logger.exception(
+            "Angebot-Versandmail (inkl. PDF) konnte nicht gesendet werden (Angebot %s)", angebot.nummer,
+        )
+        _mail_protokollieren(
+            deal=deal, mailtyp="angebot_versand", empfaenger=empfaenger, betreff=betreff,
+            erfolg=False, fehlermeldung=str(exc), angebot=angebot,
+        )
+        return False, str(exc)
+
+    angebot.status = "versendet"
+    angebot.versandmail_gesendet_am = timezone.now()
+    angebot.save(update_fields=["status", "versandmail_gesendet_am"])
+    _mail_protokollieren(
+        deal=deal, mailtyp="angebot_versand", empfaenger=empfaenger, betreff=betreff, erfolg=True,
+        angebot=angebot,
+    )
+    return True, None
+
+
 def rechnung_automatisch_erstellen(lieferschein):
     """Legt zu einem soeben versendeten Lieferschein automatisch eine Rechnung an (siehe
     Teil 7 oben) - fuer Muster UND echte Bestellungen gleichermassen, aufgerufen von

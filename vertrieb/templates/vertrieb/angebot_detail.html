@@ -15,6 +15,13 @@
         <span class="badge text-bg-light border">{{ angebot.get_sprache_display }}</span>
     </div>
     <div class="d-print-none">
+        {% if angebot.status == "entwurf" %}
+        <form method="post" action="{% url 'vertrieb:angebot_versand' angebot.pk %}" class="d-inline"
+              onclick="return confirm('Angebot {{ angebot.nummer }} jetzt per Mail (inkl. Anschreiben und PDF) an den Kunden versenden?');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary">Jetzt versenden</button>
+        </form>
+        {% endif %}
         <a href="{% url 'vertrieb:packschein_create' %}?angebot={{ angebot.pk }}" class="btn btn-primary">Packschein erstellen</a>
         <a href="{% url 'vertrieb:lieferschein_create' %}?angebot={{ angebot.pk }}" class="btn btn-primary">Lieferschein erstellen</a>
         <a href="{% url 'vertrieb:rechnung_create' %}?angebot={{ angebot.pk }}" class="btn btn-primary">Rechnung erstellen</a>
@@ -23,6 +30,11 @@
         <a href="{% url 'vertrieb:angebot_delete' angebot.pk %}" class="btn btn-outline-danger">Löschen</a>
     </div>
 </div>
+{% if angebot.versandmail_gesendet_am %}
+<div class="text-muted small mb-3">
+    Angebot per Mail an Kunde gesendet am {{ angebot.versandmail_gesendet_am|date:"d.m.Y H:i" }}.
+</div>
+{% endif %}
 
 <div class="card mb-3" style="max-width:300px;">
     <ul class="list-group list-group-flush">

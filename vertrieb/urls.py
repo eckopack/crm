@@ -43,6 +43,7 @@ urlpatterns = [
     path("angebote/<int:pk>/bearbeiten/", views.angebot_bearbeiten, name="angebot_update"),
     path("angebote/<int:pk>/loeschen/", views.AngebotDeleteView.as_view(), name="angebot_delete"),
     path("angebote/<int:pk>/pdf/", views.angebot_pdf_download, name="angebot_pdf"),
+    path("angebote/<int:pk>/versenden/", views.angebot_versand_senden_view, name="angebot_versand"),
 
     path("rahmenvereinbarungen/", views.RahmenvereinbarungListView.as_view(), name="rahmenvereinbarung_list"),
     path("rahmenvereinbarungen/neu/", views.rahmenvereinbarung_erstellen, name="rahmenvereinbarung_create"),

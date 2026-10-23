@@ -326,6 +326,16 @@ class Angebot(models.Model):
     )
     notizen = models.TextField("Notizen/Konditionen", blank=True)
     erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
+    versandmail_gesendet_am = models.DateTimeField(
+        "Versand-Mail gesendet am", null=True, blank=True,
+        help_text=(
+            "24.10.2026, auf Wunsch von Björn: wird von nurture.angebot_versand_senden() "
+            "gesetzt, wenn das Angebot (inkl. Anschreiben und PDF-Anhang) per Mail an den "
+            "Kunden verschickt wurde - analog zu Rechnung.bestaetigungsmail_gesendet_am. "
+            "Der Versand setzt gleichzeitig status='versendet', was automatisch die "
+            "Angebot-Nachfasskette startet (siehe signals.angebot_status_wechsel)."
+        ),
+    )
 
     class Meta:
         verbose_name = "Angebot"
@@ -963,6 +973,7 @@ MAILTYP_CHOICES = [
     ("musterbox_nachfass", "Musterbox-Nachfassmail"),
     ("artikelliste", "Artikelliste (Preisliste)"),
     ("angebot_nachfass", "Angebot-Nachfassmail"),
+    ("angebot_versand", "Angebot-Versandmail"),
 ]
 
 

@@ -576,6 +576,29 @@ def angebot_pdf_download(request, pk):
     return response
 
 
+@login_required
+def angebot_versand_senden_view(request, pk):
+    """Verschickt ein Angebot manuell per Mail inkl. Anschreiben und PDF-Anhang an den
+    Kunden (24.10.2026, auf Wunsch von Björn, siehe nurture.angebot_versand_senden) - der
+    "Jetzt versenden"-Button auf der Angebots-Detailseite, analog zu
+    rechnung_versand_senden_view. Setzt bei Erfolg status='versendet', was automatisch die
+    bestehende Angebot-Nachfasskette startet (siehe signals.angebot_status_wechsel)."""
+    angebot = get_object_or_404(Angebot, pk=pk)
+    if request.method == "POST":
+        if angebot.status != "entwurf":
+            messages.info(request, f"Angebot {angebot.nummer} wurde bereits versendet.")
+        else:
+            erfolg, fehler = nurture.angebot_versand_senden(angebot)
+            if erfolg:
+                messages.success(request, f"Angebot {angebot.nummer} wurde per Mail an den Kunden versendet.")
+            else:
+                messages.warning(
+                    request,
+                    f"Angebot {angebot.nummer} konnte NICHT per Mail versendet werden ({fehler}).",
+                )
+    return redirect(angebot.get_absolute_url())
+
+
 # ---------------------------------------------------------------------------
 # Rahmenvereinbarung (Jahresmengen-Vertrag für Großkunden, 21.10.2026 - siehe
 # Model-Doku: friert pro Artikel einen Preis für die ganze Jahresmenge ein,

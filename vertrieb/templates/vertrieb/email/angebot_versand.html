@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="{% if sprache == "en" %}en{% else %}de{% endif %}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% if sprache == "en" %}Your quote from ECKO-PACK{% else %}Ihr Angebot von ECKO-PACK{% endif %}</title>
+</head>
+<body style="margin:0; padding:0; background-color:#f5f6f8; font-family:Arial, Helvetica, sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f6f8; padding:24px 0;">
+  <tr>
+    <td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px; width:100%; background-color:#ffffff; border-radius:8px; overflow:hidden;">
+
+        <tr>
+          <td style="background-color:#ffffff; padding:24px 32px; border-bottom:1px solid #e5e5e5;">
+            <img src="{{ logo_url }}" alt="ECKO-PACK" height="32" style="display:block; height:32px; width:auto;">
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:32px;">
+            <p style="margin:0 0 16px 0; font-size:16px; color:#3c3c3b;">
+              {% if sprache == "en" %}Hello{% else %}Guten Tag{% endif %}{% if ansprechpartner %} {{ ansprechpartner.vorname }} {{ ansprechpartner.nachname }}{% endif %},
+            </p>
+            <div style="margin:0 0 24px 0; font-size:16px; color:#3c3c3b; line-height:1.5;">
+              {% if sprache == "en" %}
+              <p>thank you for your interest in ECKO-PACK. Please find attached our quote {{ angebot.nummer }} for {{ deal.titel }}{% if angebot.gueltig_bis %}, valid until {{ angebot.gueltig_bis|date:"d.m.Y" }}{% endif %}.</p>
+
+              <p>As this is your first quote from us, we'd also like to briefly introduce our brand LUAMO: LUAMO covers disposable and foodservice products – including ice cream spoons, fry forks, knives, forks, spoons, and straws – made from the natural material traceless®. This material is produced from plant-based residues of grain production, is 100% bio-based, and free of plastic and microplastics. It is DIN-certified home compostable – not via the municipal organic waste bin, but via your own compost or general waste. This makes LUAMO particularly well suited for use in retail, foodservice, and high-volume settings.</p>
+
+              <p>If you have any questions about this quote or about LUAMO, please don't hesitate to reach out.</p>
+              {% else %}
+              <p>vielen Dank für Ihr Interesse an ECKO-PACK. Anbei erhalten Sie unser Angebot {{ angebot.nummer }} zu {{ deal.titel }}{% if angebot.gueltig_bis %}, gültig bis zum {{ angebot.gueltig_bis|date:"d.m.Y" }}{% endif %}.</p>
+
+              <p>Da dies Ihr erstes Angebot von uns ist, möchten wir Ihnen kurz auch unsere Marke LUAMO vorstellen: LUAMO umfasst Einweg- und Serviceprodukte – etwa Eislöffel, Pommesgabeln, Messer, Gabeln, Löffel und Trinkhalme – aus dem Naturmaterial traceless®. Dieses Material wird aus pflanzlichen Reststoffen der Getreideproduktion hergestellt, ist zu 100 % biobasiert und frei von Plastik sowie Mikroplastik. Es ist DIN-geprüft zuhause kompostierbar – nicht über die Biotonne, sondern über den eigenen Kompost oder den Restmüll. Damit eignet sich LUAMO besonders für den Einsatz in Handel, Gastronomie und Großverbrauch.</p>
+
+              <p>Bei Fragen zu diesem Angebot oder zu LUAMO sprechen Sie uns gerne jederzeit an.</p>
+              {% endif %}
+            </div>
+            {# 24.10.2026, auf Wunsch von Björn: gleiche vollstaendige, zweisprachige Signatur
+               wie in angebot_nachfass.html - aus Konsistenzgruenden fuer diese neue Vorlage
+               mituebernommen, da beide Mails zur selben Angebots-Kette gehoeren. #}
+            <p style="margin:24px 0 0 0; font-size:14px; color:#3c3c3b; line-height:1.6;">
+              Mit freundlichen Grüßen<br>
+              Best regards<br>
+              <br>
+              Björn Gallenkamp<br>
+              Geschäftsführer / CEO<br>
+              Telefon: +49 4331 1348 0<br>
+              Mobil: +49 171 977 77 21<br>
+              Fax: +49 4331 1348 999<br>
+              E-Mail: <a href="mailto:b.gallenkamp@ecko-pack.de" style="color:#3c3c3b;">b.gallenkamp@ecko-pack.de</a><br>
+              Web: <a href="https://www.ecko-pack.de" style="color:#3c3c3b;">https://www.ecko-pack.de</a><br>
+              <br>
+              ECKO-PACK GmbH<br>
+              Wasbeker Straße 324<br>
+              D-24537 Neumünster
+            </p>
+          </td>
+        </tr>
+        {# 24.10.2026, auf Wunsch von Björn (Begruendung wie in angebot_nachfass.html): kein
+           unterer grauer Footer-Balken, da Name+Anschrift schon vollstaendig in der
+           Signatur oben stehen - sonst stuende die Adresse zweimal in der Mail. #}
+
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>
