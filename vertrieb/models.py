@@ -299,56 +299,40 @@ class Aktivitaet(models.Model):
 class Angebot(models.Model):
     nummer = models.CharField("Angebotsnummer", max_length=30, unique=True, blank=True)
     deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.CASCADE, related_name="angebote")
+    # 22.10.2026, Björns Rückfrage: ist dieses Angebot aus einer Rahmenvereinbarung erzeugt
+    # (siehe dort), dokumentiert es dem Kunden gegenüber die dort vereinbarte Jahresmenge je
+    # Artikel zum eingefrorenen Preis - rein informativ/zur Nachverfolgung, keine
+    # automatische Logik hängt daran (anders als bei Lieferschein.rahmenvereinbarung).
     rahmenvereinbarung = models.ForeignKey(
         "Rahmenvereinbarung", verbose_name="Rahmenvereinbarung", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="angebote",
-        help_text=(
-            "22.10.2026, Björns Rückfrage: ist dieses Angebot aus einer Rahmenvereinbarung "
-            "erzeugt (siehe dort), dokumentiert es dem Kunden gegenüber die dort "
-            "vereinbarte Jahresmenge je Artikel zum eingefrorenen Preis - rein "
-            "informativ/zur Nachverfolgung, keine automatische Logik hängt daran "
-            "(anders als bei Lieferschein.rahmenvereinbarung)."
-        ),
     )
     datum = models.DateField("Datum", default=timezone.localdate)
     gueltig_bis = models.DateField("Gültig bis", null=True, blank=True)
     status = models.CharField("Status", max_length=20, choices=ANGEBOT_STATUS_CHOICES, default="entwurf")
+    # 24.10.2026, auf Wunsch von Björn ("ich will im angebotsfeld auch den ansprechpartner
+    # auswählen können", "kann immer variieren"): Empfänger der Versand-/Nachfassmails für
+    # GENAU DIESES Angebot, unabhängig vom im Deal hinterlegten Kontakt - weil der richtige
+    # Ansprechpartner je Angebot ein anderer sein kann (z.B. Einkauf vs. Technik), nicht nur
+    # je Deal. Leer lassen greift wie bisher automatisch auf deal.kontakt zurück (siehe
+    # nurture._empfaenger_email).
     ansprechpartner = models.ForeignKey(
         "Kontakt", verbose_name="Ansprechpartner (Versand)", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="angebote_als_ansprechpartner",
-        help_text=(
-            "24.10.2026, auf Wunsch von Björn ('ich will im angebotsfeld auch den "
-            "ansprechpartner auswählen können', 'kann immer variieren'): Empfänger der "
-            "Versand-/Nachfassmails für GENAU DIESES Angebot, unabhängig vom im Deal "
-            "hinterlegten Kontakt - weil der richtige Ansprechpartner je Angebot ein "
-            "anderer sein kann (z.B. Einkauf vs. Technik), nicht nur je Deal. Leer lassen "
-            "greift wie bisher automatisch auf deal.kontakt zurück (siehe "
-            "nurture._empfaenger_email)."
-        ),
+        help_text="Leer lassen übernimmt automatisch den Kontakt aus dem Deal.",
     )
     sprache = models.CharField(
         "Sprache", max_length=2, choices=SPRACHE_CHOICES, default="de",
-        help_text=(
-            "Bestimmt die Sprache des Angebots-PDFs (Überschriften/Tabellenköpfe) sowie - "
-            "beim Auswählen eines Artikels in den Positionen - ob die deutsche oder "
-            "englische Anzeige-Bezeichnung vorgeschlagen wird (siehe Artikel.bezeichnung_en). "
-            "Ändert NICHT die Kalkulation: Preis/Staffeln/Lagerbestand kommen immer vom "
-            "selben Artikel, unabhängig von der gewählten Sprache - Amazon-Zweitlistungen "
-            "bleiben in jeder Sprache von der Positionsauswahl ausgeschlossen."
-        ),
+        help_text="Bestimmt die Sprache des Angebots-PDFs. Ändert nicht die Kalkulation.",
     )
     notizen = models.TextField("Notizen/Konditionen", blank=True)
     erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
-    versandmail_gesendet_am = models.DateTimeField(
-        "Versand-Mail gesendet am", null=True, blank=True,
-        help_text=(
-            "24.10.2026, auf Wunsch von Björn: wird von nurture.angebot_versand_senden() "
-            "gesetzt, wenn das Angebot (inkl. Anschreiben und PDF-Anhang) per Mail an den "
-            "Kunden verschickt wurde - analog zu Rechnung.bestaetigungsmail_gesendet_am. "
-            "Der Versand setzt gleichzeitig status='versendet', was automatisch die "
-            "Angebot-Nachfasskette startet (siehe signals.angebot_status_wechsel)."
-        ),
-    )
+    # 24.10.2026, auf Wunsch von Björn: wird von nurture.angebot_versand_senden() gesetzt,
+    # wenn das Angebot (inkl. Anschreiben und PDF-Anhang) per Mail an den Kunden verschickt
+    # wurde - analog zu Rechnung.bestaetigungsmail_gesendet_am. Der Versand setzt
+    # gleichzeitig status='versendet', was automatisch die Angebot-Nachfasskette startet
+    # (siehe signals.angebot_status_wechsel).
+    versandmail_gesendet_am = models.DateTimeField("Versand-Mail gesendet am", null=True, blank=True)
 
     class Meta:
         verbose_name = "Angebot"
@@ -523,14 +507,11 @@ class PackscheinPosition(models.Model):
     menge = models.DecimalField("Menge", max_digits=10, decimal_places=2, default=1)
     einheit = models.CharField("Einheit", max_length=10, choices=EINHEIT_CHOICES, default="stk")
     gepackt = models.BooleanField("Gepackt", default=False)
+    # Nur gesetzt für die eigentliche Musterkarton-Position (nicht den Beileger/Flyer) einer
+    # von "Musterkarton anfordern" angelegten Position - liefert den {{ artikel }}-Platzhalter
+    # der Musterbox-Nachfasskette, ohne die Beileger-Bezeichnung mit einzubeziehen.
     musterkarton_einzelart = models.CharField(
         "Musterkarton-Art", max_length=20, choices=MUSTERKARTON_EINZELART_CHOICES, blank=True,
-        help_text=(
-            "Nur gesetzt für die eigentliche Musterkarton-Position (nicht den Beileger/Flyer) "
-            "einer von 'Musterkarton anfordern' angelegten Position - liefert den "
-            "{{ artikel }}-Platzhaltertext der Musterbox-Nachfasskette (siehe nurture.py), "
-            "ohne die Beileger-Bezeichnung mit einzubeziehen."
-        ),
     )
 
     class Meta:
@@ -553,20 +534,15 @@ class Lieferschein(models.Model):
         Packschein, verbose_name="Packschein", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="lieferscheine"
     )
+    # 21.10.2026, Björns Großkunden-Jahresmengenanfrage: ist dieser Lieferschein ein Abruf
+    # aus einer Rahmenvereinbarung (siehe dort), wird beim automatischen Erzeugen der
+    # zugehörigen Rechnung NICHT die normale mengenabhängige Preisstaffel des Artikels
+    # angewendet, sondern der in der Rahmenvereinbarung für diesen Artikel eingefrorene
+    # Preis - unabhängig davon, wie klein diese einzelne Teillieferung ist (siehe
+    # nurture.rechnung_automatisch_erstellen).
     rahmenvereinbarung = models.ForeignKey(
         "Rahmenvereinbarung", verbose_name="Rahmenvereinbarung", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="lieferscheine",
-        help_text=(
-            "21.10.2026, Björns Großkunden-Jahresmengenanfrage: ist dieser Lieferschein ein "
-            "Abruf aus einer Rahmenvereinbarung (siehe dort), wird beim automatischen Erzeugen "
-            "der zugehörigen Rechnung NICHT die normale mengenabhängige Preisstaffel des "
-            "Artikels angewendet, sondern der in der Rahmenvereinbarung für diesen Artikel "
-            "eingefrorene Preis - unabhängig davon, wie klein diese einzelne Teillieferung "
-            "ist (siehe nurture.rechnung_automatisch_erstellen). So bekommt ein Großkunde "
-            "über das ganze Jahr verteilte Teilabrufe konsequent zum vereinbarten "
-            "Jahresmengen-Preis, statt bei jedem kleineren Einzelabruf automatisch in eine "
-            "teurere, kleinere Mengenstaffel zu fallen."
-        ),
     )
     datum = models.DateField("Lieferdatum", default=timezone.localdate)
     status = models.CharField("Status", max_length=20, choices=LIEFERSCHEIN_STATUS_CHOICES, default="entwurf")
@@ -698,13 +674,7 @@ class Rahmenvereinbarung(models.Model):
     gueltig_bis = models.DateField("Gültig bis", null=True, blank=True)
     sprache = models.CharField(
         "Sprache", max_length=2, choices=SPRACHE_CHOICES, default="de",
-        help_text=(
-            "22.10.2026, Björns Rückfrage zum Rahmenvereinbarungs-Workflow: bestimmt die "
-            "Sprache des daraus erzeugten Angebots-PDFs sowie - bei der Artikelauswahl in "
-            "den Positionen - ob die deutsche oder englische Anzeige-Bezeichnung "
-            "vorgeschlagen wird (siehe Artikel.bezeichnung_en). Analog zu Angebot.sprache: "
-            "ändert NICHT die Kalkulation, nur die Anzeige/das Dokument."
-        ),
+        help_text="Bestimmt die Sprache des daraus erzeugten Angebots-PDFs. Ändert nicht die Kalkulation.",
     )
     notizen = models.TextField("Notizen/Konditionen", blank=True)
     erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
@@ -1029,7 +999,6 @@ class EmailVersand(models.Model):
     angebot = models.ForeignKey(
         Angebot, verbose_name="Angebot", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="email_versaende",
-        help_text="23.10.2026, Angebot-Nachfasskette (siehe AngebotNachfassStatus unten).",
     )
 
     class Meta:
@@ -1105,9 +1074,8 @@ class Artikel(models.Model):
     bezeichnung = models.CharField("Bezeichnung", max_length=300)
     bezeichnung_en = models.CharField(
         "Bezeichnung (Englisch)", max_length=300, blank=True,
-        help_text="Anzeige-Übersetzung für Angebote mit Sprache=Englisch (siehe Model-Doku) "
-                   "- ändert nichts an Preis/Lagerbestand. Leer = Vorbefüllung nutzt die "
-                   "deutsche Bezeichnung.",
+        help_text="Anzeige-Übersetzung für Angebote mit Sprache=Englisch - ändert nichts an "
+                   "Preis/Lagerbestand. Leer = Vorbefüllung nutzt die deutsche Bezeichnung.",
     )
     beschreibung = models.TextField("Beschreibung", blank=True)
     beschreibung_en = models.TextField(
@@ -1122,8 +1090,8 @@ class Artikel(models.Model):
         "Vertriebskanal", max_length=10, choices=VERTRIEBSKANAL_CHOICES, default="standard",
         help_text=(
             "'Amazon' schließt den Artikel aus der Positionsauswahl in Angebot/Packschein/"
-            "Lieferschein/Rechnung aus (siehe Model-Doku) - der Artikel bleibt im "
-            "Artikelstamm selbst sichtbar und bearbeitbar."
+            "Lieferschein/Rechnung aus - der Artikel bleibt im Artikelstamm selbst sichtbar "
+            "und bearbeitbar."
         ),
     )
     warengruppe = models.CharField(
@@ -1279,10 +1247,8 @@ class Charge(models.Model):
     )
     bestand_aktuell = models.DecimalField(
         "Restbestand dieser Charge", max_digits=14, decimal_places=3, default=Decimal("0"),
-        help_text="Startet bei 0 und wird ausschließlich durch Lagerbewegungen fortgeschrieben "
-                   "(siehe Lagerbewegung.save()) - nicht von Hand pflegen. Die erste Buchung auf "
-                   "eine neue Charge ist üblicherweise eine 'wareneingang'-Bewegung in Höhe von "
-                   "menge_eingang; Charge und Bewegung getrennt zu halten verhindert Doppelzählung.",
+        help_text="Startet bei 0 und wird ausschließlich durch Lagerbewegungen fortgeschrieben - "
+                   "nicht von Hand pflegen.",
     )
     notizen = models.TextField("Notizen", blank=True)
     erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
@@ -1458,9 +1424,9 @@ class MusterboxNachfassStatus(models.Model):
     sprache = models.CharField(
         "Sprache", max_length=2, choices=SPRACHE_CHOICES, default="de",
         help_text=(
-            "Beim Anlegen der Kette (musterversand_abgeschlossen) aus Packschein.sprache "
-            "übernommen und für die gesamte Kette fest - eine spätere Änderung am Deal "
-            "ändert eine bereits laufende Kette nicht mehr."
+            "Beim Anlegen der Kette aus Packschein.sprache übernommen und für die gesamte "
+            "Kette fest - eine spätere Änderung am Deal ändert eine bereits laufende Kette "
+            "nicht mehr."
         ),
     )
     naechste_woche = models.PositiveSmallIntegerField("Nächste Woche", default=1)
@@ -1535,9 +1501,9 @@ class AngebotNachfassVorlage(models.Model):
         "Nachrichtentext", blank=True,
         help_text=(
             "Nur der Nachrichtentext - Anrede und Grußformel/Unterschrift stehen fest im "
-            "Vorlagen-Rahmen (siehe Moduldoku oben). Platzhalter: {{ vorname }}, "
-            "{{ nachname }}, {{ firma }}, {{ deal_titel }}, {{ angebot_nummer }}, "
-            "{{ gueltig_bis }}. Leerzeilen werden als eigene Absätze dargestellt."
+            "Vorlagen-Rahmen. Platzhalter: {{ vorname }}, {{ nachname }}, {{ firma }}, "
+            "{{ deal_titel }}, {{ angebot_nummer }}, {{ gueltig_bis }}. Leerzeilen werden "
+            "als eigene Absätze dargestellt."
         ),
     )
     aktualisiert_am = models.DateTimeField("Zuletzt geändert am", auto_now=True)
@@ -1583,7 +1549,7 @@ class AngebotNachfassStatus(models.Model):
         help_text=(
             "Beim Start der Kette aus Angebot.sprache übernommen und für die gesamte Kette "
             "fest - eine spätere Änderung am Angebot ändert eine bereits laufende Kette "
-            "nicht mehr (konsistent mit MusterboxNachfassStatus.sprache)."
+            "nicht mehr."
         ),
     )
     versendet_am = models.DateTimeField("Versendet am (Kettenbeginn)", default=timezone.now)
