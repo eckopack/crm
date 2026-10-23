@@ -499,6 +499,36 @@ def musterbox_nachfass_senden(deal, status):
     return True, None
 
 
+def angebot_als_angenommen_markieren(angebot):
+    """Beendet die laufende Angebot-Nachfasskette vorzeitig, weil der Kunde erkennbar
+    reagiert hat (24.10.2026, auf Wunsch von Björn: "wichtig ist auch, wenn packschein,
+    lieferschein, rechnung ausgewählt wird, die nachfassemails stoppen").
+
+    Wird aus views.packschein_erstellen/lieferschein_erstellen/rechnung_erstellen (und aus
+    rechnung_automatisch_erstellen unten, zur Sicherheit) aufgerufen, sobald eines dieser
+    drei Dokumente mit einer Angebots-Verknüpfung (Packschein/Lieferschein/Rechnung.angebot)
+    angelegt wird - das bedeutet in der Praxis: der Kunde hat das Angebot angenommen, eine
+    weitere "Hatten Sie schon Gelegenheit, sich das anzusehen?"-Erinnerung waere jetzt
+    unpassend.
+
+    Setzt dafuer NICHT direkt auf AngebotNachfassStatus, sondern auf angebot.status =
+    "angenommen" - das ist semantisch korrekt (das Angebot IST angenommen) und nutzt die
+    bereits bestehende Logik in signals.angebot_status_wechsel, die bei einem Wechsel WEG
+    von "versendet" die aktive Kette automatisch mit beendet_grund="reagiert" beendet. Kein
+    Duplikat dieser Logik hier.
+
+    Bewusst idempotent und fehlertolerant: wird aus mehreren Stellen aufgerufen (z.B. kann
+    sowohl ein Packschein als auch ein daraus erzeugter Lieferschein dasselbe Angebot
+    verknüpft haben) - ein Angebot, das nicht (mehr) auf "versendet" steht (z.B. schon
+    "angenommen", oder noch "entwurf", oder kein Angebot verknüpft), wird unverändert
+    gelassen. Kein Rückgabewert, kein Fehler nach außen - das Anlegen des eigentlichen
+    Dokuments (Packschein/Lieferschein/Rechnung) darf hierdurch nie scheitern."""
+    if angebot is None or angebot.status != "versendet":
+        return
+    angebot.status = "angenommen"
+    angebot.save(update_fields=["status"])
+
+
 def angebot_nachfass_senden(angebot, status):
     """Verschickt die Mail des aktuell fälligen Schritts (status.naechster_schritt) der
     3-stufigen Angebot-Nachfasskette an den Kunden (23.10.2026, auf Wunsch von Björn - siehe
@@ -733,6 +763,12 @@ def rechnung_automatisch_erstellen(lieferschein):
             f"Automatically created on shipment (see delivery note {lieferschein.nummer})."
         ),
     )
+    # 24.10.2026, auf Wunsch von Björn: Nachfasskette stoppen (siehe
+    # angebot_als_angenommen_markieren oben) - hier zur Sicherheit nochmal, falls das
+    # verknuepfte Angebot beim Anlegen DIESES Lieferscheins (z.B. weil er aus einer Zeit vor
+    # dieser Funktion stammt) noch nicht gestoppt wurde.
+    if lieferschein.angebot_id:
+        angebot_als_angenommen_markieren(lieferschein.angebot)
 
     rahmenvereinbarungspreise = {}
     if lieferschein.rahmenvereinbarung_id is not None:

@@ -731,6 +731,11 @@ def packschein_erstellen(request):
             formset = PackscheinPositionFormSet(request.POST, instance=packschein)
             if formset.is_valid():
                 formset.save()
+                # 24.10.2026, auf Wunsch von Björn: ein Packschein zu einem Angebot bedeutet,
+                # der Kunde hat das Angebot angenommen - die Nachfasskette soll dann stoppen
+                # (siehe nurture.angebot_als_angenommen_markieren).
+                if packschein.angebot_id:
+                    nurture.angebot_als_angenommen_markieren(packschein.angebot)
                 return redirect(packschein.get_absolute_url())
         else:
             formset = PackscheinPositionFormSet(request.POST)
@@ -863,6 +868,10 @@ def lieferschein_erstellen(request):
             formset = LieferscheinPositionFormSet(request.POST, instance=lieferschein)
             if formset.is_valid():
                 formset.save()
+                # 24.10.2026, auf Wunsch von Björn: wie beim Packschein (siehe dort) -
+                # Nachfasskette stoppen, sobald zu diesem Angebot ein Lieferschein angelegt wird.
+                if lieferschein.angebot_id:
+                    nurture.angebot_als_angenommen_markieren(lieferschein.angebot)
                 return redirect(lieferschein.get_absolute_url())
         else:
             formset = LieferscheinPositionFormSet(request.POST)
@@ -1123,6 +1132,11 @@ def rechnung_erstellen(request):
                 formset = RechnungPositionFormSet(request.POST, instance=rechnung)
                 if formset.is_valid():
                     formset.save()
+                    # 24.10.2026, auf Wunsch von Björn: wie beim Packschein/Lieferschein
+                    # (siehe dort) - Nachfasskette stoppen, sobald zu diesem Angebot eine
+                    # Rechnung angelegt wird.
+                    if rechnung.angebot_id:
+                        nurture.angebot_als_angenommen_markieren(rechnung.angebot)
                     return redirect(rechnung.get_absolute_url())
                 return render(request, "vertrieb/rechnung_form.html", {
                     "form": form, "formset": formset, "angebot_quelle": angebot_quelle,
