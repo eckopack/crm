@@ -2,8 +2,17 @@
 
 {{ nachricht_text }}
 
-{% if sprache == "en" %}Kind regards,
+Mit freundlichen Grüßen
+Best regards
+
 Björn Gallenkamp
-Managing Director, ECKO-PACK GmbH{% else %}Mit freundlichen Grüßen
-Björn Gallenkamp
-Geschäftsführer, ECKO-PACK GmbH{% endif %}
+Geschäftsführer / CEO
+Telefon:  +49 4331 1348 0
+Mobil:    +49 171 977 77 21
+Fax:      +49 4331 1348 999
+E-Mail:   b.gallenkamp@ecko-pack.de
+Web:      https://www.ecko-pack.de
+
+ECKO-PACK GmbH
+Wasbeker Straße 324
+D-24537 Neumünster
