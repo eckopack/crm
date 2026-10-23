@@ -1,3 +1,4 @@
+{% load vertrieb_mail %}
 <!DOCTYPE html>
 <html lang="{% if sprache == "en" %}en{% else %}de{% endif %}">
 <head>
@@ -22,8 +23,8 @@
             <p style="margin:0 0 16px 0; font-size:16px; color:#3c3c3b;">
               {% if sprache == "en" %}Hello{% else %}Guten Tag{% endif %}{% if ansprechpartner %} {{ ansprechpartner.vorname }} {{ ansprechpartner.nachname }}{% endif %},
             </p>
-            <div style="margin:0 0 24px 0; font-size:16px; color:#3c3c3b; line-height:1.5;">
-              {{ nachricht_text|linebreaks }}
+            <div>
+              {{ nachricht_text|email_absaetze }}
             </div>
             {% if sprache == "en" %}
             <p style="margin:24px 0 0 0; font-size:14px; color:#3c3c3b;">
