@@ -7,6 +7,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
+from django.core.paginator import Paginator
 from django.core.validators import validate_email
 from django.db import models
 from django.db.models import Sum
@@ -15,7 +16,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
+from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView, View
 
 from . import nurture, pdf
 from .forms import (
@@ -27,9 +28,10 @@ from .forms import (
     RechnungForm, RechnungPositionFormSet,
 )
 from .models import (
-    DEAL_PHASE_CHOICES, MUSTERKARTON_ARTIKEL, PHASE_STANDARD_WAHRSCHEINLICHKEIT,
-    Aktivitaet, Angebot, Artikel, Deal, EmailVersand, Firma, Kontakt, MusterboxNachfassStatus,
-    Packschein, PackscheinPosition, Lieferschein, Rahmenvereinbarung, Rechnung,
+    ANGEBOT_NACHFASS_SCHRITTE, DEAL_PHASE_CHOICES, MUSTERKARTON_ARTIKEL,
+    PHASE_STANDARD_WAHRSCHEINLICHKEIT, Aktivitaet, Angebot, AngebotNachfassStatus, Artikel, Deal,
+    EmailVersand, Firma, Kontakt, MusterboxNachfassStatus, Packschein, PackscheinPosition,
+    Lieferschein, Rahmenvereinbarung, Rechnung,
 )
 from django.forms import inlineformset_factory
 
@@ -1273,22 +1275,77 @@ class EmailVersandListView(LoginRequiredMixin, ListView):
         return qs
 
 
-class MusterboxNachfassStatusListView(LoginRequiredMixin, ListView):
-    """Globale Übersicht aller Musterbox-Nachfassketten mit ihrem Fälligkeitsdatum (20.10.2026,
-    auf Wunsch von Björn, als Ergänzung zur Anzeige auf der Deal-Detailseite: "die wollte ich
-    aber haben" - er wollte eine deal-übergreifende Liste, nicht nur die Einzelanzeige pro
-    Deal). Standardmäßig nur aktive Ketten, sortiert nach Fälligkeitsdatum (am dringendsten
-    zuerst) - über "Alle anzeigen" auch bereits beendete Ketten mit Beendigungsgrund."""
-    model = MusterboxNachfassStatus
-    template_name = "vertrieb/musterbox_nachfass_list.html"
-    context_object_name = "status_liste"
-    paginate_by = 50
+class MusterboxNachfassStatusListView(LoginRequiredMixin, View):
+    """Globale Übersicht aller Nachfassketten (20.10.2026, auf Wunsch von Björn, als Ergänzung
+    zur Anzeige auf der Deal-/Angebots-Detailseite: "die wollte ich aber haben" - er wollte
+    eine deal-übergreifende Liste, nicht nur die Einzelanzeige pro Deal).
 
-    def get_queryset(self):
-        qs = MusterboxNachfassStatus.objects.all().select_related("deal", "deal__firma")
-        if self.request.GET.get("alle") == "1":
-            return qs.order_by("-aktiv", "naechster_versand_am")
-        return qs.filter(aktiv=True).order_by("naechster_versand_am")
+    AENDERUNG 24.10.2026 (auf Wunsch von Björn: "ich muss das aber in der nachfass übersicht
+    sehen können! nicht nur die musterboxen, sondern auch die angebote.. so war es besprochen"):
+    zeigt jetzt BEIDE Nachfassketten gemeinsam in einer Liste - die 8-wöchige Musterbox-Kette
+    UND die 3-stufige Angebot-Kette - sortiert nach Fälligkeitsdatum, damit auf einen Blick
+    erkennbar ist, was als Nächstes fällig ist, unabhängig vom Ketten-Typ. War urspruenglich nur
+    fuer Musterbox gebaut (siehe Klassenname/Template, aus Kompatibilitaetsgruenden unveraendert
+    gelassen), die Angebot-Kette (23.10.2026) wurde hier versehentlich nicht ergaenzt.
+
+    Kein ListView mehr, da zwei unterschiedliche Modelle zu einer Liste zusammengefuehrt werden
+    muessen - Paginierung deshalb von Hand ueber Paginator, mit denselben Kontext-Namen
+    (page_obj/is_paginated), die _pagination.html erwartet.
+
+    Standardmäßig nur aktive Ketten, über "Alle anzeigen" auch bereits beendete Ketten mit
+    Beendigungsgrund."""
+    template_name = "vertrieb/musterbox_nachfass_list.html"
+    EINTRAEGE_PRO_SEITE = 50
+
+    def get(self, request):
+        alle = request.GET.get("alle") == "1"
+
+        musterbox_qs = MusterboxNachfassStatus.objects.all().select_related("deal", "deal__firma")
+        if not alle:
+            musterbox_qs = musterbox_qs.filter(aktiv=True)
+
+        angebot_qs = AngebotNachfassStatus.objects.all().select_related(
+            "angebot", "angebot__deal", "angebot__deal__firma",
+        )
+        if not alle:
+            angebot_qs = angebot_qs.filter(aktiv=True)
+
+        eintraege = []
+        for status in musterbox_qs:
+            eintraege.append({
+                "typ": "Musterbox",
+                "deal": status.deal,
+                "fortschritt": f"{status.naechste_woche}/8",
+                "sprache": status.get_sprache_display(),
+                "naechster_versand_am": status.naechster_versand_am,
+                "aktiv": status.aktiv,
+                "beendet_grund": status.get_beendet_grund_display() if status.beendet_grund else "",
+                "url": status.deal.get_absolute_url(),
+            })
+        for status in angebot_qs:
+            eintraege.append({
+                "typ": "Angebot",
+                "deal": status.angebot.deal,
+                "fortschritt": f"Schritt {status.naechster_schritt}/{ANGEBOT_NACHFASS_SCHRITTE}",
+                "sprache": status.get_sprache_display(),
+                "naechster_versand_am": status.naechster_versand_am,
+                "aktiv": status.aktiv,
+                "beendet_grund": status.get_beendet_grund_display() if status.beendet_grund else "",
+                "url": status.angebot.get_absolute_url(),
+                "angebot_nummer": status.angebot.nummer,
+            })
+
+        eintraege.sort(key=lambda e: (not e["aktiv"], e["naechster_versand_am"]))
+
+        paginator = Paginator(eintraege, self.EINTRAEGE_PRO_SEITE)
+        page_obj = paginator.get_page(request.GET.get("page"))
+
+        return render(request, self.template_name, {
+            "status_liste": page_obj.object_list,
+            "page_obj": page_obj,
+            "paginator": paginator,
+            "is_paginated": page_obj.has_other_pages(),
+        })
 
 
 # ---------------------------------------------------------------------------
