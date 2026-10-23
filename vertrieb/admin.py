@@ -1,8 +1,9 @@
 from django.contrib import admin
 
 from .models import (
-    Aktivitaet, Angebot, AngebotPosition, Artikel, Charge, Deal, Firma, Kontakt,
-    Lagerbewegung, MusterboxNachfassStatus, MusterboxNachfassVorlage, Preisstaffel, Rezeptur,
+    Aktivitaet, Angebot, AngebotNachfassStatus, AngebotNachfassVorlage, AngebotPosition,
+    Artikel, Charge, Deal, Firma, Kontakt, Lagerbewegung, MusterboxNachfassStatus,
+    MusterboxNachfassVorlage, Preisstaffel, Rezeptur,
 )
 
 
@@ -147,6 +148,43 @@ class MusterboxNachfassStatusAdmin(admin.ModelAdmin):
     list_filter = ("aktiv", "sprache", "beendet_grund")
     search_fields = ("deal__titel", "deal__firma__name")
     readonly_fields = ("deal", "erstellt_am")
+
+    def has_add_permission(self, request):
+        return False
+
+
+@admin.register(AngebotNachfassVorlage)
+class AngebotNachfassVorlageAdmin(admin.ModelAdmin):
+    """Admin für die sechs festen Vorlagen (3 Schritte × 2 Sprachen) der Angebot-
+    Nachfasskette (siehe Model-Doku) - werden leer per Datenmigration angelegt, Björn muss
+    Betreff und Text hier eintragen, bevor die Kette tatsächlich Kundenmails verschickt
+    (siehe nurture.angebot_nachfass_senden)."""
+    list_display = ("schritt", "sprache", "betreff", "aktualisiert_am", "aktualisiert_von")
+    list_filter = ("sprache",)
+    ordering = ["schritt", "sprache"]
+    readonly_fields = ("schritt", "sprache", "aktualisiert_am", "aktualisiert_von")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def save_model(self, request, obj, form, change):
+        obj.aktualisiert_von = request.user
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(AngebotNachfassStatus)
+class AngebotNachfassStatusAdmin(admin.ModelAdmin):
+    """Rein informativ zur Nachverfolgung, mit der Möglichkeit, eine einzelne Kette manuell
+    zu pausieren/beenden (z.B. aktiv=False setzen) - Zeilen selbst werden ausschließlich
+    automatisch angelegt (siehe signals.angebot_status_wechsel), daher kein manuelles
+    Hinzufügen."""
+    list_display = ("angebot", "sprache", "naechster_schritt", "naechster_versand_am", "aktiv", "beendet_grund")
+    list_filter = ("aktiv", "sprache", "beendet_grund")
+    search_fields = ("angebot__nummer", "angebot__deal__titel", "angebot__deal__firma__name")
+    readonly_fields = ("angebot", "versendet_am", "erstellt_am")
 
     def has_add_permission(self, request):
         return False

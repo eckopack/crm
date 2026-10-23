@@ -175,14 +175,22 @@ services:
       - key: DJANGO_DEFAULT_FROM_EMAIL
         sync: false
 
-  # Woechentlicher Anstoss der Nachfass-Pruefung fuer Musterversand-Leads (siehe
-  # Kommentar "NACHFASS-CRON" oben). Braucht keine Disk und keinen DB-Zugriff, nur
-  # ausgehende HTTPS-Verbindungen zum eigenen Web-Service.
+  # Anstoss der Nachfass-Pruefung (siehe Kommentar "NACHFASS-CRON" oben). Braucht keine
+  # Disk und keinen DB-Zugriff, nur ausgehende HTTPS-Verbindungen zum eigenen Web-Service.
+  #
+  # AENDERUNG 23.10.2026 (auf Wunsch von Björn, im Zuge der neuen Angebot-Nachfasskette mit
+  # Tage-basierter Kadenz - 3/7/14 Tage, siehe models.ANGEBOT_NACHFASS_INTERVALLE_TAGE):
+  # vorher woechentlich (montags 7 Uhr) - reichte fuer die Musterbox-Kette, die selbst in
+  # Wochenschritten denkt, aber eine "nach 3 Tagen"-Erinnerung haette sich dadurch im
+  # schlechtesten Fall um bis zu 6 Tage verzoegert (Cron prueft Faelligkeit nur 1x/Woche).
+  # Jetzt TAEGLICH um 7 Uhr - macht nebenbei auch die Musterbox-Kette etwas puenktlicher
+  # (sendet am tatsaechlich faelligen Tag statt erst am naechsten Montag), aendert sonst
+  # nichts an deren Verhalten, da beide Ketten ohnehin nur "ist faellig?" pruefen.
   - type: cron
     name: eckopack-crm-nachfass
     runtime: python
     plan: starter
-    schedule: "0 7 * * 1"
+    schedule: "0 7 * * *"
     buildCommand: "true"
     startCommand: >
       curl -fsS -X POST -H "X-Cron-Secret: $NACHFASS_CRON_SECRET"

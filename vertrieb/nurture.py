@@ -112,15 +112,15 @@ from django.utils import timezone
 
 from . import pdf
 from .models import (
-    Aktivitaet, Artikel, EmailVersand, MUSTERKARTON_ARTIKEL, MusterboxNachfassStatus,
-    MusterboxNachfassVorlage, Rechnung, RechnungPosition,
+    Aktivitaet, AngebotNachfassVorlage, Artikel, EmailVersand, MUSTERKARTON_ARTIKEL,
+    MusterboxNachfassStatus, MusterboxNachfassVorlage, Rechnung, RechnungPosition,
 )
 
 logger = logging.getLogger(__name__)
 
 
 def _mail_protokollieren(*, deal, mailtyp, empfaenger, betreff, erfolg, fehlermeldung="",
-                          packschein=None, lieferschein=None, rechnung=None):
+                          packschein=None, lieferschein=None, rechnung=None, angebot=None):
     """Legt einen EmailVersand-Protokolleintrag an - siehe Teil 8 oben. Best effort: ein
     Fehler HIER (z.B. DB kurz nicht erreichbar) darf den bereits erfolgten/versuchten
     Mailversand nicht nachtraeglich als Fehlschlag erscheinen lassen, deshalb eigenes
@@ -129,7 +129,7 @@ def _mail_protokollieren(*, deal, mailtyp, empfaenger, betreff, erfolg, fehlerme
         EmailVersand.objects.create(
             deal=deal, mailtyp=mailtyp, empfaenger=empfaenger or "", betreff=betreff or "",
             erfolg=erfolg, fehlermeldung=fehlermeldung or "",
-            packschein=packschein, lieferschein=lieferschein, rechnung=rechnung,
+            packschein=packschein, lieferschein=lieferschein, rechnung=rechnung, angebot=angebot,
         )
     except Exception:
         logger.exception(
@@ -476,6 +476,113 @@ def musterbox_nachfass_senden(deal, status):
 
     _mail_protokollieren(
         deal=deal, mailtyp="musterbox_nachfass", empfaenger=empfaenger, betreff=betreff, erfolg=True,
+    )
+    return True, None
+
+
+def angebot_nachfass_senden(angebot, status):
+    """Verschickt die Mail des aktuell fälligen Schritts (status.naechster_schritt) der
+    3-stufigen Angebot-Nachfasskette an den Kunden (23.10.2026, auf Wunsch von Björn - siehe
+    models.AngebotNachfassVorlage/AngebotNachfassStatus sowie management/commands/
+    nachfass_pruefen.py, das diese Funktion pro fälligem Status-Datensatz aufruft).
+
+    Haengt das Angebot als PDF an (wie rechnung_versand_senden) - der Kunde muss die
+    Konditionen nicht erst aus einer alten Mail heraussuchen.
+
+    Sendet AUSDRUECKLICH NICHT, solange fuer den faelligen Schritt/die Sprache noch keine
+    Vorlage mit Betreff UND Text hinterlegt ist (siehe AngebotNachfassVorlage-Doku: die 6
+    Zeilen werden leer angelegt, Björn muss sie zuerst im Admin befuellen) - sonst wuerde
+    eine leere oder halbfertige Mail an einen echten Kunden rausgehen.
+
+    Best effort wie musterbox_nachfass_senden: ein Fehler hier blockiert nicht den
+    Fortschritt der Kette (siehe nachfass_pruefen.py). Gibt (erfolg: bool, fehlermeldung:
+    str|None) zurueck."""
+    deal = angebot.deal
+    empfaenger = _empfaenger_email(deal)
+
+    if not empfaenger:
+        meldung = "keine E-Mail-Adresse für Firma/Ansprechpartner hinterlegt"
+        logger.warning(
+            "Kein Empfaenger (E-Mail) fuer Angebot-Nachfassmail gefunden (Angebot %s, Schritt %s)",
+            angebot.nummer, status.naechster_schritt,
+        )
+        _mail_protokollieren(
+            deal=deal, mailtyp="angebot_nachfass", empfaenger="", betreff="",
+            erfolg=False, fehlermeldung=meldung, angebot=angebot,
+        )
+        return False, meldung
+
+    vorlage = AngebotNachfassVorlage.fuer_schritt(status.naechster_schritt, status.sprache)
+    if vorlage is None or not vorlage.betreff.strip() or not vorlage.text.strip():
+        meldung = (
+            f"keine (vollstaendige) Vorlage für Schritt {status.naechster_schritt}/"
+            f"{status.sprache} hinterlegt - bitte im Admin Betreff und Text eintragen"
+        )
+        logger.error(
+            "Angebot-Nachfassmail: keine vollstaendige Vorlage fuer Schritt %s/%s (Angebot %s) - "
+            "bitte im Admin anlegen",
+            status.naechster_schritt, status.sprache, angebot.nummer,
+        )
+        _mail_protokollieren(
+            deal=deal, mailtyp="angebot_nachfass", empfaenger=empfaenger, betreff="",
+            erfolg=False, fehlermeldung=meldung, angebot=angebot,
+        )
+        return False, meldung
+
+    ansprechpartner = deal.kontakt
+    platzhalter = Context({
+        "vorname": ansprechpartner.vorname if ansprechpartner else "",
+        "nachname": ansprechpartner.nachname if ansprechpartner else "",
+        "firma": deal.firma.name,
+        "deal_titel": deal.titel,
+        "angebot_nummer": angebot.nummer,
+        "gueltig_bis": pdf._datum(angebot.gueltig_bis, status.sprache) if angebot.gueltig_bis else "",
+    })
+    try:
+        betreff = Template(vorlage.betreff).render(platzhalter)
+        nachricht_text = Template(vorlage.text).render(platzhalter)
+    except Exception as exc:
+        logger.exception(
+            "Angebot-Nachfassmail-Vorlage (Schritt %s/%s) konnte nicht gerendert werden (Angebot %s) - "
+            "vermutlich ein Tippfehler in einem {{ Platzhalter }} im Admin",
+            status.naechster_schritt, status.sprache, angebot.nummer,
+        )
+        _mail_protokollieren(
+            deal=deal, mailtyp="angebot_nachfass", empfaenger=empfaenger, betreff="",
+            erfolg=False, fehlermeldung=str(exc), angebot=angebot,
+        )
+        return False, str(exc)
+
+    kontext = {
+        "ansprechpartner": ansprechpartner,
+        "nachricht_text": nachricht_text,
+        "sprache": status.sprache,
+        "site_url": SITE_URL,
+        "logo_url": f"{SITE_URL}/static/img/eckopack-logo.png",
+    }
+    text_body = render_to_string("vertrieb/email/angebot_nachfass.txt", kontext)
+    html_body = render_to_string("vertrieb/email/angebot_nachfass.html", kontext)
+
+    try:
+        angebot_pdf_bytes = pdf.angebot_pdf_erzeugen(angebot)
+        mail = EmailMultiAlternatives(betreff, text_body, settings.DEFAULT_FROM_EMAIL, [empfaenger])
+        mail.attach_alternative(html_body, "text/html")
+        mail.attach(f"{angebot.nummer}.pdf", angebot_pdf_bytes, "application/pdf")
+        mail.send(fail_silently=False)
+    except Exception as exc:
+        logger.exception(
+            "Angebot-Nachfassmail (Schritt %s, inkl. PDF) konnte nicht gesendet werden (Angebot %s)",
+            status.naechster_schritt, angebot.nummer,
+        )
+        _mail_protokollieren(
+            deal=deal, mailtyp="angebot_nachfass", empfaenger=empfaenger, betreff=betreff,
+            erfolg=False, fehlermeldung=str(exc), angebot=angebot,
+        )
+        return False, str(exc)
+
+    _mail_protokollieren(
+        deal=deal, mailtyp="angebot_nachfass", empfaenger=empfaenger, betreff=betreff, erfolg=True,
+        angebot=angebot,
     )
     return True, None
 
