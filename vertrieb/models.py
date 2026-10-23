@@ -962,6 +962,7 @@ MAILTYP_CHOICES = [
     ("rechnung_bestaetigung", "Rechnung-Versandbestätigung"),
     ("musterbox_nachfass", "Musterbox-Nachfassmail"),
     ("artikelliste", "Artikelliste (Preisliste)"),
+    ("angebot_nachfass", "Angebot-Nachfassmail"),
 ]
 
 
@@ -1000,6 +1001,11 @@ class EmailVersand(models.Model):
     rechnung = models.ForeignKey(
         Rechnung, verbose_name="Rechnung", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="email_versaende",
+    )
+    angebot = models.ForeignKey(
+        Angebot, verbose_name="Angebot", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="email_versaende",
+        help_text="23.10.2026, Angebot-Nachfasskette (siehe AngebotNachfassStatus unten).",
     )
 
     class Meta:
@@ -1451,3 +1457,127 @@ class MusterboxNachfassStatus(models.Model):
         if self.aktiv:
             return f"{self.deal}: Woche {self.naechste_woche} fällig {self.naechster_versand_am:%d.%m.%Y}"
         return f"{self.deal}: beendet ({self.get_beendet_grund_display()})"
+
+
+# ---------------------------------------------------------------------------
+# Angebot-Nachfasskette an den Kunden (23.10.2026, auf Wunsch von Björn: "ich möchte jetzt
+# die Nachfass email auch für Angebote in deutsch und englisch erstellen"). Eigenständig
+# neben der Musterbox-Kette oben - dort geht es um unversandte Muster-Leads, hier um ein
+# bereits beim Kunden liegendes, konkretes Angebot ohne Reaktion. Björns Entscheidungen vom
+# 23.10.2026: Start, sobald Angebot.status auf "versendet" wechselt; 3 Erinnerungen nach 3,
+# 7 und 14 Tagen (gerechnet ab dem Versendet-Zeitpunkt, nicht ab der jeweils letzten Mail -
+# siehe versendet_am unten); je Schritt ein eigener Text/Betreff (wie bei Musterbox, aber
+# 3 statt 8 Stufen). Sprache kommt aus Angebot.sprache (keine eigene Spracherkennung nötig -
+# dieses Feld steuert ohnehin schon PDF und Artikelauswahl, siehe Angebot-Doku oben).
+#
+# WICHTIG zum Cron-Takt: der bestehende Nachfass-Cron (render.yaml) lief bisher nur
+# wöchentlich (Musterbox denkt ohnehin in Wochen) - für eine Tage-genaue Kadenz wurde er
+# auf Wunsch von Björn (23.10.2026) auf täglich umgestellt (siehe render.yaml-Kommentar).
+# ---------------------------------------------------------------------------
+
+ANGEBOT_NACHFASS_SCHRITTE = 3
+ANGEBOT_NACHFASS_INTERVALLE_TAGE = {1: 3, 2: 7, 3: 14}
+
+ANGEBOT_NACHFASS_ENDE_CHOICES = [
+    ("reagiert", "Angebot-Status hat sich geändert (Kunde hat reagiert)"),
+    ("abgelaufen", "3 Erinnerungen ohne Reaktion"),
+    ("manuell", "Manuell abgebrochen"),
+]
+
+
+class AngebotNachfassVorlage(models.Model):
+    """Fester Satz von genau 3 Vorlagen (eine je Nachfass-Schritt) × 2 Sprachen = 6 Zeilen,
+    analog zu MusterboxNachfassVorlage oben - dort nachzulesen, was Anrede/Logo/Unterschrift/
+    Fußzeile angeht (dieselbe Vorlagen-Rahmendatei, templates/vertrieb/email/
+    angebot_nachfass.html/.txt, nur mit eigenem Inhalt). Die 6 Zeilen werden per
+    Datenmigration als fester Rahmen angelegt (siehe MusterboxNachfassVorlage-Doku) -
+    ABSICHTLICH mit leerem Betreff/Text: anders als bei der Musterbox-Kette lag für diese
+    Kette noch kein von Björn abgenommener Wortlaut vor, der hier einfach übernommen werden
+    konnte. nurture.angebot_nachfass_senden() verschickt deshalb bewusst KEINE Mail, solange
+    Betreff oder Text einer Zeile leer sind (siehe dort) - Björn muss die 6 Texte zuerst im
+    Admin eintragen, bevor die Kette tatsächlich Kundenmails verschickt.
+
+    Platzhalter im Text (als Django-Template ausgewertet): {{ vorname }}, {{ nachname }},
+    {{ firma }}, {{ deal_titel }}, {{ angebot_nummer }}, {{ gueltig_bis }} (leer, falls das
+    Angebot kein Gültig-bis-Datum hat)."""
+
+    schritt = models.PositiveSmallIntegerField("Schritt")
+    sprache = models.CharField("Sprache", max_length=2, choices=SPRACHE_CHOICES, default="de")
+    betreff = models.CharField(
+        "Betreff", max_length=200, blank=True,
+        help_text="Platzhalter möglich: {{ firma }}, {{ deal_titel }}, {{ angebot_nummer }}, {{ gueltig_bis }}.",
+    )
+    text = models.TextField(
+        "Nachrichtentext", blank=True,
+        help_text=(
+            "Nur der Nachrichtentext - Anrede und Grußformel/Unterschrift stehen fest im "
+            "Vorlagen-Rahmen (siehe Moduldoku oben). Platzhalter: {{ vorname }}, "
+            "{{ nachname }}, {{ firma }}, {{ deal_titel }}, {{ angebot_nummer }}, "
+            "{{ gueltig_bis }}. Leerzeilen werden als eigene Absätze dargestellt."
+        ),
+    )
+    aktualisiert_am = models.DateTimeField("Zuletzt geändert am", auto_now=True)
+    aktualisiert_von = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="Zuletzt geändert von", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="+",
+    )
+
+    class Meta:
+        verbose_name = "Angebot-Nachfassmail (Vorlage je Schritt)"
+        verbose_name_plural = "Angebot-Nachfassmails (Vorlagen je Schritt)"
+        ordering = ["schritt", "sprache"]
+        constraints = [
+            models.UniqueConstraint(fields=["schritt", "sprache"], name="angebot_nachfass_schritt_sprache_unique"),
+        ]
+
+    def __str__(self):
+        return f"Schritt {self.schritt} ({self.get_sprache_display()}): {self.betreff or '(noch kein Text hinterlegt)'}"
+
+    @classmethod
+    def fuer_schritt(cls, schritt, sprache="de"):
+        return cls.objects.filter(schritt=schritt, sprache=sprache).first()
+
+
+class AngebotNachfassStatus(models.Model):
+    """Führt pro Angebot Buch darüber, in welchem Schritt der 3-stufigen Nachfasskette an den
+    Kunden (siehe AngebotNachfassVorlage oben) sich das Angebot gerade befindet. Wird
+    einmalig angelegt, sobald Angebot.status auf "versendet" wechselt (siehe
+    signals.angebot_status_wechsel), und sofort beendet, sobald der Status wieder wechselt -
+    "angenommen"/"abgelehnt" werten als Reaktion, "abgelaufen" (auch wenn Björn das manuell
+    setzt) wie das automatische Auslaufen nach 3 Erinnerungen.
+
+    versendet_am ist der Ankerzeitpunkt für die Fälligkeitsberechnung alle drei Schritte
+    (versendet_am + 3/7/14 Tage) - bewusst NICHT "jetzt + Intervall" wie bei der Musterbox-
+    Kette, damit ein verspäteter Cron-Lauf (z. B. Ausfall an einem Tag) nicht dazu führt, dass
+    sich alle folgenden Schritte nach hinten verschieben."""
+
+    angebot = models.OneToOneField(
+        Angebot, verbose_name="Angebot", on_delete=models.CASCADE, related_name="nachfass_status",
+    )
+    sprache = models.CharField(
+        "Sprache", max_length=2, choices=SPRACHE_CHOICES, default="de",
+        help_text=(
+            "Beim Start der Kette aus Angebot.sprache übernommen und für die gesamte Kette "
+            "fest - eine spätere Änderung am Angebot ändert eine bereits laufende Kette "
+            "nicht mehr (konsistent mit MusterboxNachfassStatus.sprache)."
+        ),
+    )
+    versendet_am = models.DateTimeField("Versendet am (Kettenbeginn)", default=timezone.now)
+    naechster_schritt = models.PositiveSmallIntegerField("Nächster Schritt", default=1)
+    naechster_versand_am = models.DateTimeField("Nächster Versand fällig am", default=timezone.now)
+    aktiv = models.BooleanField("Aktiv", default=True)
+    beendet_am = models.DateTimeField("Beendet am", null=True, blank=True)
+    beendet_grund = models.CharField(
+        "Beendet, weil", max_length=20, choices=ANGEBOT_NACHFASS_ENDE_CHOICES, blank=True,
+    )
+    erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Angebot-Nachfass-Status"
+        verbose_name_plural = "Angebot-Nachfass-Status"
+        ordering = ["-aktiv", "naechster_versand_am"]
+
+    def __str__(self):
+        if self.aktiv:
+            return f"{self.angebot}: Schritt {self.naechster_schritt} fällig {self.naechster_versand_am:%d.%m.%Y}"
+        return f"{self.angebot}: beendet ({self.get_beendet_grund_display()})"

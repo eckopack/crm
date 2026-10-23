@@ -27,7 +27,19 @@ o.ae. = Reaktion da) oder als verloren markiert wird, bzw. automatisch nach der 
 wird zusaetzlich eine interne Aufgabe fuer den zustaendigen Mitarbeiter angelegt. Die zuvor
 hier verschickte generische, immer gleiche Kundenmail (models.NachfassKundenmailVorlage) wurde
 dafuer ersatzlos entfernt - Deals ohne Musterversand-Historie bekommen seitdem gar keine
-automatische Kundenmail mehr."""
+automatische Kundenmail mehr.
+
+AENDERUNG 23.10.2026 (auf Wunsch von Björn: "ich möchte jetzt die Nachfass email auch für
+Angebote ... erstellen"): DRITTER, ebenfalls unabhaengiger Durchlauf (unten): die 3-stufige
+Angebot-Nachfasskette an den Kunden (vertrieb.nurture.angebot_nachfass_senden, gesteuert über
+models.AngebotNachfassStatus) - startet/endet ereignisbasiert ueber Angebot.status-Wechsel
+(siehe signals.angebot_status_wechsel), dieser Befehl verschickt hier nur die jeweils
+faellige Mail. WICHTIG: dafuer musste der Cron-Takt (render.yaml) von woechentlich auf
+taeglich umgestellt werden - die 3/7/14-Tage-Kadenz braucht eine taegliche Pruefung, sonst
+verschiebt sich jede Erinnerung im schlechtesten Fall um bis zu 6 Tage nach hinten (siehe
+render.yaml-Kommentar). Die taeglichere Pruefung aendert am Verhalten der beiden Ketten oben
+nichts (sie pruefen weiterhin nur "ist faellig?"), macht die Musterbox-Kette aber ebenfalls
+etwas puenktlicher (sendet am tatsaechlich faelligen Tag statt erst am naechsten Montag)."""
 
 import logging
 from datetime import timedelta
@@ -38,7 +50,10 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from vertrieb import nurture
-from vertrieb.models import Aktivitaet, MusterboxNachfassStatus
+from vertrieb.models import (
+    ANGEBOT_NACHFASS_INTERVALLE_TAGE, ANGEBOT_NACHFASS_SCHRITTE, Aktivitaet,
+    AngebotNachfassStatus, MusterboxNachfassStatus,
+)
 
 NACHFASS_INTERVALL_TAGE = 7
 MUSTERBOX_NACHFASS_WOCHEN = 8
@@ -48,10 +63,12 @@ logger = logging.getLogger(__name__)
 
 class Command(BaseCommand):
     help = (
-        "Verlaengert ueberfaellige interne Nachfass-Erinnerungen um eine weitere Woche und "
+        "Verlaengert ueberfaellige interne Nachfass-Erinnerungen um eine weitere Woche, "
         "verschickt daneben, unabhaengig davon, die faellige Woche der 8-woechigen Musterbox-"
-        "Nachfasskette an Kunden mit Musterversand-Historie - bis der Deal die Phase lead/"
-        "qualifiziert verlaesst, verloren ist, oder die 8 Wochen ohne Reaktion ablaufen."
+        "Nachfasskette an Kunden mit Musterversand-Historie, und verschickt ausserdem die "
+        "faellige Stufe der 3-stufigen Angebot-Nachfasskette an Kunden mit einem versendeten, "
+        "noch unbeantworteten Angebot - bis der jeweilige Status sich aendert oder die "
+        "Ketten ohne Reaktion ablaufen."
     )
 
     def handle(self, *args, **options):
@@ -174,9 +191,92 @@ class Command(BaseCommand):
                 status.naechster_versand_am = jetzt + timedelta(days=MUSTERBOX_NACHFASS_INTERVALL_TAGE)
                 status.save(update_fields=["naechste_woche", "naechster_versand_am"])
 
+        # --- Angebot-Nachfasskette an den Kunden (23.10.2026, komplett unabhaengig von den
+        # beiden Durchlaeufen oben - siehe Moduldoku) ------------------------------------
+        angebot_versendet = 0
+        angebot_fehlgeschlagen = 0
+        angebot_beendet_reaktion = 0
+        angebot_beendet_abgelaufen = 0
+
+        angebot_faellige = AngebotNachfassStatus.objects.filter(
+            aktiv=True, naechster_versand_am__lt=jetzt,
+        ).select_related("angebot", "angebot__deal", "angebot__deal__firma", "angebot__deal__kontakt")
+
+        for status in angebot_faellige:
+            angebot = status.angebot
+
+            if angebot.status != "versendet":
+                # Defensive Absicherung: sollte eigentlich schon durch signals.
+                # angebot_status_wechsel beendet worden sein, sobald der Status wechselte.
+                # Greift nur, falls eine Statusaenderung je ausserhalb von Angebot.save()
+                # direkt in der DB passiert waere.
+                status.aktiv = False
+                status.beendet_am = jetzt
+                status.beendet_grund = "abgelaufen" if angebot.status == "abgelaufen" else "reagiert"
+                status.save(update_fields=["aktiv", "beendet_am", "beendet_grund"])
+                angebot_beendet_reaktion += 1
+                continue
+
+            try:
+                angebot_erfolg, _fehlermeldung = nurture.angebot_nachfass_senden(angebot, status)
+            except Exception:
+                logger.exception(
+                    "Unerwarteter Fehler bei der Angebot-Nachfassmail (Angebot %s, Schritt %s)",
+                    angebot.nummer, status.naechster_schritt,
+                )
+                angebot_erfolg = False
+
+            if angebot_erfolg:
+                angebot_versendet += 1
+            else:
+                angebot_fehlgeschlagen += 1
+
+            if status.naechster_schritt >= ANGEBOT_NACHFASS_SCHRITTE:
+                status.aktiv = False
+                status.beendet_am = jetzt
+                status.beendet_grund = "abgelaufen"
+                status.save(update_fields=["aktiv", "beendet_am", "beendet_grund"])
+                angebot_beendet_abgelaufen += 1
+
+                # Angebot selbst als abgelaufen markieren - ERST NACHDEM die Kette oben schon
+                # deaktiviert ist, damit signals.angebot_status_wechsel (das beim Speichern
+                # unten feuert) den bereits inaktiven Status nicht nochmal anzufassen versucht.
+                angebot.status = "abgelaufen"
+                angebot.save(update_fields=["status"])
+
+                deal = angebot.deal
+                Aktivitaet.objects.create(
+                    typ="aufgabe",
+                    betreff=f"Angebot {angebot.nummer} ausgelaufen nach 3 Erinnerungen, bitte manuell prüfen",
+                    beschreibung=(
+                        f"Die automatische 3-stufige Angebot-Nachfasskette fuer folgendes Angebot "
+                        f"ist ohne Reaktion ausgelaufen; der Status wurde auf 'Abgelaufen' gesetzt. "
+                        f"Bitte manuell pruefen und ggf. persoenlich nachfassen.\n\n"
+                        f"Angebot: {angebot.nummer}\n"
+                        f"Deal: {deal.titel}\n"
+                        f"Firma: {deal.firma.name}\n"
+                        f"Link: {nurture.SITE_URL}{angebot.get_absolute_url()}"
+                    ),
+                    datum=jetzt,
+                    firma=deal.firma,
+                    kontakt=deal.kontakt,
+                    deal=deal,
+                    zustaendiger=deal.zustaendiger,
+                )
+            else:
+                naechster_schritt = status.naechster_schritt + 1
+                status.naechster_schritt = naechster_schritt
+                status.naechster_versand_am = (
+                    status.versendet_am + timedelta(days=ANGEBOT_NACHFASS_INTERVALLE_TAGE[naechster_schritt])
+                )
+                status.save(update_fields=["naechster_schritt", "naechster_versand_am"])
+
         self.stdout.write(self.style.SUCCESS(
             f"Nachfass-Pruefung abgeschlossen: {verlaengert} interne Erinnerung(en) verlaengert, "
             f"{beendet} beendet. Musterbox-Kette: {musterbox_versendet} Kundenmail(s) versendet, "
             f"{musterbox_fehlgeschlagen} fehlgeschlagen, {musterbox_beendet_reaktion} wegen "
-            f"Reaktion/verloren beendet, {musterbox_beendet_abgelaufen} nach 8 Wochen abgelaufen."
+            f"Reaktion/verloren beendet, {musterbox_beendet_abgelaufen} nach 8 Wochen abgelaufen. "
+            f"Angebot-Kette: {angebot_versendet} Kundenmail(s) versendet, {angebot_fehlgeschlagen} "
+            f"fehlgeschlagen, {angebot_beendet_reaktion} wegen Reaktion beendet, "
+            f"{angebot_beendet_abgelaufen} nach 3 Erinnerungen abgelaufen."
         ))

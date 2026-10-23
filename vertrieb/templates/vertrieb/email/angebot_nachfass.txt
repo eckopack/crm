@@ -1,0 +1,9 @@
+{% if sprache == "en" %}Hello{% else %}Guten Tag{% endif %}{% if ansprechpartner %} {{ ansprechpartner.vorname }} {{ ansprechpartner.nachname }}{% endif %},
+
+{{ nachricht_text }}
+
+{% if sprache == "en" %}Kind regards,
+Björn Gallenkamp
+Managing Director, ECKO-PACK GmbH{% else %}Mit freundlichen Grüßen
+Björn Gallenkamp
+Geschäftsführer, ECKO-PACK GmbH{% endif %}
