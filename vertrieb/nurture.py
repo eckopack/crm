@@ -609,6 +609,13 @@ def angebot_nachfass_senden(angebot, status):
         "site_url": SITE_URL,
         "logo_url": f"{SITE_URL}/static/img/eckopack-logo.png",
     }
+    # angebot_nachfass.html traegt bewusst die volle, zweisprachige Signatur mit
+    # Kontaktdaten (statt einer Kurzform) und keinen separaten grauen Footer-Balken,
+    # weil Name+Anschrift dadurch nur einmal in der Mail stehen. Rationale lebt hier
+    # als Code-Kommentar, NICHT im Template selbst - siehe 24.10.2026-Vorfall: ein
+    # mehrzeiliger {# ... #}-Kommentar im Template wird von Django nicht entfernt
+    # (das {# #}-Tag ist nur fuer einzeilige Kommentare gedacht) und landet dadurch
+    # wortwoertlich in der an den Kunden verschickten Mail.
     text_body = render_to_string("vertrieb/email/angebot_nachfass.txt", kontext)
     html_body = render_to_string("vertrieb/email/angebot_nachfass.html", kontext)
 
@@ -694,6 +701,10 @@ def angebot_versand_senden(angebot):
         "site_url": SITE_URL,
         "logo_url": f"{SITE_URL}/static/img/eckopack-logo.png",
     }
+    # angebot_versand.html uebernimmt bewusst dieselbe volle Signatur und denselben
+    # Verzicht auf den grauen Footer-Balken wie angebot_nachfass.html (siehe Kommentar
+    # dort), da beide Mails zur selben Angebots-Kette gehoeren und konsistent aussehen
+    # sollen.
     text_body = render_to_string("vertrieb/email/angebot_versand.txt", kontext)
     html_body = render_to_string("vertrieb/email/angebot_versand.html", kontext)
 
