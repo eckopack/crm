@@ -12,9 +12,10 @@
     </div>
 </div>
 <p class="text-muted">
-    Die 8-wöchige Musterbox-Nachfasskette aller Deals mit Musterversand-Historie, sortiert nach
-    Fälligkeitsdatum. Die tatsächliche Mail wird erst beim nächsten wöchentlichen Cron-Lauf
-    (montags) nach Erreichen des Fälligkeitsdatums verschickt - siehe Email-Übersicht für bereits
+    Beide automatischen Nachfassketten gemeinsam, sortiert nach Fälligkeitsdatum: die 8-wöchige
+    Musterbox-Kette (Deals mit Musterversand-Historie) und die 3-stufige Angebot-Kette (3/7/14
+    Tage nach Versand eines Angebots). Die tatsächliche Mail wird erst beim nächsten täglichen
+    Cron-Lauf nach Erreichen des Fälligkeitsdatums verschickt - siehe Email-Übersicht für bereits
     versendete Mails.
 </p>
 
@@ -22,30 +23,40 @@
     <table class="table table-hover mb-0">
         <thead>
         <tr>
+            <th>Typ</th>
             <th>Deal</th>
+            <th>Angebot</th>
             <th>Sprache</th>
-            <th>Woche</th>
+            <th>Fortschritt</th>
             <th>Nächster Versand fällig am</th>
             <th>Status</th>
         </tr>
         </thead>
         <tbody>
         {% for status in status_liste %}
-        <tr onclick="window.location='{{ status.deal.get_absolute_url }}'" style="cursor:pointer;">
+        <tr onclick="window.location='{{ status.url }}'" style="cursor:pointer;">
+            <td>
+                {% if status.typ == "Angebot" %}
+                <span class="badge text-bg-info">Angebot</span>
+                {% else %}
+                <span class="badge text-bg-light border">Musterbox</span>
+                {% endif %}
+            </td>
             <td>{{ status.deal.titel }} ({{ status.deal.firma.name }})</td>
-            <td>{{ status.get_sprache_display }}</td>
-            <td>{{ status.naechste_woche }}/8</td>
+            <td>{{ status.angebot_nummer|default:"–" }}</td>
+            <td>{{ status.sprache }}</td>
+            <td>{{ status.fortschritt }}</td>
             <td>{{ status.naechster_versand_am|date:"d.m.Y H:i" }}</td>
             <td>
                 {% if status.aktiv %}
                 <span class="badge text-bg-success">Aktiv</span>
                 {% else %}
-                <span class="badge text-bg-secondary">Beendet: {{ status.get_beendet_grund_display }}</span>
+                <span class="badge text-bg-secondary">Beendet: {{ status.beendet_grund }}</span>
                 {% endif %}
             </td>
         </tr>
         {% empty %}
-        <tr><td colspan="5" class="text-muted text-center py-3">Keine Nachfassketten vorhanden.</td></tr>
+        <tr><td colspan="7" class="text-muted text-center py-3">Keine Nachfassketten vorhanden.</td></tr>
         {% endfor %}
         </tbody>
     </table>
