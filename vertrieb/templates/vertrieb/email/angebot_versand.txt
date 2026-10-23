@@ -1,0 +1,26 @@
+{% if sprache == "en" %}Hello{% else %}Guten Tag{% endif %}{% if ansprechpartner %} {{ ansprechpartner.vorname }} {{ ansprechpartner.nachname }}{% endif %},
+
+{% if sprache == "en" %}thank you for your interest in ECKO-PACK. Please find attached our quote {{ angebot.nummer }} for {{ deal.titel }}{% if angebot.gueltig_bis %}, valid until {{ angebot.gueltig_bis|date:"d.m.Y" }}{% endif %}.
+
+As this is your first quote from us, we'd also like to briefly introduce our brand LUAMO: LUAMO covers disposable and foodservice products – including ice cream spoons, fry forks, knives, forks, spoons, and straws – made from the natural material traceless®. This material is produced from plant-based residues of grain production, is 100% bio-based, and free of plastic and microplastics. It is DIN-certified home compostable – not via the municipal organic waste bin, but via your own compost or general waste. This makes LUAMO particularly well suited for use in retail, foodservice, and high-volume settings.
+
+If you have any questions about this quote or about LUAMO, please don't hesitate to reach out.{% else %}vielen Dank für Ihr Interesse an ECKO-PACK. Anbei erhalten Sie unser Angebot {{ angebot.nummer }} zu {{ deal.titel }}{% if angebot.gueltig_bis %}, gültig bis zum {{ angebot.gueltig_bis|date:"d.m.Y" }}{% endif %}.
+
+Da dies Ihr erstes Angebot von uns ist, möchten wir Ihnen kurz auch unsere Marke LUAMO vorstellen: LUAMO umfasst Einweg- und Serviceprodukte – etwa Eislöffel, Pommesgabeln, Messer, Gabeln, Löffel und Trinkhalme – aus dem Naturmaterial traceless®. Dieses Material wird aus pflanzlichen Reststoffen der Getreideproduktion hergestellt, ist zu 100 % biobasiert und frei von Plastik sowie Mikroplastik. Es ist DIN-geprüft zuhause kompostierbar – nicht über die Biotonne, sondern über den eigenen Kompost oder den Restmüll. Damit eignet sich LUAMO besonders für den Einsatz in Handel, Gastronomie und Großverbrauch.
+
+Bei Fragen zu diesem Angebot oder zu LUAMO sprechen Sie uns gerne jederzeit an.{% endif %}
+
+Mit freundlichen Grüßen
+Best regards
+
+Björn Gallenkamp
+Geschäftsführer / CEO
+Telefon:  +49 4331 1348 0
+Mobil:    +49 171 977 77 21
+Fax:      +49 4331 1348 999
+E-Mail:   b.gallenkamp@ecko-pack.de
+Web:      https://www.ecko-pack.de
+
+ECKO-PACK GmbH
+Wasbeker Straße 324
+D-24537 Neumünster
