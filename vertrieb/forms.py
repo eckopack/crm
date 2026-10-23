@@ -110,7 +110,10 @@ class AktivitaetForm(BootstrapFormMixin, forms.ModelForm):
 class AngebotForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Angebot
-        fields = ["deal", "rahmenvereinbarung", "datum", "gueltig_bis", "status", "sprache", "notizen"]
+        fields = [
+            "deal", "rahmenvereinbarung", "datum", "gueltig_bis", "status", "sprache",
+            "ansprechpartner", "notizen",
+        ]
         widgets = {
             "notizen": forms.Textarea(attrs={"rows": 3}),
             "datum": date_input(),
@@ -121,6 +124,12 @@ class AngebotForm(BootstrapFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         self._bootstrapify()
         self.fields["rahmenvereinbarung"].required = False
+        # 24.10.2026, auf Wunsch von Björn: freie Auswahl ueber ALLE Kontakte (wie beim
+        # Deal-Ansprechpartner, siehe DealForm oben) statt nur die der Angebots-Firma -
+        # einfacher als eine Firma-abhaengige Live-Filterung per JS, und Kontakt.__str__
+        # zeigt die Firma ohnehin mit an, sodass die Auswahl eindeutig bleibt.
+        self.fields["ansprechpartner"].queryset = Kontakt.objects.all().select_related("firma")
+        self.fields["ansprechpartner"].required = False
 
 
 class AngebotPositionForm(BootstrapFormMixin, forms.ModelForm):

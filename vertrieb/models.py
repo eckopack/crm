@@ -313,6 +313,19 @@ class Angebot(models.Model):
     datum = models.DateField("Datum", default=timezone.localdate)
     gueltig_bis = models.DateField("Gültig bis", null=True, blank=True)
     status = models.CharField("Status", max_length=20, choices=ANGEBOT_STATUS_CHOICES, default="entwurf")
+    ansprechpartner = models.ForeignKey(
+        "Kontakt", verbose_name="Ansprechpartner (Versand)", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="angebote_als_ansprechpartner",
+        help_text=(
+            "24.10.2026, auf Wunsch von Björn ('ich will im angebotsfeld auch den "
+            "ansprechpartner auswählen können', 'kann immer variieren'): Empfänger der "
+            "Versand-/Nachfassmails für GENAU DIESES Angebot, unabhängig vom im Deal "
+            "hinterlegten Kontakt - weil der richtige Ansprechpartner je Angebot ein "
+            "anderer sein kann (z.B. Einkauf vs. Technik), nicht nur je Deal. Leer lassen "
+            "greift wie bisher automatisch auf deal.kontakt zurück (siehe "
+            "nurture._empfaenger_email)."
+        ),
+    )
     sprache = models.CharField(
         "Sprache", max_length=2, choices=SPRACHE_CHOICES, default="de",
         help_text=(

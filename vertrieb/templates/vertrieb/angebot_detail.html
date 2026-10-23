@@ -10,6 +10,11 @@
             {% if angebot.rahmenvereinbarung %}
             · Rahmenvereinbarung: <a href="{{ angebot.rahmenvereinbarung.get_absolute_url }}">{{ angebot.rahmenvereinbarung.nummer }}</a>
             {% endif %}
+            {% if angebot.ansprechpartner %}
+            · Ansprechpartner (Versand): <a href="{{ angebot.ansprechpartner.get_absolute_url }}">{{ angebot.ansprechpartner }}</a>
+            {% else %}
+            · Ansprechpartner (Versand): <span class="text-muted">automatisch über Deal</span>
+            {% endif %}
         </div>
         <span class="badge text-bg-light border">{{ angebot.get_status_display }}</span>
         <span class="badge text-bg-light border">{{ angebot.get_sprache_display }}</span>

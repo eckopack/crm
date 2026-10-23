@@ -169,6 +169,25 @@ def _empfaenger_email(deal):
     return None
 
 
+def _angebot_ansprechpartner(angebot):
+    """Liefert den fuer DIESES Angebot zustaendigen Ansprechpartner-Kontakt (24.10.2026,
+    auf Wunsch von Björn, siehe models.Angebot.ansprechpartner): bevorzugt die
+    Angebot-spezifische Auswahl, weil der richtige Ansprechpartner je Angebot ein anderer
+    sein kann als der pauschal im Deal hinterlegte Kontakt ('kann immer variieren'). Ohne
+    Angebot-spezifische Auswahl greift wie bisher deal.kontakt."""
+    return angebot.ansprechpartner or angebot.deal.kontakt
+
+
+def _angebot_empfaenger_email(angebot):
+    """Wie _empfaenger_email(deal), bevorzugt aber - falls gesetzt und mit E-Mail versehen
+    - den Angebot-spezifischen Ansprechpartner (siehe _angebot_ansprechpartner) vor dem
+    normalen Deal-/Firma-Fallback."""
+    ansprechpartner = angebot.ansprechpartner
+    if ansprechpartner and ansprechpartner.email:
+        return ansprechpartner.email
+    return _empfaenger_email(angebot.deal)
+
+
 def musterversand_abgeschlossen(packschein):
     deal = packschein.deal
     empfaenger = _empfaenger_email(deal)
@@ -498,7 +517,7 @@ def angebot_nachfass_senden(angebot, status):
     Fortschritt der Kette (siehe nachfass_pruefen.py). Gibt (erfolg: bool, fehlermeldung:
     str|None) zurueck."""
     deal = angebot.deal
-    empfaenger = _empfaenger_email(deal)
+    empfaenger = _angebot_empfaenger_email(angebot)
 
     if not empfaenger:
         meldung = "keine E-Mail-Adresse für Firma/Ansprechpartner hinterlegt"
@@ -529,7 +548,7 @@ def angebot_nachfass_senden(angebot, status):
         )
         return False, meldung
 
-    ansprechpartner = deal.kontakt
+    ansprechpartner = _angebot_ansprechpartner(angebot)
     platzhalter = Context({
         "vorname": ansprechpartner.vorname if ansprechpartner else "",
         "nachname": ansprechpartner.nachname if ansprechpartner else "",
@@ -616,7 +635,7 @@ def angebot_versand_senden(angebot):
     Fail-safe wie rechnung_versand_senden: NICHT fail-silent, der aufrufende View zeigt
     Erfolg/Fehlschlag sofort im UI. Gibt (erfolg: bool, fehlermeldung: str|None) zurueck."""
     deal = angebot.deal
-    empfaenger = _empfaenger_email(deal)
+    empfaenger = _angebot_empfaenger_email(angebot)
 
     if not empfaenger:
         meldung = "keine E-Mail-Adresse für Firma/Ansprechpartner hinterlegt"
@@ -640,7 +659,7 @@ def angebot_versand_senden(angebot):
         "angebot": angebot,
         "deal": deal,
         "firma": deal.firma,
-        "ansprechpartner": deal.kontakt,
+        "ansprechpartner": _angebot_ansprechpartner(angebot),
         "sprache": sprache,
         "site_url": SITE_URL,
         "logo_url": f"{SITE_URL}/static/img/eckopack-logo.png",
