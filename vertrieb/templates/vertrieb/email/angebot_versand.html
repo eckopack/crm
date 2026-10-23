@@ -22,19 +22,19 @@
             <p style="margin:0 0 16px 0; font-size:16px; color:#3c3c3b;">
               {% if sprache == "en" %}Hello{% else %}Guten Tag{% endif %}{% if ansprechpartner %} {{ ansprechpartner.vorname }} {{ ansprechpartner.nachname }}{% endif %},
             </p>
-            <div style="margin:0 0 24px 0; font-size:16px; color:#3c3c3b; line-height:1.5;">
+            <div>
               {% if sprache == "en" %}
-              <p>thank you for your interest in ECKO-PACK. Please find attached our quote {{ angebot.nummer }} for {{ deal.titel }}{% if angebot.gueltig_bis %}, valid until {{ angebot.gueltig_bis|date:"d.m.Y" }}{% endif %}.</p>
+              <p style="margin:0 0 16px 0; font-size:16px; color:#3c3c3b; line-height:1.5;">thank you for your interest in ECKO-PACK. Please find attached our quote {{ angebot.nummer }} for {{ deal.titel }}{% if angebot.gueltig_bis %}, valid until {{ angebot.gueltig_bis|date:"d.m.Y" }}{% endif %}.</p>
 
-              <p>As this is your first quote from us, we'd also like to briefly introduce our brand LUAMO: LUAMO covers disposable and foodservice products – including ice cream spoons, fry forks, knives, forks, spoons, and straws – made from the natural material traceless®. This material is produced from plant-based residues of grain production, is 100% bio-based, and free of plastic and microplastics. It is DIN-certified home compostable – not via the municipal organic waste bin, but via your own compost or general waste. This makes LUAMO particularly well suited for use in retail, foodservice, and high-volume settings.</p>
+              <p style="margin:0 0 16px 0; font-size:16px; color:#3c3c3b; line-height:1.5;">As this is your first quote from us, we'd also like to briefly introduce our brand LUAMO: LUAMO covers disposable and foodservice products – including ice cream spoons, fry forks, knives, forks, spoons, and straws – made from the natural material traceless®. This material is produced from plant-based residues of grain production, is 100% bio-based, and free of plastic and microplastics. It is DIN-certified home compostable – not via the municipal organic waste bin, but via your own compost or general waste. This makes LUAMO particularly well suited for use in retail, foodservice, and high-volume settings.</p>
 
-              <p>If you have any questions about this quote or about LUAMO, please don't hesitate to reach out.</p>
+              <p style="margin:0; font-size:16px; color:#3c3c3b; line-height:1.5;">If you have any questions about this quote or about LUAMO, please don't hesitate to reach out.</p>
               {% else %}
-              <p>vielen Dank für Ihr Interesse an ECKO-PACK. Anbei erhalten Sie unser Angebot {{ angebot.nummer }} zu {{ deal.titel }}{% if angebot.gueltig_bis %}, gültig bis zum {{ angebot.gueltig_bis|date:"d.m.Y" }}{% endif %}.</p>
+              <p style="margin:0 0 16px 0; font-size:16px; color:#3c3c3b; line-height:1.5;">vielen Dank für Ihr Interesse an ECKO-PACK. Anbei erhalten Sie unser Angebot {{ angebot.nummer }} zu {{ deal.titel }}{% if angebot.gueltig_bis %}, gültig bis zum {{ angebot.gueltig_bis|date:"d.m.Y" }}{% endif %}.</p>
 
-              <p>Da dies Ihr erstes Angebot von uns ist, möchten wir Ihnen kurz auch unsere Marke LUAMO vorstellen: LUAMO umfasst Einweg- und Serviceprodukte – etwa Eislöffel, Pommesgabeln, Messer, Gabeln, Löffel und Trinkhalme – aus dem Naturmaterial traceless®. Dieses Material wird aus pflanzlichen Reststoffen der Getreideproduktion hergestellt, ist zu 100 % biobasiert und frei von Plastik sowie Mikroplastik. Es ist DIN-geprüft zuhause kompostierbar – nicht über die Biotonne, sondern über den eigenen Kompost oder den Restmüll. Damit eignet sich LUAMO besonders für den Einsatz in Handel, Gastronomie und Großverbrauch.</p>
+              <p style="margin:0 0 16px 0; font-size:16px; color:#3c3c3b; line-height:1.5;">Da dies Ihr erstes Angebot von uns ist, möchten wir Ihnen kurz auch unsere Marke LUAMO vorstellen: LUAMO umfasst Einweg- und Serviceprodukte – etwa Eislöffel, Pommesgabeln, Messer, Gabeln, Löffel und Trinkhalme – aus dem Naturmaterial traceless®. Dieses Material wird aus pflanzlichen Reststoffen der Getreideproduktion hergestellt, ist zu 100 % biobasiert und frei von Plastik sowie Mikroplastik. Es ist DIN-geprüft zuhause kompostierbar – nicht über die Biotonne, sondern über den eigenen Kompost oder den Restmüll. Damit eignet sich LUAMO besonders für den Einsatz in Handel, Gastronomie und Großverbrauch.</p>
 
-              <p>Bei Fragen zu diesem Angebot oder zu LUAMO sprechen Sie uns gerne jederzeit an.</p>
+              <p style="margin:0; font-size:16px; color:#3c3c3b; line-height:1.5;">Bei Fragen zu diesem Angebot oder zu LUAMO sprechen Sie uns gerne jederzeit an.</p>
               {% endif %}
             </div>
             <p style="margin:24px 0 0 0; font-size:14px; color:#3c3c3b; line-height:1.6;">
