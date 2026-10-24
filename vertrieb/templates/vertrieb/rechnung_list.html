@@ -23,7 +23,13 @@
             <td>{{ r.rechnungsdatum|date:"d.m.Y" }}</td>
             <td>{{ r.faelligkeitsdatum|date:"d.m.Y" }}</td>
             <td>
+                {% if r.status == "bezahlt" %}
+                <span class="badge text-bg-success">{{ r.get_status_display }}</span>
+                {% elif r.status == "storniert" %}
+                <span class="badge text-bg-secondary">{{ r.get_status_display }}</span>
+                {% else %}
                 <span class="badge text-bg-light border">{{ r.get_status_display }}</span>
+                {% endif %}
                 {% if r.ist_ueberfaellig %}<span class="badge text-bg-danger">Überfällig</span>{% endif %}
             </td>
             <td>{{ r.bruttosumme|floatformat:2 }} €</td>

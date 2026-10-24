@@ -401,6 +401,30 @@ class RechnungZahlungForm(BootstrapFormMixin, forms.ModelForm):
         self._bootstrapify()
 
 
+class RechnungKorrekturForm(BootstrapFormMixin, forms.ModelForm):
+    """Formular fuer eine Stornorechnung/Rechnungskorrektur (24.10.2026, auf Wunsch von
+    Björn - NICHT "Gutschrift": dieser Begriff ist nach §14 UStG rechtlich eine vom KAEUFER
+    ausgestellte Abrechnung, nicht die hier gemeinte, vom Verkaeufer ausgestellte Korrektur
+    einer eigenen Rechnung). Bewusst schlankes Feld-Set gegenueber RechnungForm: deal,
+    angebot, lieferschein und status werden von rechnung_korrektur_erstellen() gesetzt
+    (deal/angebot/lieferschein vom Original uebernommen, status immer "entwurf" beim
+    Anlegen) und sind hier nicht frei waehlbar - eine Korrektur ohne Bezug zum Original darf
+    es nicht geben."""
+
+    class Meta:
+        model = Rechnung
+        fields = ["rechnungsdatum", "leistungsdatum", "sprache", "notizen"]
+        widgets = {
+            "notizen": forms.Textarea(attrs={"rows": 3}),
+            "rechnungsdatum": date_input(),
+            "leistungsdatum": date_input(),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()
+
+
 class ArtikelForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Artikel

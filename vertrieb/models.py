@@ -863,6 +863,21 @@ class Rechnung(models.Model):
     bestaetigungsmail_gesendet_am = models.DateTimeField(
         "Rechnungs-Mail an Kunde gesendet am", null=True, blank=True, editable=False,
     )
+    # storno_zu (24.10.2026, auf Wunsch von Björn): Rechnungskorrektur/Stornorechnung zu einer
+    # bereits versendeten/bezahlten Rechnung - siehe views.rechnung_korrektur_erstellen. Deckt
+    # sowohl Vollstorno (alle Positionen mit negiertem Vorzeichen, identisch zum Original) als
+    # auch Teilkorrektur (nur die abweichenden Positionen) ab - beides ist technisch dieselbe
+    # Rechnung mit Bezug auf das Original, nur mit unterschiedlichem Positions-Inhalt.
+    # on_delete=PROTECT bewusst abweichend vom sonst in diesem Modul ueblichen SET_NULL: eine
+    # Stornorechnung/Korrektur ohne erkennbaren Bezug zum Original waere GoBD-widrig (der
+    # Pruefpfad braeuchte sonst ggf. eine inhaltlich falsche Korrektur ohne Nummer-/Datumsbezug
+    # zum Original) - das Original darf daher nicht geloescht werden, solange eine Korrektur
+    # darauf verweist (siehe auch RechnungDeleteView, die das Loeschen nicht-entwurf-Rechnungen
+    # ohnehin komplett sperrt).
+    storno_zu = models.ForeignKey(
+        "self", verbose_name="Korrektur zu Rechnung", null=True, blank=True,
+        on_delete=models.PROTECT, related_name="korrekturen",
+    )
     erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
 
     class Meta:
@@ -879,12 +894,17 @@ class Rechnung(models.Model):
     def save(self, *args, **kwargs):
         if not self.nummer:
             jahr = (self.rechnungsdatum or timezone.now().date()).year
-            letzte = Rechnung.objects.filter(nummer__startswith=f"RE-{jahr}-").order_by("-nummer").first()
+            # Stornorechnungen/Korrekturen (storno_zu gesetzt) bekommen ein eigenes Nummernkreis-
+            # Praefix "ST-" statt "RE-" (24.10.2026, auf Wunsch von Björn) - so sind sie in
+            # Listen/Buchhaltung sofort als Korrekturdokument erkennbar, ohne die fortlaufende
+            # RE-Nummerierung der regulaeren Rechnungen zu unterbrechen.
+            praefix = "ST" if self.storno_zu_id else "RE"
+            letzte = Rechnung.objects.filter(nummer__startswith=f"{praefix}-{jahr}-").order_by("-nummer").first()
             if letzte and letzte.nummer.split("-")[-1].isdigit():
                 naechste = int(letzte.nummer.split("-")[-1]) + 1
             else:
                 naechste = 1
-            self.nummer = f"RE-{jahr}-{naechste:04d}"
+            self.nummer = f"{praefix}-{jahr}-{naechste:04d}"
         super().save(*args, **kwargs)
 
     @property
@@ -928,17 +948,36 @@ class Rechnung(models.Model):
     # Fix: ein eigener Weg zur Zahlungserfassung (RechnungZahlung, siehe unten), komplett an
     # der GoBD-Sperre vorbei (wie Packschein/Lieferschein ihren jeweiligen "...versand"-View
     # haben) - "bezahlt" wird jetzt automatisch gesetzt, sobald die Summe aller erfassten
-    # Zahlungen die Bruttosumme erreicht (views.rechnung_zahlung_erfassen). "storniert" bleibt
-    # bewusst weiterhin unerreichbar - das ist der separate, noch offene
-    # Storno-/Gutschrift-Workflow (siehe Kommentar in views.rechnung_bearbeiten), nicht Teil
-    # dieser Aenderung.
+    # Zahlungen die Bruttosumme erreicht (views.rechnung_zahlung_erfassen). "storniert" wird seit
+    # dem 24.10.2026 ueber den Stornorechnung-/Korrektur-Workflow erreichbar (siehe
+    # korrektursumme/effektiver_bruttobetrag unten und signals._rechnung_status_neu_berechnen).
     @property
     def bezahlter_betrag(self):
         return sum((z.betrag for z in self.zahlungen.all()), start=Decimal("0"))
 
+    # korrektursumme/effektiver_bruttobetrag (24.10.2026, auf Wunsch von Björn, Stornorechnung/
+    # Rechnungskorrektur-Feature): eine Stornorechnung/Korrektur ist technisch selbst eine
+    # Rechnung (mit storno_zu-Bezug auf das Original) - ihre bruttosumme traegt bereits das
+    # richtige Vorzeichen (negative Positionsbetraege bei Storno/Minderung). Nur TATSAECHLICH AN
+    # DEN KUNDEN VERSENDETE Korrekturen (status in versendet/bezahlt) zaehlen - ein Korrektur-
+    # ENTWURF darf den offenen Betrag des Originals noch nicht veraendern (analog zur generellen
+    # GoBD-Regel, dass nur versendete Dokumente wirtschaftlich zaehlen). Rueckwaertskompatibel:
+    # ohne verknuepfte Korrekturen ist korrektursumme 0 und effektiver_bruttobetrag == bruttosumme
+    # - keine Verhaltensaenderung fuer alle bisherigen (PR #49-getesteten) Rechnungen.
+    @property
+    def korrektursumme(self):
+        return sum(
+            (k.bruttosumme for k in self.korrekturen.filter(status__in=("versendet", "bezahlt"))),
+            start=Decimal("0"),
+        )
+
+    @property
+    def effektiver_bruttobetrag(self):
+        return self.bruttosumme + self.korrektursumme
+
     @property
     def offener_betrag(self):
-        return self.bruttosumme - self.bezahlter_betrag
+        return self.effektiver_bruttobetrag - self.bezahlter_betrag
 
     @property
     def ist_vollstaendig_bezahlt(self):

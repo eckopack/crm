@@ -12,7 +12,15 @@ Seit 24.10.2026 zusätzlich: haelt Rechnung.status synchron mit den erfassten
 RechnungZahlung-Eintraegen (siehe Model-Doku bei Rechnung.bezahlter_betrag) - ereignisbasiert
 an die Zahlung gekoppelt (post_save/post_delete), nicht an die Erfassungs-View
 (views.rechnung_zahlung_erfassen), damit der Status auch bei einer Erfassung/Korrektur ueber
-das Admin-Interface korrekt bleibt."""
+das Admin-Interface korrekt bleibt.
+
+Seit 24.10.2026 zusätzlich: generalisiert dieselbe Statuslogik auf Stornorechnungen/
+Rechnungskorrekturen (Rechnung.storno_zu) - _rechnung_status_neu_berechnen() wertet jetzt
+sowohl Zahlungen als auch verknuepfte Korrekturen aus (siehe Rechnung.korrektursumme/
+effektiver_bruttobetrag) und kann den Status auf "storniert" setzen. Wird einer Korrektur-
+Rechnung Status/Inhalt gespeichert oder sie geloescht, wird NICHT ihr eigener Status
+neu berechnet (das waere eine Rekursion), sondern der Status des Originals, auf das sie
+sich bezieht (siehe rechnung_korrektur_gespeichert/rechnung_korrektur_geloescht)."""
 
 from datetime import timedelta
 
@@ -103,23 +111,33 @@ def angebot_status_wechsel(sender, instance, **kwargs):
         bestehender.save(update_fields=["aktiv", "beendet_am", "beendet_grund"])
 
 
-def _rechnung_bezahlt_status_aktualisieren(rechnung):
-    """Setzt Rechnung.status anhand der tatsaechlich erfassten Zahlungen: "bezahlt", sobald
-    die Summe die Bruttosumme erreicht/uebersteigt, zurueck auf "versendet", falls eine
-    Zahlung nachtraeglich korrigiert/geloescht wurde und der Betrag nicht mehr reicht.
-    Ruehrt bewusst "entwurf" und "storniert" nicht an - eine Zahlung zu einer Rechnung, die
-    noch nicht versendet oder bereits storniert ist, aendert daran nichts."""
-    if rechnung.status == "versendet" and rechnung.ist_vollstaendig_bezahlt:
-        rechnung.status = "bezahlt"
-        rechnung.save(update_fields=["status"])
-    elif rechnung.status == "bezahlt" and not rechnung.ist_vollstaendig_bezahlt:
-        rechnung.status = "versendet"
+def _rechnung_status_neu_berechnen(rechnung):
+    """Bestimmt Rechnung.status neu aus den erfassten Zahlungen (bezahlter_betrag) UND den
+    verknuepften, tatsaechlich versendeten Korrekturen/Stornorechnungen (korrektursumme/
+    effektiver_bruttobetrag) - generalisierte Fassung (24.10.2026, Stornorechnung-Feature)
+    der urspruenglich nur zahlungsbasierten Logik. Reihenfolge wichtig: eine vollstaendig
+    (oder ueber-)stornierte Rechnung wird "storniert", auch wenn sie vorher schon bezahlt
+    war (dann mit negativem offener_betrag = Erstattung offen). Ruehrt "entwurf" nicht an -
+    eine Rechnung, die noch nicht versendet wurde, hat weder Zahlungen noch Korrekturen,
+    die hier etwas aendern duerften."""
+    if rechnung.status not in ("versendet", "bezahlt", "storniert"):
+        return
+
+    if rechnung.effektiver_bruttobetrag <= 0 and rechnung.korrektursumme < 0:
+        neuer_status = "storniert"
+    elif rechnung.ist_vollstaendig_bezahlt:
+        neuer_status = "bezahlt"
+    else:
+        neuer_status = "versendet"
+
+    if neuer_status != rechnung.status:
+        rechnung.status = neuer_status
         rechnung.save(update_fields=["status"])
 
 
 @receiver(post_save, sender=RechnungZahlung)
 def rechnungzahlung_gespeichert(sender, instance, **kwargs):
-    _rechnung_bezahlt_status_aktualisieren(instance.rechnung)
+    _rechnung_status_neu_berechnen(instance.rechnung)
 
 
 @receiver(post_delete, sender=RechnungZahlung)
@@ -128,4 +146,35 @@ def rechnungzahlung_geloescht(sender, instance, **kwargs):
         rechnung = Rechnung.objects.get(pk=instance.rechnung_id)
     except Rechnung.DoesNotExist:
         return
-    _rechnung_bezahlt_status_aktualisieren(rechnung)
+    _rechnung_status_neu_berechnen(rechnung)
+
+
+@receiver(post_save, sender=Rechnung)
+def rechnung_korrektur_gespeichert(sender, instance, created, **kwargs):
+    """Wenn eine Stornorechnung/Korrektur (storno_zu gesetzt) gespeichert wird - typischerweise
+    beim Versand (Statuswechsel auf "versendet", siehe nurture.rechnung_versand_senden) -, muss
+    der Status DES ORIGINALS neu berechnet werden, nicht der der Korrektur selbst. Der Guard
+    auf storno_zu_id ist zwingend: ohne ihn wuerde JEDE Rechnung (auch ganz normale, ohne
+    Korrekturbezug) hier ihren eigenen Status neu berechnen wollen und sich damit potenziell
+    rekursiv selbst erneut speichern."""
+    if not instance.storno_zu_id:
+        return
+    try:
+        original = Rechnung.objects.get(pk=instance.storno_zu_id)
+    except Rechnung.DoesNotExist:
+        return
+    _rechnung_status_neu_berechnen(original)
+
+
+@receiver(post_delete, sender=Rechnung)
+def rechnung_korrektur_geloescht(sender, instance, **kwargs):
+    """Analog zu rechnung_korrektur_gespeichert, falls eine Korrektur geloescht wird (in der
+    Praxis nur ein Entwurf - RechnungDeleteView blockt das Loeschen bereits versendeter/
+    bezahlter Dokumente generell, siehe dort)."""
+    if not instance.storno_zu_id:
+        return
+    try:
+        original = Rechnung.objects.get(pk=instance.storno_zu_id)
+    except Rechnung.DoesNotExist:
+        return
+    _rechnung_status_neu_berechnen(original)

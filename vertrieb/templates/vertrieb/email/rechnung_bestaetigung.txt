@@ -1,13 +1,14 @@
 {% if sprache == "en" %}Hello{% else %}Guten Tag{% endif %}{% if ansprechpartner %} {{ ansprechpartner.vorname }} {{ ansprechpartner.nachname }}{% endif %},
 
-{% if sprache == "en" %}please find attached the invoice for your recent order from ECKO-PACK.{% else %}anbei erhalten Sie die Rechnung zu Ihrer Bestellung bei ECKO-PACK.{% endif %}
+{% if rechnung.storno_zu %}{% if sprache == "en" %}please find attached a correction to invoice {{ rechnung.storno_zu.nummer }} from {{ rechnung.storno_zu.rechnungsdatum|date:"d.m.Y" }}.{% else %}anbei erhalten Sie eine Korrektur zu Rechnung {{ rechnung.storno_zu.nummer }} vom {{ rechnung.storno_zu.rechnungsdatum|date:"d.m.Y" }}.{% endif %}{% else %}{% if sprache == "en" %}please find attached the invoice for your recent order from ECKO-PACK.{% else %}anbei erhalten Sie die Rechnung zu Ihrer Bestellung bei ECKO-PACK.{% endif %}{% endif %}
 
 {% if sprache == "en" %}Invoice no.{% else %}Rechnungsnummer{% endif %}: {{ rechnung.nummer }}
 {% if sprache == "en" %}Invoice date{% else %}Rechnungsdatum{% endif %}: {{ rechnung.rechnungsdatum|date:"d.m.Y" }}
-{% if sprache == "en" %}Due date{% else %}Fällig am{% endif %}: {{ rechnung.faelligkeitsdatum|date:"d.m.Y" }}
-{% if sprache == "en" %}Total (gross){% else %}Gesamtbetrag (brutto){% endif %}: {{ rechnung.bruttosumme|floatformat:2 }} €
+{% if rechnung.storno_zu %}{% if sprache == "en" %}Correction to invoice{% else %}Korrektur zu Rechnung{% endif %}: {{ rechnung.storno_zu.nummer }}
+{% else %}{% if sprache == "en" %}Due date{% else %}Fällig am{% endif %}: {{ rechnung.faelligkeitsdatum|date:"d.m.Y" }}
+{% endif %}{% if rechnung.storno_zu and rechnung.bruttosumme < 0 %}{% if sprache == "en" %}Amount to be refunded{% else %}Erstattungsbetrag{% endif %}{% else %}{% if sprache == "en" %}Total (gross){% else %}Gesamtbetrag (brutto){% endif %}{% endif %}: {{ rechnung.bruttosumme|floatformat:2 }} €
 
-{% if sprache == "en" %}You will find the invoice as a PDF attached to this email.{% else %}Die Rechnung finden Sie als PDF im Anhang dieser E-Mail.{% endif %}
+{% if rechnung.storno_zu %}{% if sprache == "en" %}You will find the correction document as a PDF attached to this email.{% else %}Die Rechnungskorrektur finden Sie als PDF im Anhang dieser E-Mail.{% endif %}{% else %}{% if sprache == "en" %}You will find the invoice as a PDF attached to this email.{% else %}Die Rechnung finden Sie als PDF im Anhang dieser E-Mail.{% endif %}{% endif %}
 
 {% if sprache == "en" %}If you have any questions about this invoice, feel free to reach out any time.{% else %}Bei Fragen zu dieser Rechnung melden Sie sich jederzeit gerne bei uns.{% endif %}
 
