@@ -270,7 +270,10 @@ class Command(BaseCommand):
                     "mindestbestand": _dec(wert(row, "Mindestbestand")),
                     "verpackungseinheit_stk": _int(wert(row, "Verpackung Stk")),
                     "lagerort": _s(wert(row, "Lagerort"))[:100],
-                    "lieferant": _s(wert(row, "Lieferant"))[:200],
+                    # 24.10.2026: Spalte "Lieferant" schreibt weiterhin ins Freitext-Altfeld -
+                    # siehe Artikel.lieferant_freitext-Doku (Materialwirtschaft-Erweiterung um
+                    # strukturierte Lieferanten-Stammdaten, die dieser Excel-Import nicht pflegt).
+                    "lieferant_freitext": _s(wert(row, "Lieferant"))[:200],
                     "status": status,
                     "notizen": _s(wert(row, "Notizen")),
                 }

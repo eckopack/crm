@@ -35,7 +35,7 @@
                 <li class="list-group-item"><strong>Lagerbestand aktuell:</strong> {{ artikel.lagerbestand_aktuell|default:"unbekannt" }}</li>
                 <li class="list-group-item"><strong>Mindestbestand:</strong> {{ artikel.mindestbestand|default:"unbekannt" }}</li>
                 <li class="list-group-item"><strong>Lagerort:</strong> {{ artikel.lagerort|default:"–" }}</li>
-                <li class="list-group-item"><strong>Lieferant:</strong> {{ artikel.lieferant|default:"–" }}</li>
+                <li class="list-group-item"><strong>Lieferant:</strong> {{ artikel.lieferant|default:artikel.lieferant_freitext|default:"–" }}</li>
             </ul>
         </div>
         {% if artikel.beschreibung or artikel.notizen %}
