@@ -54,18 +54,14 @@
         <div class="card mb-3">
             <ul class="list-group list-group-flush">
                 <li class="list-group-item"><strong>Wert (netto):</strong> {{ deal.wert|floatformat:2 }} €</li>
-                {% if deal.potenzial_tonnen_trinkhalm is not None %}
                 <li class="list-group-item">
-                    <strong>Mengenpotenzial Trinkhalm:</strong> {{ deal.potenzial_tonnen_trinkhalm|floatformat:2 }} t
-                    <span class="text-muted small">(≈ {{ deal.stueck_trinkhalm|floatformat:0 }} Stück)</span>
+                    <strong>Mengenpotenzial Trinkhalm:</strong> {{ deal.potenzial_tonnen_trinkhalm|default_if_none:0|floatformat:2 }} t
+                    <span class="text-muted small">(≈ {{ deal.stueck_trinkhalm|default_if_none:0|floatformat:0 }} Stück)</span>
                 </li>
-                {% endif %}
-                {% if deal.potenzial_tonnen_besteck is not None %}
                 <li class="list-group-item">
-                    <strong>Mengenpotenzial Besteck:</strong> {{ deal.potenzial_tonnen_besteck|floatformat:2 }} t
-                    <span class="text-muted small">(≈ {{ deal.stueck_besteck|floatformat:0 }} Stück, Gramm/Stück gemittelt)</span>
+                    <strong>Mengenpotenzial Besteck:</strong> {{ deal.potenzial_tonnen_besteck|default_if_none:0|floatformat:2 }} t
+                    <span class="text-muted small">(≈ {{ deal.stueck_besteck|default_if_none:0|floatformat:0 }} Stück, Gramm/Stück gemittelt)</span>
                 </li>
-                {% endif %}
                 <li class="list-group-item"><strong>Wahrscheinlichkeit:</strong> {{ deal.wahrscheinlichkeit }}%</li>
                 <li class="list-group-item"><strong>Gewichteter Wert:</strong> {{ deal.gewichteter_wert|floatformat:2 }} €</li>
                 <li class="list-group-item"><strong>Erw. Abschluss:</strong> {{ deal.erwartetes_abschlussdatum|date:"d.m.Y"|default:"–" }}</li>

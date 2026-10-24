@@ -19,16 +19,12 @@
             <td><span class="badge text-bg-light border">{{ d.get_phase_display }}</span></td>
             <td>{{ d.wert|floatformat:0 }} €</td>
             <td>
-                {% if d.potenzial_tonnen_trinkhalm is not None %}
-                {{ d.potenzial_tonnen_trinkhalm|floatformat:2 }} t
-                <div class="text-muted small">≈ {{ d.stueck_trinkhalm|floatformat:0 }} Stück</div>
-                {% else %}–{% endif %}
+                {{ d.potenzial_tonnen_trinkhalm|default_if_none:0|floatformat:2 }} t
+                <div class="text-muted small">≈ {{ d.stueck_trinkhalm|default_if_none:0|floatformat:0 }} Stück</div>
             </td>
             <td>
-                {% if d.potenzial_tonnen_besteck is not None %}
-                {{ d.potenzial_tonnen_besteck|floatformat:2 }} t
-                <div class="text-muted small">≈ {{ d.stueck_besteck|floatformat:0 }} Stück</div>
-                {% else %}–{% endif %}
+                {{ d.potenzial_tonnen_besteck|default_if_none:0|floatformat:2 }} t
+                <div class="text-muted small">≈ {{ d.stueck_besteck|default_if_none:0|floatformat:0 }} Stück</div>
             </td>
             <td>{{ d.wahrscheinlichkeit }}%</td>
             <td>{{ d.erwartetes_abschlussdatum|date:"d.m.Y"|default:"–" }}</td>
