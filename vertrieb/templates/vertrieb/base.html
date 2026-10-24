@@ -65,20 +65,45 @@
         <div class="collapse navbar-collapse" id="navbarNav">
             <ul class="navbar-nav me-auto">
                 <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:dashboard' %}">Dashboard</a></li>
-                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:pipeline' %}">Pipeline</a></li>
-                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:firma_list' %}">Firmen</a></li>
-                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:kontakt_list' %}">Kontakte</a></li>
-                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:deal_list' %}">Deals</a></li>
-                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:aktivitaet_list' %}">Aktivitäten</a></li>
-                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:angebot_list' %}">Angebote</a></li>
-                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:rahmenvereinbarung_list' %}">Rahmenvereinbarungen</a></li>
-                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:packschein_list' %}">Packscheine</a></li>
-                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:lieferschein_list' %}">Lieferscheine</a></li>
-                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:rechnung_list' %}">Rechnungen</a></li>
-                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:artikel_list' %}">Artikel</a></li>
-                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:email_versand_list' %}">Emails</a></li>
-                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:musterbox_nachfass_list' %}">Nachfass</a></li>
-                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:offene_posten_list' %}">Offene Posten</a></li>
+
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">CRM</a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="{% url 'vertrieb:pipeline' %}">Pipeline</a></li>
+                        <li><a class="dropdown-item" href="{% url 'vertrieb:firma_list' %}">Firmen</a></li>
+                        <li><a class="dropdown-item" href="{% url 'vertrieb:kontakt_list' %}">Kontakte</a></li>
+                        <li><a class="dropdown-item" href="{% url 'vertrieb:deal_list' %}">Deals</a></li>
+                        <li><a class="dropdown-item" href="{% url 'vertrieb:aktivitaet_list' %}">Aktivitäten</a></li>
+                    </ul>
+                </li>
+
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Kunde</a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="{% url 'vertrieb:angebot_list' %}">Angebote</a></li>
+                        <li><a class="dropdown-item" href="{% url 'vertrieb:rahmenvereinbarung_list' %}">Rahmenvereinbarungen</a></li>
+                        <li><a class="dropdown-item" href="{% url 'vertrieb:packschein_list' %}">Packscheine</a></li>
+                        <li><a class="dropdown-item" href="{% url 'vertrieb:lieferschein_list' %}">Lieferscheine</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="{% url 'vertrieb:musterbox_nachfass_list' %}">Nachfass</a></li>
+                        <li><a class="dropdown-item" href="{% url 'vertrieb:email_versand_list' %}">Emails</a></li>
+                    </ul>
+                </li>
+
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Buchhaltung</a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="{% url 'vertrieb:rechnung_list' %}">Rechnungen</a></li>
+                        <li><a class="dropdown-item" href="{% url 'vertrieb:offene_posten_list' %}">Offene Posten</a></li>
+                    </ul>
+                </li>
+
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Lagerwirtschaft</a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="{% url 'vertrieb:artikel_list' %}">Artikel</a></li>
+                    </ul>
+                </li>
             </ul>
             {% if user.is_authenticated %}
             <ul class="navbar-nav">
