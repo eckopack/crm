@@ -78,7 +78,8 @@ class DealForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Deal
         fields = [
-            "titel", "firma", "kontakt", "geschaeftsbereich", "wert", "potenzial_tonnen", "phase",
+            "titel", "firma", "kontakt", "geschaeftsbereich", "wert",
+            "potenzial_tonnen_trinkhalm", "potenzial_tonnen_besteck", "phase",
             "wahrscheinlichkeit", "erwartetes_abschlussdatum", "zustaendiger",
             "verloren_grund", "notizen",
         ]
@@ -97,7 +98,8 @@ class DealForm(BootstrapFormMixin, forms.ModelForm):
         # Deals ohne Wert nicht durch eine Migration zwangsweise invalide würden - erzwungen
         # wird die Angabe stattdessen hier, sobald ein Deal angelegt oder als nächstes
         # bearbeitet wird.
-        self.fields["potenzial_tonnen"].required = True
+        self.fields["potenzial_tonnen_trinkhalm"].required = True
+        self.fields["potenzial_tonnen_besteck"].required = True
 
 
 class AktivitaetForm(BootstrapFormMixin, forms.ModelForm):

@@ -25,6 +25,28 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         });
     }
+    // 24.10.2026, auf Wunsch von Björn: zeigt beim Eintippen der Tonnen direkt eine grobe
+    // Stückzahl-Schätzung an (Gramm/Stück siehe Deal.GRAMM_JE_STUECK_TRINKHALM/_BESTECK in
+    // models.py - Besteck ist ein gemittelter Wert aus Klein-/Großbesteck, siehe dort).
+    var GRAMM_JE_STUECK = {"trinkhalm": 1.0, "besteck": 4.25};
+    ["trinkhalm", "besteck"].forEach(function (kategorie) {
+        var input = document.getElementById("id_potenzial_tonnen_" + kategorie);
+        if (!input) return;
+        var hinweis = document.createElement("div");
+        hinweis.className = "form-text";
+        input.insertAdjacentElement("afterend", hinweis);
+        var aktualisieren = function () {
+            var tonnen = parseFloat(input.value.replace(",", "."));
+            if (!isNaN(tonnen) && tonnen >= 0) {
+                var stueck = Math.round((tonnen * 1000000) / GRAMM_JE_STUECK[kategorie]);
+                hinweis.textContent = "≈ " + stueck.toLocaleString("de-DE") + " Stück (grobe Schätzung)";
+            } else {
+                hinweis.textContent = "";
+            }
+        };
+        input.addEventListener("input", aktualisieren);
+        aktualisieren();
+    });
 });
 </script>
 {% endblock %}

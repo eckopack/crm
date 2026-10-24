@@ -276,7 +276,12 @@ class Command(BaseCommand):
                 "firma": firma,
                 "kontakt": kontakt,
                 "geschaeftsbereich": GESCHAEFTSBEREICH_IMPORT,
-                "potenzial_tonnen": _dec(potenzial_t),
+                # 24.10.2026, auf Wunsch von Björn: Mengenpotenzial ist jetzt nach Trinkhalm/
+                # Besteck aufgeteilt (siehe Deal-Model). Die Lead-Liste kennt diese Trennung
+                # nicht - der importierte Wert landet deshalb vollständig bei "Besteck" (Björns
+                # Entscheidung: "erstmal alle mengenpotenziale bei besteck lassen, ich ändere
+                # danach manuell"), Trinkhalm bleibt leer und wird bei Bedarf manuell gepflegt.
+                "potenzial_tonnen_besteck": _dec(potenzial_t),
                 "notizen": notizen,
             }
 

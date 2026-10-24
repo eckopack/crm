@@ -9,7 +9,7 @@
 <div class="card">
     <table class="table table-hover mb-0">
         <thead>
-        <tr><th>Titel</th><th>Firma</th><th>Phase</th><th>Wert</th><th>Menge (t)</th><th>Whk.</th><th>Erw. Abschluss</th><th>Zuständig</th></tr>
+        <tr><th>Titel</th><th>Firma</th><th>Phase</th><th>Wert</th><th>Menge gesamt (t)</th><th>Whk.</th><th>Erw. Abschluss</th><th>Zuständig</th></tr>
         </thead>
         <tbody>
         {% for d in deals %}
@@ -18,7 +18,7 @@
             <td>{{ d.firma.name }}</td>
             <td><span class="badge text-bg-light border">{{ d.get_phase_display }}</span></td>
             <td>{{ d.wert|floatformat:0 }} €</td>
-            <td>{{ d.potenzial_tonnen|floatformat:2|default:"–" }}</td>
+            <td>{{ d.potenzial_tonnen_gesamt|floatformat:2|default:"–" }}</td>
             <td>{{ d.wahrscheinlichkeit }}%</td>
             <td>{{ d.erwartetes_abschlussdatum|date:"d.m.Y"|default:"–" }}</td>
             <td>{{ d.zustaendiger|default:"–" }}</td>

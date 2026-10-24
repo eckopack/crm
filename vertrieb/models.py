@@ -44,6 +44,17 @@ PHASE_STANDARD_WAHRSCHEINLICHKEIT = {
     "verloren": 0,
 }
 
+# 24.10.2026, auf Wunsch von Björn: Gramm-pro-Stück-Werte zur automatischen Umrechnung von
+# Deal.potenzial_tonnen_trinkhalm/_besteck (Tonnen) in eine geschätzte Stückzahl - siehe
+# Deal.stueck_trinkhalm/stueck_besteck unten. Trinkhalm = 1,0 g/Stück, identisch zu
+# GRAMM_JE_STUECK_STROH in Migration 0032 (ARBOBLEND). Besteck = 4,25 g/Stück, der einfache
+# Durchschnitt aus Klein- (2,5 g) und Großbesteck (6,0 g) aus derselben Migration - auf
+# Björns ausdrücklichen Wunsch gemittelt ("bei Besteck mitteln"), weil ein Deal keine
+# Aufteilung nach Besteckgröße erfasst. Das ist eine grobe Schätzung, keine exakte Angabe:
+# der tatsächliche Mix aus Klein-/Großbesteck je Deal ist nicht bekannt.
+GRAMM_JE_STUECK_TRINKHALM = Decimal("1.0")
+GRAMM_JE_STUECK_BESTECK = (Decimal("2.5") + Decimal("6.0")) / 2
+
 AKTIVITAET_TYP_CHOICES = [
     ("anruf", "Anruf"),
     ("email", "E-Mail"),
@@ -278,9 +289,21 @@ class Deal(models.Model):
         "Geschäftsbereich", max_length=30, choices=GESCHAEFTSBEREICH_CHOICES, default="sonstiges"
     )
     wert = models.DecimalField("Wert (EUR, netto)", max_digits=12, decimal_places=2, default=0)
-    potenzial_tonnen = models.DecimalField(
-        "Mengenpotenzial (Tonnen)", max_digits=10, decimal_places=2, null=True, blank=True,
-        help_text="Geschätzte Jahres-/Bezugsmenge in Tonnen, unabhängig vom EUR-Wert (z.B. aus Lead-Recherche).",
+    # 24.10.2026, auf Wunsch von Björn: das bisherige einzelne Mengenpotenzial-Feld wird nach
+    # Produktkategorie aufgeteilt, weil die Gramm-pro-Stück-Werte (und damit die daraus
+    # errechnete Stückzahl) für Trinkhalme und Besteck unterschiedlich sind (siehe
+    # GRAMM_JE_STUECK_TRINKHALM/GRAMM_JE_STUECK_BESTECK unten, aus der Rezeptur-Datenmigration
+    # 0032: Trinkhalm 1,0 g/Stück, Besteck gemittelt aus Klein-/Großbesteck). Bestehende Werte
+    # wurden per Datenmigration vollständig nach "Besteck" übernommen (Björns Entscheidung
+    # 24.10.2026: "erstmal alle mengenpotenziale bei besteck lassen, ich ändere danach
+    # manuell") - eine automatische Zuordnung zu Trinkhalm wäre geraten gewesen.
+    potenzial_tonnen_trinkhalm = models.DecimalField(
+        "Mengenpotenzial Trinkhalm (Tonnen)", max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Geschätzte Jahres-/Bezugsmenge Trinkhalme in Tonnen, unabhängig vom EUR-Wert.",
+    )
+    potenzial_tonnen_besteck = models.DecimalField(
+        "Mengenpotenzial Besteck (Tonnen)", max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Geschätzte Jahres-/Bezugsmenge Besteck in Tonnen, unabhängig vom EUR-Wert.",
     )
     phase = models.CharField("Phase", max_length=20, choices=DEAL_PHASE_CHOICES, default="lead")
     wahrscheinlichkeit = models.PositiveSmallIntegerField("Wahrscheinlichkeit (%)", default=10)
@@ -316,6 +339,31 @@ class Deal(models.Model):
     @property
     def ist_offen(self):
         return self.phase not in ("gewonnen", "verloren")
+
+    @property
+    def stueck_trinkhalm(self):
+        """Geschätzte Stückzahl aus potenzial_tonnen_trinkhalm, siehe GRAMM_JE_STUECK_TRINKHALM.
+        None, solange kein Tonnen-Wert erfasst ist (unterscheidet "nicht erfasst" von "0")."""
+        if self.potenzial_tonnen_trinkhalm is None:
+            return None
+        return (self.potenzial_tonnen_trinkhalm * Decimal("1000000")) / GRAMM_JE_STUECK_TRINKHALM
+
+    @property
+    def stueck_besteck(self):
+        """Geschätzte Stückzahl aus potenzial_tonnen_besteck, siehe GRAMM_JE_STUECK_BESTECK
+        (gemittelter Gramm-Wert aus Klein-/Großbesteck - grobe Schätzung, siehe dort)."""
+        if self.potenzial_tonnen_besteck is None:
+            return None
+        return (self.potenzial_tonnen_besteck * Decimal("1000000")) / GRAMM_JE_STUECK_BESTECK
+
+    @property
+    def potenzial_tonnen_gesamt(self):
+        """Summe aus Trinkhalm- und Besteck-Mengenpotenzial, fuer Pipeline-/Listen-Summen, die
+        bisher auf dem einzelnen potenzial_tonnen-Feld basierten. None nur, wenn beide Werte
+        fehlen - sonst wird das fehlende/leere Feld als 0 gewertet."""
+        if self.potenzial_tonnen_trinkhalm is None and self.potenzial_tonnen_besteck is None:
+            return None
+        return (self.potenzial_tonnen_trinkhalm or Decimal("0")) + (self.potenzial_tonnen_besteck or Decimal("0"))
 
     @property
     def ist_loeschbar(self):

@@ -104,12 +104,17 @@ def pipeline_kanban(request):
     spalten = []
     for key, label in DEAL_PHASE_CHOICES:
         deals = Deal.objects.filter(phase=key).select_related("firma", "zustaendiger")
+        # 24.10.2026, auf Wunsch von Björn: Mengenpotenzial ist jetzt nach Trinkhalm/Besteck
+        # aufgeteilt (siehe Deal-Model) - die Spalten-Summe bleibt die Gesamt-Tonnage ueber
+        # beide Kategorien, deshalb beide Sum()-Aggregate einzeln holen und in Python addieren
+        # (ein SQL-Sum(F()+F()) wuerde bei NULL in einer der beiden Spalten NULL ergeben).
+        tonnen_agg = deals.aggregate(trinkhalm=Sum("potenzial_tonnen_trinkhalm"), besteck=Sum("potenzial_tonnen_besteck"))
         spalten.append({
             "key": key,
             "label": label,
             "deals": deals,
             "summe": deals.aggregate(s=Sum("wert"))["s"] or 0,
-            "tonnen_summe": deals.aggregate(s=Sum("potenzial_tonnen"))["s"] or 0,
+            "tonnen_summe": (tonnen_agg["trinkhalm"] or 0) + (tonnen_agg["besteck"] or 0),
         })
     return render(request, "vertrieb/pipeline.html", {"spalten": spalten})
 

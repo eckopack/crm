@@ -68,14 +68,16 @@ class Command(BaseCommand):
         ws = wb.create_sheet("Leads")
         self._header(ws, "CRM-Export · Deals/Leads", [
             "Lead-ID (extern)", "CRM-ID", "Titel", "Firma", "Kontakt", "Geschäftsbereich", "Phase",
-            "Wert (EUR)", "Potenzial (t)", "Wahrscheinlichkeit (%)", "Gewichteter Wert (EUR)",
+            "Wert (EUR)", "Potenzial Trinkhalm (t)", "Potenzial Besteck (t)",
+            "Wahrscheinlichkeit (%)", "Gewichteter Wert (EUR)",
             "Erw. Abschluss", "Zuständiger", "Notizen",
         ])
         for d in Deal.objects.select_related("firma", "kontakt").order_by("firma__name", "titel"):
             ws.append([
                 d.externe_id, d.pk, d.titel, d.firma.name, str(d.kontakt) if d.kontakt else "",
                 d.get_geschaeftsbereich_display(), d.get_phase_display(), float(d.wert),
-                float(d.potenzial_tonnen) if d.potenzial_tonnen is not None else None,
+                float(d.potenzial_tonnen_trinkhalm) if d.potenzial_tonnen_trinkhalm is not None else None,
+                float(d.potenzial_tonnen_besteck) if d.potenzial_tonnen_besteck is not None else None,
                 d.wahrscheinlichkeit, float(d.gewichteter_wert),
                 d.erwartetes_abschlussdatum.isoformat() if d.erwartetes_abschlussdatum else "",
                 str(d.zustaendiger) if d.zustaendiger else "", d.notizen,
