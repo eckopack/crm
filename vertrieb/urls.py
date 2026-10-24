@@ -75,6 +75,13 @@ urlpatterns = [
     path("rechnungen/<int:pk>/loeschen/", views.RechnungDeleteView.as_view(), name="rechnung_delete"),
     path("rechnungen/<int:pk>/pdf/", views.rechnung_pdf_download, name="rechnung_pdf"),
     path("rechnungen/<int:pk>/versand/", views.rechnung_versand_senden_view, name="rechnung_versand"),
+    path("rechnungen/<int:pk>/zahlung/", views.rechnung_zahlung_erfassen, name="rechnung_zahlung_erfassen"),
+    path(
+        "rechnungen/<int:pk>/zahlung/<int:zahlung_pk>/loeschen/",
+        views.rechnung_zahlung_loeschen, name="rechnung_zahlung_loeschen",
+    ),
+
+    path("offene-posten/", views.offene_posten_liste, name="offene_posten_list"),
 
     path("emails/", views.EmailVersandListView.as_view(), name="email_versand_list"),
     path("nachfass/", views.MusterboxNachfassStatusListView.as_view(), name="musterbox_nachfass_list"),

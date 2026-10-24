@@ -3,7 +3,7 @@ from django.contrib import admin
 from .models import (
     Aktivitaet, Angebot, AngebotNachfassStatus, AngebotNachfassVorlage, AngebotPosition,
     Artikel, Charge, Deal, Firma, Kontakt, Lagerbewegung, MusterboxNachfassStatus,
-    MusterboxNachfassVorlage, Preisstaffel, Rezeptur,
+    MusterboxNachfassVorlage, Preisstaffel, Rechnung, RechnungZahlung, Rezeptur,
 )
 
 
@@ -210,3 +210,15 @@ class LagerbewegungAdmin(admin.ModelAdmin):
         if not change and obj.erstellt_von_id is None:
             obj.erstellt_von = request.user
         super().save_model(request, obj, form, change)
+
+
+@admin.register(RechnungZahlung)
+class RechnungZahlungAdmin(admin.ModelAdmin):
+    """24.10.2026, auf Wunsch von Björn (Offene-Posten-Uebersicht): hier ebenfalls
+    nutzbar fuer Korrekturen - Rechnung.status wird dabei nicht hier, sondern ereignis-
+    basiert per Signal aktualisiert (siehe signals.py), funktioniert also unabhaengig
+    davon, ob eine Zahlung ueber views.rechnung_zahlung_erfassen oder hier im Admin
+    angelegt/geaendert/geloescht wird."""
+    list_display = ("rechnung", "betrag", "datum", "notiz", "erfasst_am")
+    list_filter = ("datum",)
+    search_fields = ("rechnung__nummer", "rechnung__deal__firma__name")

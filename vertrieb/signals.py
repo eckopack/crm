@@ -6,16 +6,23 @@ Seit 23.10.2026 zusätzlich: startet/beendet die Angebot-Nachfasskette an den Ku
 AngebotNachfassStatus in models.py) anhand von Angebot.status-Wechseln - rein ereignis-
 basiert, analog zum Deal-Phasenwechsel oben. Das eigentliche Verschicken der Mails macht
 weiterhin der tägliche Cron (management/commands/nachfass_pruefen.py), hier wird nur die
-Kette gestartet (Status->"versendet") bzw. vorzeitig beendet (Status weg von "versendet")."""
+Kette gestartet (Status->"versendet") bzw. vorzeitig beendet (Status weg von "versendet").
+
+Seit 24.10.2026 zusätzlich: haelt Rechnung.status synchron mit den erfassten
+RechnungZahlung-Eintraegen (siehe Model-Doku bei Rechnung.bezahlter_betrag) - ereignisbasiert
+an die Zahlung gekoppelt (post_save/post_delete), nicht an die Erfassungs-View
+(views.rechnung_zahlung_erfassen), damit der Status auch bei einer Erfassung/Korrektur ueber
+das Admin-Interface korrekt bleibt."""
 
 from datetime import timedelta
 
-from django.db.models.signals import pre_save
+from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 from django.utils import timezone
 
 from .models import (
     ANGEBOT_NACHFASS_INTERVALLE_TAGE, Aktivitaet, Angebot, AngebotNachfassStatus, Deal,
+    Rechnung, RechnungZahlung,
 )
 
 
@@ -94,3 +101,31 @@ def angebot_status_wechsel(sender, instance, **kwargs):
         bestehender.beendet_am = jetzt
         bestehender.beendet_grund = "abgelaufen" if instance.status == "abgelaufen" else "reagiert"
         bestehender.save(update_fields=["aktiv", "beendet_am", "beendet_grund"])
+
+
+def _rechnung_bezahlt_status_aktualisieren(rechnung):
+    """Setzt Rechnung.status anhand der tatsaechlich erfassten Zahlungen: "bezahlt", sobald
+    die Summe die Bruttosumme erreicht/uebersteigt, zurueck auf "versendet", falls eine
+    Zahlung nachtraeglich korrigiert/geloescht wurde und der Betrag nicht mehr reicht.
+    Ruehrt bewusst "entwurf" und "storniert" nicht an - eine Zahlung zu einer Rechnung, die
+    noch nicht versendet oder bereits storniert ist, aendert daran nichts."""
+    if rechnung.status == "versendet" and rechnung.ist_vollstaendig_bezahlt:
+        rechnung.status = "bezahlt"
+        rechnung.save(update_fields=["status"])
+    elif rechnung.status == "bezahlt" and not rechnung.ist_vollstaendig_bezahlt:
+        rechnung.status = "versendet"
+        rechnung.save(update_fields=["status"])
+
+
+@receiver(post_save, sender=RechnungZahlung)
+def rechnungzahlung_gespeichert(sender, instance, **kwargs):
+    _rechnung_bezahlt_status_aktualisieren(instance.rechnung)
+
+
+@receiver(post_delete, sender=RechnungZahlung)
+def rechnungzahlung_geloescht(sender, instance, **kwargs):
+    try:
+        rechnung = Rechnung.objects.get(pk=instance.rechnung_id)
+    except Rechnung.DoesNotExist:
+        return
+    _rechnung_bezahlt_status_aktualisieren(rechnung)
