@@ -242,8 +242,12 @@ class Command(BaseCommand):
             if not r[0]:
                 continue
             lead_id, titel, firmen_id, produktbedarf, potenzial_t, status, prioritaet, zustaendig, \
-                naechster_schritt, wiedervorlage, kontaktmonat, termin, herkunft, gaiasip, \
+                naechster_schritt, wiedervorlage, kontaktmonat, termin, herkunft, _gaiasip_ungenutzt, \
                 pruefhinweis, gespraechsnotiz, originalzeile = r[:17]
+            # 24.10.2026, auf Wunsch von Björn ("Gaiasip Interesse bitte überall entfernen"):
+            # die Spalte wird weiterhin mit eingelesen (Positions-Unpacking der Excel-Zeile),
+            # aber nicht mehr in die Notizen übernommen. Bestehende "Gaiasip-Interesse: ..."-
+            # Zeilen in schon importierten Deals bereinigt Migration 0035.
 
             firma = firma_map.get(_s(firmen_id))
             if firma is None:
@@ -256,8 +260,6 @@ class Command(BaseCommand):
             notiz_teile = []
             if produktbedarf:
                 notiz_teile.append(f"Produktbedarf: {_s(produktbedarf)}")
-            if gaiasip:
-                notiz_teile.append(f"Gaiasip-Interesse: {_s(gaiasip)}")
             if herkunft:
                 notiz_teile.append(f"Herkunft/Kürzel: {_s(herkunft)}")
             if kontaktmonat:
