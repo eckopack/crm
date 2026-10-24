@@ -32,12 +32,44 @@
         <div class="card mb-3">
             <div class="card-header fw-semibold">Lager</div>
             <ul class="list-group list-group-flush">
-                <li class="list-group-item"><strong>Lagerbestand aktuell:</strong> {{ artikel.lagerbestand_aktuell|default:"unbekannt" }}</li>
+                <li class="list-group-item">
+                    <strong>Lagerbestand aktuell:</strong> {{ artikel.lagerbestand_anzeige|default:"unbekannt" }}
+                    {% if artikel.fuehrt_chargen %}<span class="text-muted small">(berechnet aus Chargen)</span>{% endif %}
+                </li>
                 <li class="list-group-item"><strong>Mindestbestand:</strong> {{ artikel.mindestbestand|default:"unbekannt" }}</li>
                 <li class="list-group-item"><strong>Lagerort:</strong> {{ artikel.lagerort|default:"–" }}</li>
                 <li class="list-group-item"><strong>Lieferant:</strong> {{ artikel.lieferant|default:artikel.lieferant_freitext|default:"–" }}</li>
             </ul>
+            {% if artikel.fuehrt_chargen %}
+            <div class="card-body border-top">
+                <a href="{% url 'vertrieb:wareneingang_erfassen' %}?artikel={{ artikel.pk }}" class="btn btn-sm btn-outline-primary">+ Wareneingang buchen</a>
+            </div>
+            {% endif %}
         </div>
+        {% if artikel.fuehrt_chargen %}
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Chargen</div>
+            <table class="table table-sm mb-0">
+                <thead><tr><th>Charge</th><th>Wareneingang</th><th>MHD</th><th>Lieferant</th><th>Restbestand</th></tr></thead>
+                <tbody>
+                {% for charge in chargen %}
+                <tr>
+                    <td>{{ charge.chargennummer|default:charge.pk }}</td>
+                    <td>{{ charge.wareneingang_datum|date:"d.m.Y" }}</td>
+                    <td>
+                        {{ charge.mindesthaltbarkeitsdatum|date:"d.m.Y"|default:"–" }}
+                        {% if charge.abgelaufen %}<span class="badge text-bg-danger">abgelaufen</span>{% endif %}
+                    </td>
+                    <td>{{ charge.lieferant|default:charge.lieferant_freitext|default:"–" }}</td>
+                    <td>{{ charge.bestand_aktuell }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5" class="text-muted text-center py-3">Noch keine Charge erfasst.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
         {% if artikel.beschreibung or artikel.notizen %}
         <div class="card mb-3">
             <div class="card-header fw-semibold">Beschreibung / Notizen</div>

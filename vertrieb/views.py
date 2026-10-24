@@ -9,7 +9,7 @@ from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.core.paginator import Paginator
 from django.core.validators import validate_email
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Sum
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -26,11 +26,13 @@ from .forms import (
     LieferscheinForm, LieferscheinPositionFormSet, LieferscheinVersandForm,
     RahmenvereinbarungForm, RahmenvereinbarungPositionFormSet,
     RechnungForm, RechnungKorrekturForm, RechnungPositionFormSet, RechnungZahlungForm,
+    WareneingangForm,
 )
 from .models import (
     ANGEBOT_NACHFASS_SCHRITTE, DEAL_PHASE_CHOICES, MUSTERKARTON_ARTIKEL,
-    PHASE_STANDARD_WAHRSCHEINLICHKEIT, Aktivitaet, Angebot, AngebotNachfassStatus, Artikel, Deal,
-    EmailVersand, Firma, Kontakt, MusterboxNachfassStatus, Packschein, PackscheinPosition,
+    PHASE_STANDARD_WAHRSCHEINLICHKEIT, Aktivitaet, Angebot, AngebotNachfassStatus, Artikel,
+    Charge, Deal, EmailVersand, Firma, Kontakt, Lagerbewegung, MATERIALTYPEN_MIT_CHARGENBESTAND,
+    MusterboxNachfassStatus, Packschein, PackscheinPosition,
     Lieferschein, Rahmenvereinbarung, Rechnung, RechnungPosition, RechnungZahlung,
 )
 from django.forms import inlineformset_factory
@@ -1729,6 +1731,8 @@ class ArtikelDetailView(LoginRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["preisstaffeln"] = self.object.preisstaffeln.all()
+        if self.object.fuehrt_chargen:
+            context["chargen"] = self.object.chargen.select_related("lieferant").all()
         return context
 
 
@@ -1748,6 +1752,59 @@ class ArtikelDeleteView(LoginRequiredMixin, DeleteView):
     model = Artikel
     template_name = "vertrieb/confirm_delete.html"
     success_url = reverse_lazy("vertrieb:artikel_list")
+
+
+@login_required
+def wareneingang_erfassen(request):
+    """Bucht einen Wareneingang für Rohmaterial/Verpackungsmaterial (Phase 2
+    Materialwirtschaft, 24.10.2026, auf Wunsch von Björn - Handelsware und Fertigware
+    bleiben bewusst außen vor, siehe MATERIALTYPEN_MIT_CHARGENBESTAND-Kommentar in
+    models.py). Legt in EINER Transaktion eine neue Charge (Startbestand 0) UND die
+    zugehörige erste Lagerbewegung vom Typ "Wareneingang" an - Lagerbewegung.save()
+    schreibt den Chargenbestand dabei automatisch fort (siehe Model-Doku), damit nie eine
+    Charge ohne zugehörige Bewegung entsteht, auch nicht bei einem Fehler mittendrin."""
+    artikel_id = request.GET.get("artikel") or request.POST.get("artikel")
+    vorausgewaehlter_artikel = None
+    if artikel_id:
+        vorausgewaehlter_artikel = Artikel.objects.filter(
+            pk=artikel_id, materialtyp__in=MATERIALTYPEN_MIT_CHARGENBESTAND,
+        ).first()
+
+    if request.method == "POST":
+        form = WareneingangForm(request.POST)
+        if form.is_valid():
+            with transaction.atomic():
+                charge = form.save()
+                Lagerbewegung.objects.create(
+                    artikel=charge.artikel, charge=charge, bewegungstyp="wareneingang",
+                    menge=charge.menge_eingang,
+                    erstellt_von=request.user if request.user.is_authenticated else None,
+                )
+            messages.success(
+                request,
+                f"Wareneingang gebucht: {charge.menge_eingang} {charge.artikel.get_einheit_display()} "
+                f"{charge.artikel.artikelnummer} (Charge {charge.chargennummer or charge.pk}).",
+            )
+            return redirect(charge.artikel.get_absolute_url())
+    else:
+        initial = {}
+        if vorausgewaehlter_artikel:
+            initial["artikel"] = vorausgewaehlter_artikel.pk
+        form = WareneingangForm(initial=initial)
+    return render(request, "vertrieb/wareneingang_form.html", {"form": form})
+
+
+class LagerbewegungListView(LoginRequiredMixin, ListView):
+    """Unveränderliches Bewegungsjournal (Phase 2 Materialwirtschaft, 24.10.2026) - rein
+    lesend, da Lagerbewegungen laut Modell nie editiert/gelöscht werden (siehe
+    Lagerbewegung.delete())."""
+    model = Lagerbewegung
+    template_name = "vertrieb/lagerbewegung_list.html"
+    context_object_name = "bewegungen"
+    paginate_by = 50
+
+    def get_queryset(self):
+        return Lagerbewegung.objects.select_related("artikel", "charge", "erstellt_von").all()
 
 
 @login_required
@@ -1783,7 +1840,7 @@ def artikel_daten_json(request, pk):
         "steuersatz": str(artikel.ust_satz),
         "verkaufspreis_flatrate": str(artikel.verkaufspreis) if artikel.verkaufspreis is not None else None,
         "preisstaffeln": staffeln,
-        "lagerbestand_aktuell": str(artikel.lagerbestand_aktuell) if artikel.lagerbestand_aktuell is not None else None,
+        "lagerbestand_aktuell": str(artikel.lagerbestand_anzeige) if artikel.lagerbestand_anzeige is not None else None,
         "mindestbestand": str(artikel.mindestbestand) if artikel.mindestbestand is not None else None,
         "unter_mindestbestand": artikel.unter_mindestbestand,
         "status": artikel.get_status_display() if artikel.status else "",

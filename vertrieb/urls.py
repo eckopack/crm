@@ -96,4 +96,7 @@ urlpatterns = [
     path("artikel/<int:pk>/daten.json", views.artikel_daten_json, name="artikel_daten_json"),
     path("artikel/preisliste/", views.artikelliste_versenden, name="artikelliste_versenden"),
     path("artikel/preisliste/pdf/", views.artikelliste_pdf_download, name="artikelliste_pdf"),
+
+    path("lagerwirtschaft/wareneingang/", views.wareneingang_erfassen, name="wareneingang_erfassen"),
+    path("lagerwirtschaft/bewegungen/", views.LagerbewegungListView.as_view(), name="lagerbewegung_list"),
 ]
