@@ -152,8 +152,8 @@ USE_TZ = True
 # NICHT den value=""-Wert, den Django-Formularfelder in <input>-Elemente schreiben - die
 # bleiben unlokalisiert (Field.localize=False ist der Default und wurde hier nirgends
 # gesetzt), bleiben also fuer <input type="number"> weiterhin korrekt mit Punkt als
-# Dezimaltrennzeichen geschrieben und damit vom Browser verarbeitbar. Siehe
-# verify_zahlenformat_tausendertrennzeichen.py fuer den Verifikationsnachweis dieser Annahme.
+# Dezimaltrennzeichen geschrieben und damit vom Browser verarbeitbar - siehe
+# verify_deal_list_summenzeile.py fuer den Verifikationsnachweis dieser Annahme.
 USE_THOUSAND_SEPARATOR = True
 
 
