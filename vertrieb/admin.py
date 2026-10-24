@@ -3,7 +3,7 @@ from django.contrib import admin
 from .models import (
     Aktivitaet, Angebot, AngebotNachfassStatus, AngebotNachfassVorlage, AngebotPosition,
     Artikel, Charge, Deal, Firma, Kontakt, Lagerbewegung, MusterboxNachfassStatus,
-    MusterboxNachfassVorlage, Preisstaffel, Rechnung, RechnungZahlung, Rezeptur,
+    MusterboxNachfassVorlage, Preisstaffel, Produktionsbuchung, Rechnung, RechnungZahlung, Rezeptur,
 )
 
 
@@ -212,10 +212,13 @@ class AngebotNachfassStatusAdmin(admin.ModelAdmin):
 class LagerbewegungAdmin(admin.ModelAdmin):
     """Reines Journal: anlegen ja, aendern/loeschen nein (siehe Lagerbewegung.delete()
     und Moduldoku in models.py) - Korrekturen laufen ueber eine neue Gegenbuchung."""
-    list_display = ("datum", "artikel", "bewegungstyp", "menge", "charge", "lieferschein", "erstellt_von")
+    list_display = (
+        "datum", "artikel", "bewegungstyp", "menge", "charge", "lieferschein",
+        "produktionsbuchung", "erstellt_von",
+    )
     list_filter = ("bewegungstyp", "artikel")
     search_fields = ("artikel__artikelnummer",)
-    autocomplete_fields = ["artikel", "charge"]
+    autocomplete_fields = ["artikel", "charge", "produktionsbuchung"]
     readonly_fields = ("datum",)
 
     def has_change_permission(self, request, obj=None):
@@ -228,6 +231,29 @@ class LagerbewegungAdmin(admin.ModelAdmin):
         if not change and obj.erstellt_von_id is None:
             obj.erstellt_von = request.user
         super().save_model(request, obj, form, change)
+
+
+@admin.register(Produktionsbuchung)
+class ProduktionsbuchungAdmin(admin.ModelAdmin):
+    """25.10.2026, Phase 3: rein lesend im Admin - eine Produktionsbuchung besteht immer
+    aus mehreren, in einer Transaktion zusammengehörigen Lagerbewegungen plus einer neu
+    angelegten Fertigware-Charge (siehe views.produktionsbuchung_erfassen) und Mengen-
+    Prüfungen gegen den aktuellen Chargenbestand. Über den Admin angelegt/geändert würde
+    das alles umgehen - die Bedienoberfläche unter "Lagerwirtschaft -> Produktion buchen"
+    ist deshalb der einzige vorgesehene Weg, eine Produktionsbuchung zu erstellen."""
+    list_display = ("datum", "fertigprodukt", "menge_ist", "menge_ausschuss", "zustaendiger", "erstellt_von")
+    list_filter = ("fertigprodukt",)
+    search_fields = ("fertigprodukt__artikelnummer",)
+    autocomplete_fields = ["fertigprodukt", "charge", "zustaendiger"]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(RechnungZahlung)

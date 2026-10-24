@@ -1290,7 +1290,14 @@ MATERIALTYP_CHOICES = [
 # noch nicht gebaut) eine Buchungsmöglichkeit bekommt. Vorher auf "berechnet" umzustellen
 # würde bei allen 30 LUAMO-Fertigprodukten dauerhaft eine konfident falsche 0 anzeigen,
 # statt wie bisher ehrlich "unbekannt" - siehe Chat-Verlauf 24.10.2026.
-MATERIALTYPEN_MIT_CHARGENBESTAND = ("rohmaterial", "verpackungsmaterial")
+# 25.10.2026, Phase 3 Materialwirtschaft (Produktionsbuchung, auf Wunsch von Björn -
+# "phase 3 starten"): "fertigware" ergänzt. Bis dahin bewusst ausgeklammert (siehe
+# Artikel.lagerbestand_anzeige-Kommentar "vorerst auch Fertigware"), weil es schlicht
+# noch keine Quelle für einen Fertigware-Zugang gab - das ändert sich erst mit
+# Produktionsbuchung unten, die für jede Buchung eine eigene Fertigware-Charge anlegt.
+# War im Charge-Docstring von Anfang an als Ziel benannt ("...eines Artikels
+# (Rohmaterial, Verpackungsmaterial ODER FERTIGWARE)").
+MATERIALTYPEN_MIT_CHARGENBESTAND = ("rohmaterial", "verpackungsmaterial", "fertigware")
 
 VERTRIEBSKANAL_CHOICES = [
     ("standard", "Standard (Großhandel/B2B)"),
@@ -1639,6 +1646,12 @@ class Lagerbewegung(models.Model):
         Lieferschein, verbose_name="Lieferschein (bei Warenausgang)", on_delete=models.SET_NULL,
         null=True, blank=True, related_name="lagerbewegungen",
     )
+    produktionsbuchung = models.ForeignKey(
+        "Produktionsbuchung", verbose_name="Produktionsbuchung (bei Materialverbrauch/Fertigwarenzugang)",
+        on_delete=models.PROTECT, null=True, blank=True, related_name="lagerbewegungen",
+        help_text="25.10.2026, Phase 3: verknüpft je Produktionsbuchung die Verbrauchs- und "
+                   "Zugangsbewegungen, die gemeinsam in einer Transaktion entstanden sind.",
+    )
     erstellt_von = models.ForeignKey(
         settings.AUTH_USER_MODEL, verbose_name="Erfasst von", on_delete=models.SET_NULL,
         null=True, blank=True, related_name="+",
@@ -1668,6 +1681,83 @@ class Lagerbewegung(models.Model):
             "Lagerbewegungen werden nie gelöscht - für Korrekturen eine neue, "
             "gegenläufige Lagerbewegung anlegen."
         )
+
+
+class Produktionsbuchung(models.Model):
+    """Eine Produktionsbuchung (Phase 3 Materialwirtschaft, 25.10.2026, auf Wunsch von Björn
+    "phase 3 starten" - direkte Fortsetzung von Phase 1 Lieferanten-Stammdaten/Phase 2
+    Wareneingang). Dokumentiert einen abgeschlossenen Produktionslauf eines Fertigprodukts
+    und erzeugt (siehe views.produktionsbuchung_erfassen, in EINER Transaktion) sowohl den
+    Verbrauch des laut Rezeptur benötigten Rohmaterials/Verpackungsmaterials als auch den
+    Zugang der neu entstandenen Fertigware-Charge - jeweils als eigene Lagerbewegung
+    (bewegungstyp "produktion_verbrauch" bzw. "produktion_zugang", beide bereits seit
+    Phase A als BEWEGUNGSTYP_CHOICES vorgesehen), verknüpft über Lagerbewegung.
+    produktionsbuchung.
+
+    Scope-Entscheidungen von Björn (25.10.2026, AskUserQuestion vor dem Bau):
+    - Reicht die für eine Rezeptur-Zeile gewählte Rohmaterial-Charge mengenmäßig nicht
+      aus, wird die Buchung BLOCKIERT statt ins Minus zu buchen (siehe
+      ProduktionsbuchungForm.clean() sowie die erneute Prüfung mit select_for_update()
+      unmittelbar vor dem Speichern in views.produktionsbuchung_erfassen - Schutz gegen
+      zwei gleichzeitige Buchungen, die sich dieselbe Charge "wegschnappen").
+    - Pro Rezeptur-Zeile wird genau EINE vom Nutzer gewählte Charge verbraucht, keine
+      automatische Aufteilung über mehrere Chargen hinweg. Reicht eine Charge nicht, sind
+      zwei getrennte Produktionsbuchungen nötig (eine je Charge) - bewusst einfacher
+      erster Schritt, automatisches FIFO-Splitten wäre eine spätere Erweiterung.
+    - menge_ausschuss fließt mit in den Rohmaterialverbrauch ein (Annahme: Ausschuss
+      entsteht aus demselben eingesetzten Rohmaterial wie die Gutmenge) - nur menge_ist
+      erzeugt tatsächlichen Fertigware-Zugang.
+
+    Fertigware bekommt mit dieser Phase erstmals eine eigene Charge (siehe
+    MATERIALTYPEN_MIT_CHARGENBESTAND oben) - im Charge-Docstring von Anfang an als Ziel
+    benannt, aber bis jetzt mangels Zugangsquelle nicht genutzt. Artikel.
+    lagerbestand_aktuell wird für Fertigware ab der ersten Produktionsbuchung eines
+    Artikels nicht mehr angezeigt (siehe Artikel.lagerbestand_anzeige) - ein eventuell
+    vorhandener manueller Altwert bleibt zwar in der Datenbank stehen, taucht aber
+    nirgends mehr auf."""
+    fertigprodukt = models.ForeignKey(
+        Artikel, verbose_name="Fertigprodukt", on_delete=models.PROTECT,
+        related_name="produktionsbuchungen", limit_choices_to={"materialtyp": "fertigware"},
+    )
+    charge = models.OneToOneField(
+        Charge, verbose_name="Erzeugte Fertigware-Charge", on_delete=models.PROTECT,
+        related_name="produktionsbuchung",
+    )
+    menge_soll = models.DecimalField(
+        "Geplante Menge (Soll)", max_digits=14, decimal_places=3, null=True, blank=True,
+        help_text="Optional, z. B. aus einem Produktionsplan. Leer lassen, falls keine Planmenge vorliegt.",
+    )
+    menge_ist = models.DecimalField(
+        "Produzierte Gutmenge (Ist)", max_digits=14, decimal_places=3,
+        help_text="Tatsächlich entstandene, verwendbare Fertigware - bestimmt den Lagerzugang.",
+    )
+    menge_ausschuss = models.DecimalField(
+        "Ausschussmenge", max_digits=14, decimal_places=3, default=Decimal("0"),
+        help_text="Nicht verwendbare Produktion. Verbraucht ebenfalls Rohmaterial (siehe "
+                   "Klassen-Doku), erzeugt aber keinen Fertigware-Zugang.",
+    )
+    datum = models.DateTimeField("Datum/Zeit der Produktion", default=timezone.now)
+    zustaendiger = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="Zuständiger Mitarbeiter", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="produktionsbuchungen",
+    )
+    notizen = models.TextField("Notizen", blank=True)
+    erstellt_von = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="Erfasst von", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="+",
+    )
+    erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Produktionsbuchung"
+        verbose_name_plural = "Produktionsbuchungen"
+        ordering = ["-datum", "-pk"]
+
+    def __str__(self):
+        return f"{self.fertigprodukt.artikelnummer}: {self.menge_ist} am {self.datum:%d.%m.%Y}"
+
+    def get_absolute_url(self):
+        return reverse("vertrieb:produktionsbuchung_detail", args=[self.pk])
 
 
 MUSTERBOX_NACHFASS_WOCHEN = 8

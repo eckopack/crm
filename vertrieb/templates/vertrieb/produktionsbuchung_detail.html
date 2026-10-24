@@ -1,0 +1,54 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Produktionsbuchung – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<h2 class="mb-3">Produktionsbuchung: {{ buchung.fertigprodukt.artikelnummer }}</h2>
+
+<div class="row g-3">
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Produktion</div>
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item"><strong>Fertigprodukt:</strong>
+                    <a href="{{ buchung.fertigprodukt.get_absolute_url }}">{{ buchung.fertigprodukt.artikelnummer }} – {{ buchung.fertigprodukt.bezeichnung }}</a>
+                </li>
+                <li class="list-group-item"><strong>Datum:</strong> {{ buchung.datum|date:"d.m.Y H:i" }}</li>
+                <li class="list-group-item"><strong>Geplante Menge (Soll):</strong> {{ buchung.menge_soll|default:"–" }}</li>
+                <li class="list-group-item"><strong>Gutmenge (Ist):</strong> {{ buchung.menge_ist }} {{ buchung.fertigprodukt.get_einheit_display }}</li>
+                <li class="list-group-item"><strong>Ausschuss:</strong> {{ buchung.menge_ausschuss }} {{ buchung.fertigprodukt.get_einheit_display }}</li>
+                <li class="list-group-item"><strong>Zuständiger Mitarbeiter:</strong> {{ buchung.zustaendiger|default:"–" }}</li>
+                <li class="list-group-item"><strong>Erfasst von:</strong> {{ buchung.erstellt_von|default:"–" }} am {{ buchung.erstellt_am|date:"d.m.Y H:i" }}</li>
+            </ul>
+            {% if buchung.notizen %}
+            <div class="card-body border-top">{{ buchung.notizen|linebreaks }}</div>
+            {% endif %}
+        </div>
+        <div class="card">
+            <div class="card-header fw-semibold">Erzeugte Fertigware-Charge</div>
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item"><strong>Charge:</strong> {{ buchung.charge.chargennummer|default:buchung.charge.pk }}</li>
+                <li class="list-group-item"><strong>MHD:</strong> {{ buchung.charge.mindesthaltbarkeitsdatum|date:"d.m.Y"|default:"–" }}</li>
+                <li class="list-group-item"><strong>Restbestand dieser Charge:</strong> {{ buchung.charge.bestand_aktuell }}</li>
+            </ul>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header fw-semibold">Rohmaterial-Verbrauch</div>
+            <table class="table table-sm mb-0">
+                <thead><tr><th>Artikel</th><th>Charge</th><th>Menge</th></tr></thead>
+                <tbody>
+                {% for bewegung in verbrauchsbewegungen %}
+                <tr>
+                    <td><a href="{{ bewegung.artikel.get_absolute_url }}">{{ bewegung.artikel.artikelnummer }}</a></td>
+                    <td>{{ bewegung.charge.chargennummer|default:bewegung.charge.pk }}</td>
+                    <td class="text-danger">{{ bewegung.menge }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="3" class="text-muted text-center py-3">Kein Rohmaterial-Verbrauch erfasst.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

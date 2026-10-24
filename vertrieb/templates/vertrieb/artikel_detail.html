@@ -40,7 +40,11 @@
                 <li class="list-group-item"><strong>Lagerort:</strong> {{ artikel.lagerort|default:"–" }}</li>
                 <li class="list-group-item"><strong>Lieferant:</strong> {{ artikel.lieferant|default:artikel.lieferant_freitext|default:"–" }}</li>
             </ul>
-            {% if artikel.fuehrt_chargen %}
+            {% if artikel.materialtyp == "fertigware" %}
+            <div class="card-body border-top">
+                <a href="{% url 'vertrieb:produktionsbuchung_erfassen' %}?fertigprodukt={{ artikel.pk }}" class="btn btn-sm btn-outline-primary">+ Produktion buchen</a>
+            </div>
+            {% elif artikel.fuehrt_chargen %}
             <div class="card-body border-top">
                 <a href="{% url 'vertrieb:wareneingang_erfassen' %}?artikel={{ artikel.pk }}" class="btn btn-sm btn-outline-primary">+ Wareneingang buchen</a>
             </div>

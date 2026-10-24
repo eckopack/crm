@@ -101,4 +101,10 @@ urlpatterns = [
 
     path("lagerwirtschaft/wareneingang/", views.wareneingang_erfassen, name="wareneingang_erfassen"),
     path("lagerwirtschaft/bewegungen/", views.LagerbewegungListView.as_view(), name="lagerbewegung_list"),
+    path("lagerwirtschaft/produktion/", views.produktionsbuchung_erfassen, name="produktionsbuchung_erfassen"),
+    path("lagerwirtschaft/produktion/liste/", views.ProduktionsbuchungListView.as_view(), name="produktionsbuchung_list"),
+    path(
+        "lagerwirtschaft/produktion/<int:pk>/", views.ProduktionsbuchungDetailView.as_view(),
+        name="produktionsbuchung_detail",
+    ),
 ]

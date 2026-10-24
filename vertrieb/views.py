@@ -24,6 +24,7 @@ from .forms import (
     BonusstaffelFormSet, DealForm, FirmaForm, KontaktForm,
     PackscheinForm, PackscheinPositionFormSet, PackscheinVersandForm,
     LieferscheinForm, LieferscheinPositionFormSet, LieferscheinVersandForm,
+    ProduktionsbuchungForm,
     RahmenvereinbarungForm, RahmenvereinbarungPositionFormSet,
     RechnungForm, RechnungKorrekturForm, RechnungPositionFormSet, RechnungZahlungForm,
     WareneingangForm,
@@ -33,7 +34,7 @@ from .models import (
     GRAMM_JE_STUECK_TRINKHALM, MUSTERKARTON_ARTIKEL,
     PHASE_STANDARD_WAHRSCHEINLICHKEIT, Aktivitaet, Angebot, AngebotNachfassStatus, Artikel,
     Charge, Deal, EmailVersand, Firma, Kontakt, Lagerbewegung, MATERIALTYPEN_MIT_CHARGENBESTAND,
-    MusterboxNachfassStatus, Packschein, PackscheinPosition,
+    MusterboxNachfassStatus, Packschein, PackscheinPosition, Produktionsbuchung,
     Lieferschein, Rahmenvereinbarung, Rechnung, RechnungPosition, RechnungZahlung,
 )
 from django.forms import inlineformset_factory
@@ -1865,16 +1866,17 @@ class ArtikelDeleteView(LoginRequiredMixin, DeleteView):
 def wareneingang_erfassen(request):
     """Bucht einen Wareneingang für Rohmaterial/Verpackungsmaterial (Phase 2
     Materialwirtschaft, 24.10.2026, auf Wunsch von Björn - Handelsware und Fertigware
-    bleiben bewusst außen vor, siehe MATERIALTYPEN_MIT_CHARGENBESTAND-Kommentar in
-    models.py). Legt in EINER Transaktion eine neue Charge (Startbestand 0) UND die
-    zugehörige erste Lagerbewegung vom Typ "Wareneingang" an - Lagerbewegung.save()
-    schreibt den Chargenbestand dabei automatisch fort (siehe Model-Doku), damit nie eine
-    Charge ohne zugehörige Bewegung entsteht, auch nicht bei einem Fehler mittendrin."""
+    bleiben bewusst außen vor; Fertigware bekommt ihren Zugang seit Phase 3 über die
+    Produktionsbuchung, siehe WareneingangForm-Docstring). Legt in EINER Transaktion eine
+    neue Charge (Startbestand 0) UND die zugehörige erste Lagerbewegung vom Typ
+    "Wareneingang" an - Lagerbewegung.save() schreibt den Chargenbestand dabei automatisch
+    fort (siehe Model-Doku), damit nie eine Charge ohne zugehörige Bewegung entsteht, auch
+    nicht bei einem Fehler mittendrin."""
     artikel_id = request.GET.get("artikel") or request.POST.get("artikel")
     vorausgewaehlter_artikel = None
     if artikel_id:
         vorausgewaehlter_artikel = Artikel.objects.filter(
-            pk=artikel_id, materialtyp__in=MATERIALTYPEN_MIT_CHARGENBESTAND,
+            pk=artikel_id, materialtyp__in=["rohmaterial", "verpackungsmaterial"],
         ).first()
 
     if request.method == "POST":
@@ -1912,6 +1914,130 @@ class LagerbewegungListView(LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         return Lagerbewegung.objects.select_related("artikel", "charge", "erstellt_von").all()
+
+
+@login_required
+def produktionsbuchung_erfassen(request):
+    """Bucht eine Produktionsbuchung (Phase 3 Materialwirtschaft, 25.10.2026, auf Wunsch
+    von Björn "phase 3 starten"). Zweistufig, weil die Rohmaterial-Chargenfelder von der
+    Rezeptur des gewählten Fertigprodukts abhängen (siehe ProduktionsbuchungForm): zuerst
+    wird nur das Fertigprodukt gewählt (?fertigprodukt=<pk>, analog zu
+    wareneingang_erfassen), danach rendert dasselbe View das vollständige Formular mit
+    den dynamisch erzeugten Chargenfeldern.
+
+    Legt in EINER Transaktion an: eine neue Fertigware-Charge (Startbestand 0), eine
+    Lagerbewegung "produktion_zugang" dafür, sowie je Rezeptur-Zeile eine Lagerbewegung
+    "produktion_verbrauch" auf der vom Nutzer gewählten Rohmaterial-Charge. Prüft die
+    Chargenbestände unmittelbar vor dem Schreiben ein zweites Mal mit
+    select_for_update() - die erste Prüfung läuft bereits in
+    ProduktionsbuchungForm.clean(), kann aber durch eine zweite, zwischenzeitliche
+    Buchung überholt worden sein. Reicht der Bestand dann nicht mehr, wird NICHTS
+    gebucht (Björns Entscheidung "blockieren statt ins Minus buchen", 25.10.2026)."""
+    fertigprodukt_id = request.GET.get("fertigprodukt") or request.POST.get("fertigprodukt")
+    fertigprodukt = None
+    if fertigprodukt_id:
+        fertigprodukt = Artikel.objects.filter(pk=fertigprodukt_id, materialtyp="fertigware").first()
+
+    if fertigprodukt is None:
+        fertigprodukte = Artikel.objects.filter(materialtyp="fertigware").order_by("artikelnummer")
+        return render(
+            request, "vertrieb/produktionsbuchung_fertigprodukt_waehlen.html",
+            {"fertigprodukte": fertigprodukte},
+        )
+
+    buchung = None
+    if request.method == "POST":
+        form = ProduktionsbuchungForm(fertigprodukt, request.POST)
+        if form.is_valid():
+            try:
+                with transaction.atomic():
+                    gesamtmenge = form.cleaned_data["menge_ist"] + form.cleaned_data["menge_ausschuss"]
+                    verbrauchszeilen = []
+                    for zeile in form.rezeptur_zeilen:
+                        gewaehlte_charge = form.cleaned_data[f"charge_{zeile.pk}"]
+                        aktuelle_charge = Charge.objects.select_for_update().get(pk=gewaehlte_charge.pk)
+                        benoetigt = zeile.menge_je_einheit * gesamtmenge
+                        if aktuelle_charge.bestand_aktuell < benoetigt:
+                            raise ValidationError(
+                                f"Charge für {zeile.rohmaterial.artikelnummer} reicht nicht mehr "
+                                "aus (inzwischen durch eine andere Buchung verbraucht) - bitte "
+                                "erneut versuchen."
+                            )
+                        verbrauchszeilen.append((zeile, aktuelle_charge, benoetigt))
+
+                    fertigware_charge = Charge.objects.create(
+                        artikel=fertigprodukt,
+                        chargennummer=form.cleaned_data["chargennummer"],
+                        wareneingang_datum=form.cleaned_data["datum"].date(),
+                        mindesthaltbarkeitsdatum=form.cleaned_data["mindesthaltbarkeitsdatum"],
+                        menge_eingang=form.cleaned_data["menge_ist"],
+                    )
+                    buchung = Produktionsbuchung.objects.create(
+                        fertigprodukt=fertigprodukt,
+                        charge=fertigware_charge,
+                        menge_soll=form.cleaned_data["menge_soll"],
+                        menge_ist=form.cleaned_data["menge_ist"],
+                        menge_ausschuss=form.cleaned_data["menge_ausschuss"],
+                        datum=form.cleaned_data["datum"],
+                        zustaendiger=form.cleaned_data["zustaendiger"],
+                        notizen=form.cleaned_data["notizen"],
+                        erstellt_von=request.user if request.user.is_authenticated else None,
+                    )
+                    Lagerbewegung.objects.create(
+                        artikel=fertigprodukt, charge=fertigware_charge,
+                        bewegungstyp="produktion_zugang", menge=form.cleaned_data["menge_ist"],
+                        produktionsbuchung=buchung,
+                        erstellt_von=request.user if request.user.is_authenticated else None,
+                    )
+                    for zeile, aktuelle_charge, benoetigt in verbrauchszeilen:
+                        Lagerbewegung.objects.create(
+                            artikel=zeile.rohmaterial, charge=aktuelle_charge,
+                            bewegungstyp="produktion_verbrauch", menge=-benoetigt,
+                            produktionsbuchung=buchung,
+                            erstellt_von=request.user if request.user.is_authenticated else None,
+                        )
+            except ValidationError as exc:
+                buchung = None
+                form.add_error(None, exc)
+            else:
+                messages.success(
+                    request,
+                    f"Produktionsbuchung gespeichert: {buchung.menge_ist} "
+                    f"{fertigprodukt.get_einheit_display()} {fertigprodukt.artikelnummer}.",
+                )
+                return redirect(buchung.get_absolute_url())
+    else:
+        form = ProduktionsbuchungForm(fertigprodukt)
+    return render(
+        request, "vertrieb/produktionsbuchung_form.html",
+        {"form": form, "fertigprodukt": fertigprodukt},
+    )
+
+
+class ProduktionsbuchungListView(LoginRequiredMixin, ListView):
+    """Übersicht aller Produktionsbuchungen (Phase 3 Materialwirtschaft, 25.10.2026)."""
+    model = Produktionsbuchung
+    template_name = "vertrieb/produktionsbuchung_list.html"
+    context_object_name = "buchungen"
+    paginate_by = 50
+
+    def get_queryset(self):
+        return Produktionsbuchung.objects.select_related(
+            "fertigprodukt", "zustaendiger", "erstellt_von", "charge",
+        ).all()
+
+
+class ProduktionsbuchungDetailView(LoginRequiredMixin, DetailView):
+    model = Produktionsbuchung
+    template_name = "vertrieb/produktionsbuchung_detail.html"
+    context_object_name = "buchung"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["verbrauchsbewegungen"] = self.object.lagerbewegungen.filter(
+            bewegungstyp="produktion_verbrauch",
+        ).select_related("artikel", "charge")
+        return context
 
 
 @login_required
