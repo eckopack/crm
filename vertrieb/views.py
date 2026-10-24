@@ -1,6 +1,7 @@
 import os
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
+from io import BytesIO
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -338,6 +339,59 @@ class DealListView(LoginRequiredMixin, ListView):
         context["summe_trinkhalm_stueck"] = (trinkhalm_t * Decimal("1000000")) / GRAMM_JE_STUECK_TRINKHALM
         context["summe_besteck_stueck"] = (besteck_t * Decimal("1000000")) / GRAMM_JE_STUECK_BESTECK
         return context
+
+
+@login_required
+def deal_liste_export(request):
+    """Excel-Download der kompletten Deal-Liste (25.10.2026, auf Wunsch von Björn: "damit
+    jederzeit ein Status gezogen werden kann"). Bewusst NICHT paginiert wie die Deal-Liste im
+    Browser, sondern immer alle Deals - Zweck ist ja genau ein vollstaendiger Stand-Export.
+    Spalten = das, was in der Deal-Liste zu sehen ist (siehe deal_list.html), plus die beiden
+    wirtschaftlich wichtigen Felder gewichteter Wert und Geschaeftsbereich; bewusst OHNE
+    interne CRM-IDs/externe Lead-IDs/Notizen (siehe dazu stattdessen das bestehende Kommando
+    export_leadliste.py fuer einen vollstaendigen Datensatz-Export)."""
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Deals"
+    spalten = [
+        "Titel", "Firma", "Geschäftsbereich", "Phase", "Wert (EUR)",
+        "Mengenpotenzial Trinkhalm (t)", "Mengenpotenzial Trinkhalm (Stück)",
+        "Mengenpotenzial Besteck (t)", "Mengenpotenzial Besteck (Stück)",
+        "Wahrscheinlichkeit (%)", "Gewichteter Wert (EUR)",
+        "Erw. Abschlussdatum", "Zuständiger",
+    ]
+    ws.append(spalten)
+    for zelle in ws[1]:
+        zelle.font = openpyxl.styles.Font(bold=True)
+
+    deals = Deal.objects.all().select_related("firma", "zustaendiger")
+    for d in deals:
+        ws.append([
+            d.titel, d.firma.name, d.get_geschaeftsbereich_display(), d.get_phase_display(),
+            float(d.wert),
+            float(d.potenzial_tonnen_trinkhalm) if d.potenzial_tonnen_trinkhalm is not None else None,
+            float(d.stueck_trinkhalm) if d.stueck_trinkhalm is not None else None,
+            float(d.potenzial_tonnen_besteck) if d.potenzial_tonnen_besteck is not None else None,
+            float(d.stueck_besteck) if d.stueck_besteck is not None else None,
+            d.wahrscheinlichkeit, float(d.gewichteter_wert),
+            d.erwartetes_abschlussdatum.strftime("%d.%m.%Y") if d.erwartetes_abschlussdatum else "",
+            str(d.zustaendiger) if d.zustaendiger else "",
+        ])
+    for spalte in ws.columns:
+        breite = max(len(str(zelle.value)) if zelle.value is not None else 0 for zelle in spalte)
+        ws.column_dimensions[spalte[0].column_letter].width = min(max(breite + 2, 10), 40)
+
+    puffer = BytesIO()
+    wb.save(puffer)
+    dateiname = f"ECKO-PACK_Deals_{timezone.now().strftime('%Y-%m-%d')}.xlsx"
+    response = HttpResponse(
+        puffer.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f'attachment; filename="{dateiname}"'
+    return response
 
 
 class DealDetailView(LoginRequiredMixin, DetailView):
