@@ -33,10 +33,10 @@
             <div class="card-header fw-semibold">Lager</div>
             <ul class="list-group list-group-flush">
                 <li class="list-group-item">
-                    <strong>Lagerbestand aktuell:</strong> {{ artikel.lagerbestand_anzeige|default:"unbekannt" }}
+                    <strong>Lagerbestand aktuell:</strong> {{ artikel.lagerbestand_anzeige|default_if_none:"unbekannt" }}
                     {% if artikel.fuehrt_chargen %}<span class="text-muted small">(berechnet aus Chargen)</span>{% endif %}
                 </li>
-                <li class="list-group-item"><strong>Mindestbestand:</strong> {{ artikel.mindestbestand|default:"unbekannt" }}</li>
+                <li class="list-group-item"><strong>Mindestbestand:</strong> {{ artikel.mindestbestand|default_if_none:"unbekannt" }}</li>
                 <li class="list-group-item"><strong>Lagerort:</strong> {{ artikel.lagerort|default:"–" }}</li>
                 <li class="list-group-item"><strong>Lieferant:</strong> {{ artikel.lieferant|default:artikel.lieferant_freitext|default:"–" }}</li>
             </ul>
