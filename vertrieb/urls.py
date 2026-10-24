@@ -25,6 +25,7 @@ urlpatterns = [
     path("kontakte/<int:pk>/reaktivieren/", views.kontakt_reaktivieren, name="kontakt_reaktivieren"),
 
     path("deals/", views.DealListView.as_view(), name="deal_list"),
+    path("deals/export/", views.deal_liste_export, name="deal_liste_export"),
     path("deals/neu/", views.DealCreateView.as_view(), name="deal_create"),
     path("deals/<int:pk>/", views.DealDetailView.as_view(), name="deal_detail"),
     path("deals/<int:pk>/musterkarton/", views.musterkarton_anfordern, name="musterkarton_anfordern"),
