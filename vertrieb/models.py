@@ -368,6 +368,17 @@ class Angebot(models.Model):
     def gesamtsumme(self):
         return sum((p.gesamtpreis for p in self.positionen.all()), start=0)
 
+    # ist_loeschbar (24.10.2026, auf Wunsch von Björn, Nachzieher zum Rechnung-Fix): anders
+    # als Rechnung.ist_bearbeitbar gibt es hier KEINE Bearbeitungs-Sperre - ein Angebot bleibt
+    # nach Versand ueber "Bearbeiten" weiterhin frei aenderbar (bewusst so belassen, siehe
+    # AngebotDeleteView-Kommentar unten: nur das LOESCHEN wird jetzt eingeschraenkt, nicht das
+    # Bearbeiten). Ein Angebot gilt als loeschbar, solange es noch "entwurf" ist - ab
+    # "versendet"/"angenommen"/"abgelehnt"/"abgelaufen" hat der Kunde es gesehen bzw. ist eine
+    # Entscheidung dazu dokumentiert, die nicht spurlos verschwinden soll.
+    @property
+    def ist_loeschbar(self):
+        return self.status == "entwurf"
+
 
 class AngebotPosition(models.Model):
     angebot = models.ForeignKey(Angebot, on_delete=models.CASCADE, related_name="positionen")
@@ -491,6 +502,15 @@ class Packschein(models.Model):
             return ""
         from urllib.parse import quote
         return vorlage.format(code=quote(self.trackingnummer))
+
+    # ist_loeschbar (24.10.2026, auf Wunsch von Björn, Nachzieher zum Rechnung-Fix): ein
+    # Packschein ist ein rein internes Kommissionierdokument (siehe Klassendoku oben) - erst ab
+    # "versendet" ist die Ware tatsaechlich raus und der Packschein kann Grundlage fuer einen
+    # verknuepften Lieferschein sein; vorher (offen/in_arbeit/fertig) ist er reine
+    # Lager-Arbeitsvorbereitung und darf wie bisher jederzeit korrigiert/geloescht werden.
+    @property
+    def ist_loeschbar(self):
+        return self.status != "versendet"
 
     def save(self, *args, **kwargs):
         if not self.nummer:
@@ -616,6 +636,15 @@ class Lieferschein(models.Model):
             return ""
         from urllib.parse import quote
         return vorlage.format(code=quote(self.trackingnummer))
+
+    # ist_loeschbar (24.10.2026, auf Wunsch von Björn, Nachzieher zum Rechnung-Fix): analog zu
+    # Rechnung.ist_bearbeitbar, aber bewusst nur fuers Loeschen (nicht fuers Bearbeiten - das
+    # bleibt wie bisher immer offen, siehe lieferschein_bearbeiten). Ein versendeter
+    # Lieferschein ist der Liefernachweis fuer den Kunden und ggf. Grundlage einer bereits
+    # erzeugten Rechnung - soll nicht spurlos geloescht werden koennen.
+    @property
+    def ist_loeschbar(self):
+        return self.status == "entwurf"
 
     def save(self, *args, **kwargs):
         if not self.nummer:

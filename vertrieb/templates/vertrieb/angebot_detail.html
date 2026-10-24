@@ -43,7 +43,11 @@
         {% endif %}
         <a href="{% url 'vertrieb:angebot_pdf' angebot.pk %}" target="_blank" class="btn btn-outline-primary">PDF</a>
         <a href="{% url 'vertrieb:angebot_update' angebot.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
+        {% if angebot.ist_loeschbar %}
         <a href="{% url 'vertrieb:angebot_delete' angebot.pk %}" class="btn btn-outline-danger">Löschen</a>
+        {% else %}
+        <button type="button" class="btn btn-outline-danger" disabled title="Bereits versendet - sollte nicht mehr gelöscht werden">Löschen</button>
+        {% endif %}
     </div>
 </div>
 {% if angebot.versandmail_gesendet_am %}

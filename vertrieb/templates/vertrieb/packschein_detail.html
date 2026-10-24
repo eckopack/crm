@@ -30,7 +30,11 @@
         {% endif %}
         <a href="{% url 'vertrieb:packschein_pdf' packschein.pk %}" target="_blank" class="btn btn-outline-primary">PDF</a>
         <a href="{% url 'vertrieb:packschein_update' packschein.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
+        {% if packschein.ist_loeschbar %}
         <a href="{% url 'vertrieb:packschein_delete' packschein.pk %}" class="btn btn-outline-danger">Löschen</a>
+        {% else %}
+        <button type="button" class="btn btn-outline-danger" disabled title="Bereits versendet - sollte nicht mehr gelöscht werden">Löschen</button>
+        {% endif %}
     </div>
 </div>
 

@@ -583,9 +583,26 @@ def angebot_bearbeiten(request, pk):
 
 
 class AngebotDeleteView(LoginRequiredMixin, DeleteView):
+    """24.10.2026, auf Wunsch von Björn (Nachzieher zum RechnungDeleteView-Fix vom selben
+    Tag): dieselbe Luecke bestand unveraendert auch hier - ein Angebot liess sich loeschen,
+    egal ob "entwurf" oder bereits "versendet"/"angenommen"/"abgelehnt". Fix nur fuers
+    LOESCHEN (siehe Angebot.ist_loeschbar) - das Bearbeiten bleibt bewusst weiterhin in jedem
+    Status moeglich, siehe Model-Doku."""
+
     model = Angebot
     template_name = "vertrieb/confirm_delete.html"
     success_url = reverse_lazy("vertrieb:angebot_list")
+
+    def form_valid(self, form):
+        angebot = self.get_object()
+        if not angebot.ist_loeschbar:
+            messages.warning(
+                self.request,
+                f"Angebot {angebot.nummer} wurde bereits versendet und sollte nicht mehr "
+                f"geloescht werden (Status \"{angebot.get_status_display()}\").",
+            )
+            return redirect(angebot.get_absolute_url())
+        return super().form_valid(form)
 
 
 @login_required
@@ -889,9 +906,24 @@ def packschein_versand_bestaetigen(request, pk):
 
 
 class PackscheinDeleteView(LoginRequiredMixin, DeleteView):
+    """24.10.2026, auf Wunsch von Björn (Nachzieher zum RechnungDeleteView-Fix): siehe
+    Packschein.ist_loeschbar - ein bereits versendeter Packschein (Ware raus, ggf. Grundlage
+    eines Lieferscheins) soll nicht mehr loeschbar sein."""
+
     model = Packschein
     template_name = "vertrieb/confirm_delete.html"
     success_url = reverse_lazy("vertrieb:packschein_list")
+
+    def form_valid(self, form):
+        packschein = self.get_object()
+        if not packschein.ist_loeschbar:
+            messages.warning(
+                self.request,
+                f"Packschein {packschein.nummer} wurde bereits versendet und sollte nicht "
+                f"mehr geloescht werden.",
+            )
+            return redirect(packschein.get_absolute_url())
+        return super().form_valid(form)
 
 
 @login_required
@@ -1170,9 +1202,24 @@ def lieferschein_versand_bestaetigen(request, pk):
 
 
 class LieferscheinDeleteView(LoginRequiredMixin, DeleteView):
+    """24.10.2026, auf Wunsch von Björn (Nachzieher zum RechnungDeleteView-Fix): siehe
+    Lieferschein.ist_loeschbar - ein bereits versendeter Lieferschein (Liefernachweis, ggf.
+    bereits Grundlage einer Rechnung) soll nicht mehr loeschbar sein."""
+
     model = Lieferschein
     template_name = "vertrieb/confirm_delete.html"
     success_url = reverse_lazy("vertrieb:lieferschein_list")
+
+    def form_valid(self, form):
+        lieferschein = self.get_object()
+        if not lieferschein.ist_loeschbar:
+            messages.warning(
+                self.request,
+                f"Lieferschein {lieferschein.nummer} wurde bereits versendet und sollte "
+                f"nicht mehr geloescht werden.",
+            )
+            return redirect(lieferschein.get_absolute_url())
+        return super().form_valid(form)
 
 
 @login_required
