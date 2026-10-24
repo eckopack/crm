@@ -827,9 +827,18 @@ def rechnung_versand_senden(rechnung):
 
     Gibt (erfolg: bool, fehlermeldung: str|None) zurueck - wie lieferschein_versand_
     abgeschlossen() bewusst NICHT fail-silent, der aufrufende View soll das sofort im UI
-    zeigen koennen."""
+    zeigen koennen.
+
+    storno_zu (24.10.2026, auf Wunsch von Björn, Stornorechnung-/Rechnungskorrektur-Feature):
+    ist rechnung.storno_zu_id gesetzt, wird Betreff und E-Mail-Text (siehe
+    email/rechnung_bestaetigung.html/.txt) auf die Korrektur-Formulierung umgeschaltet, mit
+    Bezug auf die urspruengliche Rechnungsnummer. Der eigentliche Status-Effekt auf das
+    ORIGINAL (korrektursumme/effektiver_bruttobetrag, ggf. Statuswechsel auf "storniert")
+    passiert nicht hier, sondern ereignisbasiert ueber signals.rechnung_korrektur_gespeichert,
+    sobald unten rechnung.status auf "versendet" gesetzt wird."""
     deal = rechnung.deal
     empfaenger = _empfaenger_email(deal)
+    ist_korrektur = bool(rechnung.storno_zu_id)
 
     if not empfaenger:
         meldung = "keine E-Mail-Adresse für Firma/Ansprechpartner hinterlegt"
@@ -844,7 +853,12 @@ def rechnung_versand_senden(rechnung):
         return False, meldung
 
     sprache = rechnung.sprache
-    if sprache == "en":
+    if ist_korrektur:
+        if sprache == "en":
+            betreff = f"Invoice correction – ECKO-PACK ({rechnung.nummer})"
+        else:
+            betreff = f"Rechnungskorrektur – ECKO-PACK ({rechnung.nummer})"
+    elif sprache == "en":
         betreff = f"Your invoice is ready – ECKO-PACK ({rechnung.nummer})"
     else:
         betreff = f"Ihre Rechnung – ECKO-PACK ({rechnung.nummer})"

@@ -779,51 +779,101 @@ def lieferschein_pdf_erzeugen(lieferschein):
 
 def rechnung_pdf_erzeugen(rechnung):
     """sprache=rechnung.sprache (18.10.2026, wie Angebot/Lieferschein) - siehe Kommentar bei
-    lieferschein_pdf_erzeugen, gilt hier analog."""
+    lieferschein_pdf_erzeugen, gilt hier analog.
+
+    storno_zu (24.10.2026, auf Wunsch von Björn, Stornorechnung-/Rechnungskorrektur-Feature):
+    ist rechnung.storno_zu_id gesetzt, handelt es sich um eine Korrektur zu einer anderen
+    Rechnung - Titel, Meta-Zeile (Bezug auf das Original) und Zahlungshinweistext weichen dann
+    vom Normalfall ab. Bewusst NICHT "GUTSCHRIFT"/"CREDIT NOTE" als Titel verwenden - siehe
+    RechnungKorrekturForm-Kommentar zur Terminologie (§14 UStG "Gutschrift" meint rechtlich
+    eine vom Kaeufer ausgestellte Abrechnung, nicht diese vom Verkaeufer ausgestellte
+    Korrektur)."""
     sprache = rechnung.sprache
     deal = rechnung.deal
     firma = deal.firma
     empfaenger_zeilen = _empfaenger_zeilen(firma, deal.kontakt, sprache)
+    ist_korrektur = bool(rechnung.storno_zu_id)
+    erstattung = ist_korrektur and rechnung.bruttosumme < 0
     if sprache == "en":
-        titel = "INVOICE"
+        titel = "INVOICE CORRECTION" if ist_korrektur else "INVOICE"
         meta_zeilen = [
             ("Invoice No.", rechnung.nummer),
             ("Invoice Date", _datum(rechnung.rechnungsdatum, sprache)),
             ("Delivery Date", _datum(rechnung.leistungsdatum or rechnung.rechnungsdatum, sprache)),
-            ("Payment Terms", f"{rechnung.zahlungsziel_tage} days net"),
-            ("Due Date", _datum(rechnung.faelligkeitsdatum, sprache)),
         ]
+        if ist_korrektur:
+            meta_zeilen.append((
+                "Correction to Invoice",
+                f"{rechnung.storno_zu.nummer} ({_datum(rechnung.storno_zu.rechnungsdatum, sprache)})",
+            ))
+        else:
+            meta_zeilen += [
+                ("Payment Terms", f"{rechnung.zahlungsziel_tage} days net"),
+                ("Due Date", _datum(rechnung.faelligkeitsdatum, sprache)),
+            ]
         spalten = [
             ("No.", 30, "l"), ("Art. No.", 55, "l"), ("Description", 112.5, "l"), ("Qty", 45, "r"), ("Unit", 45, "r"),
             ("Unit Price", 60, "r"), ("VAT", 40, "r"), ("Total (net)", 80, "r"),
         ]
-        netto_label, brutto_label = "Net total", "Total (gross)"
+        netto_label = "Net total"
+        brutto_label = "Amount to be refunded" if erstattung else "Total (gross)"
         zuschlag_label = "plus VAT {satz} on {netto}"
         notizen_titel = "Payment Terms"
-        zahlungstext = (
-            f"Please transfer the invoice amount by {_datum(rechnung.faelligkeitsdatum, sprache)} "
-            f"without deduction to the account below."
-        )
+        if not ist_korrektur:
+            zahlungstext = (
+                f"Please transfer the invoice amount by {_datum(rechnung.faelligkeitsdatum, sprache)} "
+                f"without deduction to the account below."
+            )
+        elif erstattung:
+            zahlungstext = (
+                f"This document corrects invoice {rechnung.storno_zu.nummer}. The amount shown "
+                f"will be refunded to you; no payment is required on your part."
+            )
+        else:
+            zahlungstext = (
+                f"This document corrects invoice {rechnung.storno_zu.nummer}. Please transfer the "
+                f"amount shown above without deduction to the account below."
+            )
     else:
-        titel = "RECHNUNG"
+        titel = "RECHNUNGSKORREKTUR" if ist_korrektur else "RECHNUNG"
         meta_zeilen = [
             ("Rechnungsnummer", rechnung.nummer),
             ("Rechnungsdatum", _datum(rechnung.rechnungsdatum)),
             ("Leistungsdatum", _datum(rechnung.leistungsdatum or rechnung.rechnungsdatum)),
-            ("Zahlungsziel", f"{rechnung.zahlungsziel_tage} Tage netto"),
-            ("Fällig am", _datum(rechnung.faelligkeitsdatum)),
         ]
+        if ist_korrektur:
+            meta_zeilen.append((
+                "Korrektur zu Rechnung",
+                f"{rechnung.storno_zu.nummer} ({_datum(rechnung.storno_zu.rechnungsdatum)})",
+            ))
+        else:
+            meta_zeilen += [
+                ("Zahlungsziel", f"{rechnung.zahlungsziel_tage} Tage netto"),
+                ("Fällig am", _datum(rechnung.faelligkeitsdatum)),
+            ]
         spalten = [
             ("Pos.", 30, "l"), ("Artikel-Nr.", 55, "l"), ("Bezeichnung", 112.5, "l"), ("Menge", 45, "r"), ("Einheit", 45, "r"),
             ("Einzelpreis", 60, "r"), ("USt.", 40, "r"), ("Gesamt (netto)", 80, "r"),
         ]
-        netto_label, brutto_label = "Nettosumme", "Gesamtbetrag (brutto)"
+        netto_label = "Nettosumme"
+        brutto_label = "Erstattungsbetrag" if erstattung else "Gesamtbetrag (brutto)"
         zuschlag_label = "zzgl. USt {satz} auf {netto}"
         notizen_titel = "Zahlungshinweis"
-        zahlungstext = (
-            f"Bitte überweisen Sie den Rechnungsbetrag bis zum {_datum(rechnung.faelligkeitsdatum)} "
-            f"ohne Abzug auf unten genanntes Konto."
-        )
+        if not ist_korrektur:
+            zahlungstext = (
+                f"Bitte überweisen Sie den Rechnungsbetrag bis zum {_datum(rechnung.faelligkeitsdatum)} "
+                f"ohne Abzug auf unten genanntes Konto."
+            )
+        elif erstattung:
+            zahlungstext = (
+                f"Dieses Dokument korrigiert Rechnung {rechnung.storno_zu.nummer}. Der ausgewiesene "
+                f"Betrag wird Ihnen erstattet, eine Zahlung ist Ihrerseits nicht erforderlich."
+            )
+        else:
+            zahlungstext = (
+                f"Dieses Dokument korrigiert Rechnung {rechnung.storno_zu.nummer}. Bitte überweisen "
+                f"Sie den oben genannten Betrag ohne Abzug auf unten genanntes Konto."
+            )
 
     zeilen = []
     for p in rechnung.positionen.all():

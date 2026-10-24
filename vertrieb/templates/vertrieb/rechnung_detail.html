@@ -9,13 +9,24 @@
             · Firma: <a href="{{ rechnung.deal.firma.get_absolute_url }}">{{ rechnung.deal.firma.name }}</a>
             {% if rechnung.lieferschein %}· Lieferschein: <a href="{{ rechnung.lieferschein.get_absolute_url }}">{{ rechnung.lieferschein.nummer }}</a>{% endif %}
         </div>
+        {% if rechnung.status == "bezahlt" %}
+        <span class="badge text-bg-success">{{ rechnung.get_status_display }}</span>
+        {% elif rechnung.status == "storniert" %}
+        <span class="badge text-bg-secondary">{{ rechnung.get_status_display }}</span>
+        {% else %}
         <span class="badge text-bg-light border">{{ rechnung.get_status_display }}</span>
+        {% endif %}
         <span class="badge text-bg-light border">{{ rechnung.get_sprache_display }}</span>
         {% if not rechnung.ist_bearbeitbar %}
         <span class="badge text-bg-warning">Nach Versand nicht mehr änderbar (GoBD)</span>
         {% endif %}
         {% if rechnung.ist_ueberfaellig %}
         <span class="badge text-bg-danger">Überfällig seit {{ rechnung.tage_ueberfaellig }} Tag{{ rechnung.tage_ueberfaellig|pluralize:",en" }}</span>
+        {% endif %}
+        {% if rechnung.storno_zu %}
+        <div class="small text-muted mt-1">
+            Korrektur zu Rechnung <a href="{{ rechnung.storno_zu.get_absolute_url }}">{{ rechnung.storno_zu.nummer }}</a>
+        </div>
         {% endif %}
     </div>
     <div class="d-print-none">
@@ -29,11 +40,20 @@
         {% if rechnung.status == "versendet" or rechnung.status == "bezahlt" %}
         <a href="{% url 'vertrieb:rechnung_zahlung_erfassen' rechnung.pk %}" class="btn btn-success">Zahlung erfassen</a>
         {% endif %}
+        {% if not rechnung.storno_zu %}
+            {% if rechnung.status == "versendet" or rechnung.status == "bezahlt" %}
+            <a href="{% url 'vertrieb:rechnung_korrektur_erstellen' rechnung.pk %}" class="btn btn-outline-danger">Rechnung korrigieren</a>
+            {% endif %}
+        {% endif %}
         <a href="{% url 'vertrieb:rechnung_pdf' rechnung.pk %}" target="_blank" class="btn btn-outline-primary">PDF</a>
         {% if rechnung.ist_bearbeitbar %}
         <a href="{% url 'vertrieb:rechnung_update' rechnung.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
         {% endif %}
+        {% if rechnung.ist_bearbeitbar %}
         <a href="{% url 'vertrieb:rechnung_delete' rechnung.pk %}" class="btn btn-outline-danger">Löschen</a>
+        {% else %}
+        <button type="button" class="btn btn-outline-danger" disabled title="Nach Versand nach GoBD nicht mehr löschbar">Löschen</button>
+        {% endif %}
     </div>
 </div>
 {% if rechnung.bestaetigungsmail_gesendet_am %}
@@ -59,10 +79,30 @@
     </ul>
 </div>
 
+{% if rechnung.korrekturen.exists %}
+<div class="card mb-3">
+    <div class="card-header fw-semibold">Stornorechnungen/Korrekturen zu dieser Rechnung</div>
+    <ul class="list-group list-group-flush">
+        {% for k in rechnung.korrekturen.all %}
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+            <a href="{{ k.get_absolute_url }}">{{ k.nummer }}</a>
+            <span>
+                {{ k.bruttosumme|floatformat:2 }} €
+                <span class="badge text-bg-light border ms-1">{{ k.get_status_display }}</span>
+            </span>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
 {% if rechnung.status == "versendet" or rechnung.status == "bezahlt" %}
 <div class="card mb-3 {% if rechnung.ist_ueberfaellig %}border-danger{% endif %}">
     <div class="card-header fw-semibold {% if rechnung.ist_ueberfaellig %}text-danger{% endif %}">
-        Zahlungen – offen: {{ rechnung.offener_betrag|floatformat:2 }} € von {{ rechnung.bruttosumme|floatformat:2 }} €
+        Zahlungen – offen: {{ rechnung.offener_betrag|floatformat:2 }} € von {{ rechnung.effektiver_bruttobetrag|floatformat:2 }} €
+        {% if rechnung.korrektursumme %}
+        <span class="fw-normal text-muted">(Rechnungsbetrag {{ rechnung.bruttosumme|floatformat:2 }} €, Korrekturen {{ rechnung.korrektursumme|floatformat:2 }} €)</span>
+        {% endif %}
     </div>
     <ul class="list-group list-group-flush">
         {% for z in rechnung.zahlungen.all %}
@@ -117,7 +157,12 @@
         {% for satz, netto, steuer in rechnung.steuer_aufschluesselung %}
         <tr><td colspan="7" class="text-end">zzgl. USt {{ satz|floatformat:0 }}% auf {{ netto|floatformat:2 }} €</td><td>{{ steuer|floatformat:2 }} €</td></tr>
         {% endfor %}
-        <tr class="fw-bold"><td colspan="7" class="text-end">Gesamtbetrag (brutto)</td><td>{{ rechnung.bruttosumme|floatformat:2 }} €</td></tr>
+        <tr class="fw-bold">
+            <td colspan="7" class="text-end">
+                {% if rechnung.storno_zu and rechnung.bruttosumme < 0 %}Erstattungsbetrag{% else %}Gesamtbetrag (brutto){% endif %}
+            </td>
+            <td>{{ rechnung.bruttosumme|floatformat:2 }} €</td>
+        </tr>
         </tfoot>
     </table>
 </div>

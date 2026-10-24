@@ -25,13 +25,13 @@ from .forms import (
     PackscheinForm, PackscheinPositionFormSet, PackscheinVersandForm,
     LieferscheinForm, LieferscheinPositionFormSet, LieferscheinVersandForm,
     RahmenvereinbarungForm, RahmenvereinbarungPositionFormSet,
-    RechnungForm, RechnungPositionFormSet, RechnungZahlungForm,
+    RechnungForm, RechnungKorrekturForm, RechnungPositionFormSet, RechnungZahlungForm,
 )
 from .models import (
     ANGEBOT_NACHFASS_SCHRITTE, DEAL_PHASE_CHOICES, MUSTERKARTON_ARTIKEL,
     PHASE_STANDARD_WAHRSCHEINLICHKEIT, Aktivitaet, Angebot, AngebotNachfassStatus, Artikel, Deal,
     EmailVersand, Firma, Kontakt, MusterboxNachfassStatus, Packschein, PackscheinPosition,
-    Lieferschein, Rahmenvereinbarung, Rechnung, RechnungZahlung,
+    Lieferschein, Rahmenvereinbarung, Rechnung, RechnungPosition, RechnungZahlung,
 )
 from django.forms import inlineformset_factory
 
@@ -1347,9 +1347,30 @@ def rechnung_bearbeiten(request, pk):
 
 
 class RechnungDeleteView(LoginRequiredMixin, DeleteView):
+    """24.10.2026, auf Wunsch von Björn: bislang liess sich JEDE Rechnung loeschen, unabhaengig
+    vom Status - also auch eine bereits versendete oder sogar bezahlte, deren Nummer nach GoBD
+    eigentlich unveraenderbar/unloeschbar sein muss (dieselbe Luecke besteht unveraendert auch
+    bei AngebotDeleteView/PackscheinDeleteView/LieferscheinDeleteView, dort aber bewusst NICHT
+    mit behoben - das waere eine eigene, separat zu entscheidende Aenderung). Fix: Loeschen nur
+    noch erlaubt, solange die Rechnung "entwurf" ist (= rechnung.ist_bearbeitbar, dieselbe
+    Grenze wie bei rechnung_bearbeiten). Die GET-Bestaetigungsseite bleibt erreichbar (sie zeigt
+    dann einfach die Warnung statt eines Loeschen-Buttons), geloescht wird erst beim POST."""
+
     model = Rechnung
     template_name = "vertrieb/confirm_delete.html"
     success_url = reverse_lazy("vertrieb:rechnung_list")
+
+    def form_valid(self, form):
+        rechnung = self.get_object()
+        if not rechnung.ist_bearbeitbar:
+            messages.warning(
+                self.request,
+                f"Rechnung {rechnung.nummer} wurde bereits versendet und darf nach GoBD nicht "
+                f"mehr geloescht werden (Status \"{rechnung.get_status_display()}\"). Für "
+                f"Korrekturen bitte eine Stornorechnung erstellen.",
+            )
+            return redirect(rechnung.get_absolute_url())
+        return super().form_valid(form)
 
 
 @login_required
@@ -1430,6 +1451,91 @@ def rechnung_zahlung_loeschen(request, pk, zahlung_pk):
         zahlung.delete()
         messages.success(request, f"Zahlungseingang über {betrag} € wurde gelöscht.")
     return redirect(rechnung.get_absolute_url())
+
+
+@login_required
+def rechnung_korrektur_erstellen(request, pk):
+    """Erstellt eine Stornorechnung/Rechnungskorrektur zu einer bereits versendeten/bezahlten
+    Rechnung (24.10.2026, auf Wunsch von Björn - siehe Rechnung.storno_zu/korrektursumme/
+    effektiver_bruttobetrag fuer die Hintergrund-Logik und den Kommentar bei
+    RechnungKorrekturForm zur Terminologie: "Stornorechnung"/"Rechnungskorrektur", NICHT
+    "Gutschrift" - dieser Begriff meint nach §14 UStG rechtlich etwas anderes).
+
+    Deckt sowohl Vollstorno als auch Teilkorrektur ueber EINEN Mechanismus ab: die Positionen
+    werden beim Anlegen als vollstaendiger, in der Menge negierter Spiegel des Originals
+    vorbefuellt (= Vollstorno als editierbarer Standard) - einzelne Zeilen koennen vor dem
+    Speichern geloescht oder in der Menge angepasst werden, um daraus eine Teilkorrektur zu
+    machen. Die neue Rechnung bekommt automatisch ein eigenes "ST-"-Nummernpraefix (siehe
+    Rechnung.save()) und startet als Entwurf - erst der tatsaechliche Versand (bestehender
+    "Jetzt versenden"-Button, nurture.rechnung_versand_senden) zaehlt wirtschaftlich und loest
+    die Neuberechnung des Original-Status aus (siehe signals.rechnung_korrektur_gespeichert).
+
+    Bewusst nur fuer ORIGINALE erreichbar (original.storno_zu_id muss leer sein) - eine
+    Korrektur einer Korrektur wuerde Korrekturketten erzeugen, die weder angefragt noch in der
+    aktuellen Statuslogik vorgesehen sind; bei Bedarf separat zu entscheiden."""
+    original = get_object_or_404(Rechnung, pk=pk)
+    if original.storno_zu_id:
+        messages.warning(
+            request,
+            f"Rechnung {original.nummer} ist selbst bereits eine Korrektur zu "
+            f"{original.storno_zu.nummer}. Eine Korrektur einer Korrektur wird aktuell nicht "
+            f"unterstützt.",
+        )
+        return redirect(original.get_absolute_url())
+    if original.status not in ("versendet", "bezahlt"):
+        messages.warning(
+            request,
+            f"Rechnung {original.nummer} kann erst korrigiert werden, wenn sie versendet oder "
+            f"bezahlt ist (aktueller Status: \"{original.get_status_display()}\").",
+        )
+        return redirect(original.get_absolute_url())
+
+    if request.method == "POST":
+        form = RechnungKorrekturForm(request.POST)
+        if form.is_valid():
+            korrektur = form.save(commit=False)
+            korrektur.deal_id = original.deal_id
+            korrektur.angebot_id = original.angebot_id
+            korrektur.lieferschein_id = original.lieferschein_id
+            korrektur.storno_zu = original
+            korrektur.status = "entwurf"
+            korrektur.save()
+            formset = RechnungPositionFormSet(request.POST, instance=korrektur)
+            if formset.is_valid():
+                formset.save()
+                messages.success(
+                    request,
+                    f"Korrektur {korrektur.nummer} zu Rechnung {original.nummer} wurde als "
+                    f"Entwurf angelegt. Bitte Positionen prüfen und über \"Jetzt versenden\" an "
+                    f"den Kunden schicken, damit sie wirksam wird.",
+                )
+                return redirect(korrektur.get_absolute_url())
+            return render(request, "vertrieb/rechnung_korrektur_form.html", {
+                "form": form, "formset": formset, "original": original,
+            })
+        formset = RechnungPositionFormSet(request.POST)
+    else:
+        form = RechnungKorrekturForm(initial={
+            "rechnungsdatum": timezone.localdate(),
+            "leistungsdatum": original.leistungsdatum,
+            "sprache": original.sprache,
+        })
+        positionen_initial = [
+            {
+                "artikel": p.artikel_id, "position": p.position, "bezeichnung": p.bezeichnung,
+                "menge": -p.menge, "einheit": p.einheit, "einzelpreis": p.einzelpreis,
+                "steuersatz": p.steuersatz,
+            }
+            for p in original.positionen.all()
+        ]
+        FormSetVorbefuellt = inlineformset_factory(
+            Rechnung, RechnungPosition, form=RechnungPositionFormSet.form,
+            extra=len(positionen_initial) or 1, can_delete=True,
+        )
+        formset = FormSetVorbefuellt(initial=positionen_initial)
+    return render(request, "vertrieb/rechnung_korrektur_form.html", {
+        "form": form, "formset": formset, "original": original,
+    })
 
 
 @login_required

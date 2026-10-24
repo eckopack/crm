@@ -81,6 +81,7 @@ urlpatterns = [
         "rechnungen/<int:pk>/zahlung/<int:zahlung_pk>/loeschen/",
         views.rechnung_zahlung_loeschen, name="rechnung_zahlung_loeschen",
     ),
+    path("rechnungen/<int:pk>/korrektur/", views.rechnung_korrektur_erstellen, name="rechnung_korrektur_erstellen"),
 
     path("offene-posten/", views.offene_posten_liste, name="offene_posten_list"),
 
