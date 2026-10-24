@@ -5,7 +5,7 @@ from .models import (
     Aktivitaet, Angebot, AngebotPosition, Artikel, Bonusstaffel, Deal, Firma, Kontakt,
     Packschein, PackscheinPosition, Lieferschein, LieferscheinPosition,
     Rahmenvereinbarung, RahmenvereinbarungPosition,
-    Rechnung, RechnungPosition,
+    Rechnung, RechnungPosition, RechnungZahlung,
 )
 
 
@@ -358,6 +358,24 @@ class RechnungPositionForm(BootstrapFormMixin, forms.ModelForm):
 RechnungPositionFormSet = inlineformset_factory(
     Rechnung, RechnungPosition, form=RechnungPositionForm, extra=1, can_delete=True
 )
+
+
+class RechnungZahlungForm(BootstrapFormMixin, forms.ModelForm):
+    """Erfassung eines einzelnen Zahlungseingangs (24.10.2026, auf Wunsch von Björn:
+    Teilzahlungen möglich) - bewusst ein eigenes, schlankes Formular statt eines Feldes auf
+    RechnungForm, weil es über einen eigenen View läuft, der nicht der GoBD-Inhaltssperre
+    von rechnung_bearbeiten unterliegt (siehe views.rechnung_zahlung_erfassen)."""
+
+    class Meta:
+        model = RechnungZahlung
+        fields = ["betrag", "datum", "notiz"]
+        widgets = {
+            "datum": date_input(),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()
 
 
 class ArtikelForm(BootstrapFormMixin, forms.ModelForm):

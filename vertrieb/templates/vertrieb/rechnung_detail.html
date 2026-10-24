@@ -14,6 +14,9 @@
         {% if not rechnung.ist_bearbeitbar %}
         <span class="badge text-bg-warning">Nach Versand nicht mehr änderbar (GoBD)</span>
         {% endif %}
+        {% if rechnung.ist_ueberfaellig %}
+        <span class="badge text-bg-danger">Überfällig seit {{ rechnung.tage_ueberfaellig }} Tag{{ rechnung.tage_ueberfaellig|pluralize:",en" }}</span>
+        {% endif %}
     </div>
     <div class="d-print-none">
         {% if rechnung.status == "entwurf" %}
@@ -22,6 +25,9 @@
             {% csrf_token %}
             <button type="submit" class="btn btn-primary">Jetzt versenden</button>
         </form>
+        {% endif %}
+        {% if rechnung.status == "versendet" or rechnung.status == "bezahlt" %}
+        <a href="{% url 'vertrieb:rechnung_zahlung_erfassen' rechnung.pk %}" class="btn btn-success">Zahlung erfassen</a>
         {% endif %}
         <a href="{% url 'vertrieb:rechnung_pdf' rechnung.pk %}" target="_blank" class="btn btn-outline-primary">PDF</a>
         {% if rechnung.ist_bearbeitbar %}
@@ -52,6 +58,31 @@
         <li class="list-group-item"><strong>Fällig am:</strong> {{ rechnung.faelligkeitsdatum|date:"d.m.Y" }}</li>
     </ul>
 </div>
+
+{% if rechnung.status == "versendet" or rechnung.status == "bezahlt" %}
+<div class="card mb-3 {% if rechnung.ist_ueberfaellig %}border-danger{% endif %}">
+    <div class="card-header fw-semibold {% if rechnung.ist_ueberfaellig %}text-danger{% endif %}">
+        Zahlungen – offen: {{ rechnung.offener_betrag|floatformat:2 }} € von {{ rechnung.bruttosumme|floatformat:2 }} €
+    </div>
+    <ul class="list-group list-group-flush">
+        {% for z in rechnung.zahlungen.all %}
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+            <span>
+                {{ z.betrag|floatformat:2 }} € am {{ z.datum|date:"d.m.Y" }}
+                {% if z.notiz %}<span class="text-muted">– {{ z.notiz }}</span>{% endif %}
+            </span>
+            <form method="post" action="{% url 'vertrieb:rechnung_zahlung_loeschen' rechnung.pk z.pk %}" class="d-print-none"
+                  onclick="return confirm('Zahlungseingang über {{ z.betrag|floatformat:2 }} € wirklich löschen?');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-danger">Löschen</button>
+            </form>
+        </li>
+        {% empty %}
+        <li class="list-group-item text-muted">Noch kein Zahlungseingang erfasst.</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
 
 <div class="card mb-3">
     <div class="card-header fw-semibold">Positionen</div>

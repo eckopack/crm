@@ -25,13 +25,13 @@ from .forms import (
     PackscheinForm, PackscheinPositionFormSet, PackscheinVersandForm,
     LieferscheinForm, LieferscheinPositionFormSet, LieferscheinVersandForm,
     RahmenvereinbarungForm, RahmenvereinbarungPositionFormSet,
-    RechnungForm, RechnungPositionFormSet,
+    RechnungForm, RechnungPositionFormSet, RechnungZahlungForm,
 )
 from .models import (
     ANGEBOT_NACHFASS_SCHRITTE, DEAL_PHASE_CHOICES, MUSTERKARTON_ARTIKEL,
     PHASE_STANDARD_WAHRSCHEINLICHKEIT, Aktivitaet, Angebot, AngebotNachfassStatus, Artikel, Deal,
     EmailVersand, Firma, Kontakt, MusterboxNachfassStatus, Packschein, PackscheinPosition,
-    Lieferschein, Rahmenvereinbarung, Rechnung,
+    Lieferschein, Rahmenvereinbarung, Rechnung, RechnungZahlung,
 )
 from django.forms import inlineformset_factory
 
@@ -66,6 +66,22 @@ def dashboard(request):
             "wert": qs.aggregate(s=Sum("wert"))["s"] or 0,
         })
 
+    # 24.10.2026, auf Wunsch von Björn (Offene-Posten-Uebersicht, siehe
+    # views.offene_posten_liste): gleiche "ueberfaellig berechnen"-Logik wie dort, hier nur
+    # auf die fuers Dashboard relevanten paar neuesten/dringendsten Zeilen verkuerzt.
+    offene_rechnungen = (
+        Rechnung.objects.filter(status="versendet")
+        .select_related("deal", "deal__firma")
+        .prefetch_related("positionen", "zahlungen")
+    )
+    ueberfaellige_rechnungen = sorted(
+        (r for r in offene_rechnungen if r.ist_ueberfaellig),
+        key=lambda r: r.faelligkeitsdatum,
+    )
+    summe_ueberfaellige_rechnungen = sum(
+        (r.offener_betrag for r in ueberfaellige_rechnungen), start=Decimal("0")
+    )
+
     kontext = {
         "pipeline_wert": pipeline_wert,
         "pipeline_gewichtet": pipeline_gewichtet,
@@ -73,6 +89,9 @@ def dashboard(request):
         "anzahl_firmen": Firma.objects.count(),
         "anstehend": anstehend,
         "ueberfaellig": ueberfaellig,
+        "ueberfaellige_rechnungen": ueberfaellige_rechnungen[:8],
+        "anzahl_ueberfaellige_rechnungen": len(ueberfaellige_rechnungen),
+        "summe_ueberfaellige_rechnungen": summe_ueberfaellige_rechnungen,
         "phasen_uebersicht": phasen_uebersicht,
     }
     return render(request, "vertrieb/dashboard.html", kontext)
@@ -1144,7 +1163,14 @@ class RechnungListView(LoginRequiredMixin, ListView):
     paginate_by = 25
 
     def get_queryset(self):
-        return Rechnung.objects.all().select_related("deal", "deal__firma")
+        # prefetch_related("positionen", "zahlungen"): r.ist_ueberfaellig (Template)
+        # braucht beides je Zeile (siehe Rechnung.bruttosumme/offener_betrag) - ohne das
+        # waere das ein N+1 pro Rechnung in der Liste.
+        return (
+            Rechnung.objects.all()
+            .select_related("deal", "deal__firma")
+            .prefetch_related("positionen", "zahlungen")
+        )
 
 
 class RechnungDetailView(LoginRequiredMixin, DetailView):
@@ -1324,6 +1350,79 @@ def rechnung_versand_senden_view(request, pk):
                     f"Rechnung {rechnung.nummer} konnte NICHT per Mail versendet werden ({fehler}).",
                 )
     return redirect(rechnung.get_absolute_url())
+
+
+@login_required
+def rechnung_zahlung_erfassen(request, pk):
+    """Erfasst einen Zahlungseingang zu einer Rechnung (24.10.2026, auf Wunsch von Björn:
+    Offene-Posten-Uebersicht/Mahnwesen-Vorstufe, siehe offene_posten_liste unten) - bewusst
+    ein eigener View, unabhaengig von der GoBD-Inhaltssperre in rechnung_bearbeiten (siehe
+    dort), analog zu packschein_versand_bestaetigen/lieferschein_versand_bestaetigen. Mehrere
+    Zahlungen pro Rechnung moeglich (Teilzahlungen). Rechnung.status wird NICHT hier,
+    sondern ereignisbasiert per Signal gesetzt (siehe signals.rechnungzahlung_gespeichert),
+    damit das auch bei einer Erfassung/Korrektur ueber das Admin-Interface funktioniert."""
+    rechnung = get_object_or_404(Rechnung, pk=pk)
+    if rechnung.status not in ("versendet", "bezahlt"):
+        messages.warning(
+            request,
+            f"Rechnung {rechnung.nummer} ist noch nicht versendet (oder bereits storniert) - "
+            f"ein Zahlungseingang kann erst danach erfasst werden.",
+        )
+        return redirect(rechnung.get_absolute_url())
+
+    if request.method == "POST":
+        form = RechnungZahlungForm(request.POST)
+        if form.is_valid():
+            zahlung = form.save(commit=False)
+            zahlung.rechnung = rechnung
+            zahlung.save()
+            messages.success(
+                request,
+                f"Zahlungseingang über {zahlung.betrag} € zu Rechnung {rechnung.nummer} erfasst.",
+            )
+            return redirect(rechnung.get_absolute_url())
+    else:
+        form = RechnungZahlungForm()
+    return render(request, "vertrieb/rechnung_zahlung_form.html", {"form": form, "rechnung": rechnung})
+
+
+@login_required
+def rechnung_zahlung_loeschen(request, pk, zahlung_pk):
+    """Loescht einen fehlerhaft erfassten Zahlungseingang wieder (z.B. Zahlendreher). Der
+    Rechnung-Status wird danach ueber das post_delete-Signal (siehe signals.py) automatisch
+    neu bewertet - kein manuelles Zuruecksetzen noetig."""
+    rechnung = get_object_or_404(Rechnung, pk=pk)
+    zahlung = get_object_or_404(RechnungZahlung, pk=zahlung_pk, rechnung=rechnung)
+    if request.method == "POST":
+        betrag = zahlung.betrag
+        zahlung.delete()
+        messages.success(request, f"Zahlungseingang über {betrag} € wurde gelöscht.")
+    return redirect(rechnung.get_absolute_url())
+
+
+@login_required
+def offene_posten_liste(request):
+    """Interne Uebersicht ueber unbezahlte/ueberfaellige Rechnungen (24.10.2026, auf Wunsch
+    von Björn: "aus kundensicht" identifizierte Luecke - es gab bisher keine Stelle im CRM,
+    die ueberfaellige Zahlungen sichtbar machte; Rechnung.status "bezahlt" liess sich bis
+    eben noch nicht einmal setzen, siehe Model-Doku). Bewusst OHNE automatischen
+    Mahnversand an den Kunden - auf Wunsch von Björn zunaechst eine reine interne
+    Arbeitsliste, aus der heraus er selbst entscheidet, wann und wie er nachfasst."""
+    rechnungen = (
+        Rechnung.objects.filter(status="versendet")
+        .select_related("deal", "deal__firma", "deal__kontakt")
+        .prefetch_related("positionen", "zahlungen")
+    )
+    offene = [r for r in rechnungen if r.offener_betrag > 0]
+    offene.sort(key=lambda r: r.faelligkeitsdatum)
+    summe_offen = sum((r.offener_betrag for r in offene), start=Decimal("0"))
+    summe_ueberfaellig = sum((r.offener_betrag for r in offene if r.ist_ueberfaellig), start=Decimal("0"))
+    return render(request, "vertrieb/offene_posten_list.html", {
+        "rechnungen": offene,
+        "summe_offen": summe_offen,
+        "summe_ueberfaellig": summe_ueberfaellig,
+        "anzahl_ueberfaellig": len([r for r in offene if r.ist_ueberfaellig]),
+    })
 
 
 # ---------------------------------------------------------------------------

@@ -911,6 +911,67 @@ class Rechnung(models.Model):
             gruppen[p.steuersatz] = (netto + p.nettobetrag, steuer + p.steuerbetrag)
         return [(satz, *werte) for satz, werte in sorted(gruppen.items())]
 
+    # 24.10.2026, auf Wunsch von Björn (Offene-Posten-Uebersicht/Mahnwesen-Vorstufe, zunaechst
+    # NUR intern, kein automatischer Mahnversand an den Kunden - siehe
+    # views.offene_posten_liste): bisher gab es den Status "bezahlt" nur als Auswahlwert am
+    # Feld, aber KEINEN Weg, ihn je zu setzen - RechnungForm.status war das einzige Formular,
+    # das ihn aendern konnte, und rechnung_bearbeiten sperrt jede Bearbeitung, sobald die
+    # Rechnung nicht mehr "entwurf" ist (GoBD-Inhaltssperre). Aehnliches gilt fuer "storniert".
+    # Fix: ein eigener Weg zur Zahlungserfassung (RechnungZahlung, siehe unten), komplett an
+    # der GoBD-Sperre vorbei (wie Packschein/Lieferschein ihren jeweiligen "...versand"-View
+    # haben) - "bezahlt" wird jetzt automatisch gesetzt, sobald die Summe aller erfassten
+    # Zahlungen die Bruttosumme erreicht (views.rechnung_zahlung_erfassen). "storniert" bleibt
+    # bewusst weiterhin unerreichbar - das ist der separate, noch offene
+    # Storno-/Gutschrift-Workflow (siehe Kommentar in views.rechnung_bearbeiten), nicht Teil
+    # dieser Aenderung.
+    @property
+    def bezahlter_betrag(self):
+        return sum((z.betrag for z in self.zahlungen.all()), start=Decimal("0"))
+
+    @property
+    def offener_betrag(self):
+        return self.bruttosumme - self.bezahlter_betrag
+
+    @property
+    def ist_vollstaendig_bezahlt(self):
+        return self.bruttosumme > 0 and self.offener_betrag <= 0
+
+    @property
+    def ist_ueberfaellig(self):
+        return (
+            self.status == "versendet"
+            and not self.ist_vollstaendig_bezahlt
+            and self.faelligkeitsdatum < timezone.localdate()
+        )
+
+    @property
+    def tage_ueberfaellig(self):
+        if not self.ist_ueberfaellig:
+            return 0
+        return (timezone.localdate() - self.faelligkeitsdatum).days
+
+
+class RechnungZahlung(models.Model):
+    """Ein einzelner Zahlungseingang zu einer Rechnung - mehrere pro Rechnung moeglich
+    (Teilzahlungen, 24.10.2026 auf Wunsch von Björn). Rein buchhalterische Erfassung durch
+    Björn selbst (kein Bankabgleich, kein automatischer Kundenkontakt)."""
+
+    rechnung = models.ForeignKey(Rechnung, on_delete=models.CASCADE, related_name="zahlungen")
+    betrag = models.DecimalField("Betrag (EUR)", max_digits=12, decimal_places=2)
+    datum = models.DateField("Zahlungseingang am", default=timezone.localdate)
+    notiz = models.CharField(
+        "Notiz (z. B. Zahlungsart, Referenz)", max_length=300, blank=True,
+    )
+    erfasst_am = models.DateTimeField("Erfasst am", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Zahlungseingang"
+        verbose_name_plural = "Zahlungseingänge"
+        ordering = ["-datum", "-erfasst_am"]
+
+    def __str__(self):
+        return f"{self.betrag} € am {self.datum} ({self.rechnung.nummer})"
+
 
 class RechnungPosition(models.Model):
     rechnung = models.ForeignKey(Rechnung, on_delete=models.CASCADE, related_name="positionen")

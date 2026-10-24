@@ -1,0 +1,95 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Offene Posten – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<h2 class="mb-3">Offene Posten</h2>
+<p class="text-muted">
+    Alle versendeten Rechnungen, die noch nicht vollständig bezahlt sind, sortiert nach
+    Fälligkeitsdatum. Rein interne Arbeitsliste – es wird aktuell keine automatische
+    Zahlungserinnerung an Kunden verschickt, du entscheidest hier selbst, wann und wie du
+    nachfasst.
+</p>
+
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card text-bg-light h-100 border">
+            <div class="card-body">
+                <div class="small text-muted">Offene Rechnungen</div>
+                <div class="fs-3 fw-bold">{{ rechnungen|length }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-bg-light h-100 border">
+            <div class="card-body">
+                <div class="small text-muted">Offener Betrag (brutto)</div>
+                <div class="fs-3 fw-bold">{{ summe_offen|floatformat:2 }} €</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100 {% if anzahl_ueberfaellig %}border-danger{% endif %}">
+            <div class="card-body">
+                <div class="small {% if anzahl_ueberfaellig %}text-danger{% endif %}">Davon überfällig</div>
+                <div class="fs-3 fw-bold {% if anzahl_ueberfaellig %}text-danger{% endif %}">{{ anzahl_ueberfaellig }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100 {% if summe_ueberfaellig %}border-danger{% endif %}">
+            <div class="card-body">
+                <div class="small {% if summe_ueberfaellig %}text-danger{% endif %}">Überfälliger Betrag</div>
+                <div class="fs-3 fw-bold {% if summe_ueberfaellig %}text-danger{% endif %}">{{ summe_ueberfaellig|floatformat:2 }} €</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <table class="table table-hover mb-0">
+        <thead>
+        <tr>
+            <th>Nummer</th>
+            <th>Firma</th>
+            <th>Ansprechpartner</th>
+            <th>Fällig am</th>
+            <th>Offener Betrag</th>
+            <th>Status</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for r in rechnungen %}
+        <tr onclick="window.location='{{ r.get_absolute_url }}'" style="cursor:pointer;"{% if r.ist_ueberfaellig %} class="table-danger"{% endif %}>
+            <td>{{ r.nummer }}</td>
+            <td>{{ r.deal.firma.name }}</td>
+            <td>
+                {% if r.deal.kontakt %}
+                {{ r.deal.kontakt.vorname }} {{ r.deal.kontakt.nachname }}
+                {% if r.deal.kontakt.telefon %}· {{ r.deal.kontakt.telefon }}{% endif %}
+                {% if r.deal.kontakt.email %}· {{ r.deal.kontakt.email }}{% endif %}
+                {% else %}
+                <span class="text-muted">–</span>
+                {% endif %}
+            </td>
+            <td>
+                {{ r.faelligkeitsdatum|date:"d.m.Y" }}
+                {% if r.ist_ueberfaellig %}<div class="small text-danger">seit {{ r.tage_ueberfaellig }} Tag{{ r.tage_ueberfaellig|pluralize:",en" }}</div>{% endif %}
+            </td>
+            <td>
+                {{ r.offener_betrag|floatformat:2 }} €
+                {% if r.bezahlter_betrag %}<div class="small text-muted">davon bereits {{ r.bezahlter_betrag|floatformat:2 }} € bezahlt</div>{% endif %}
+            </td>
+            <td>
+                {% if r.ist_ueberfaellig %}
+                <span class="badge text-bg-danger">Überfällig</span>
+                {% else %}
+                <span class="badge text-bg-light border">Fristgerecht offen</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-muted text-center py-3">Keine offenen Posten – alle versendeten Rechnungen sind bezahlt.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
