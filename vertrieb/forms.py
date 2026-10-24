@@ -78,7 +78,7 @@ class DealForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Deal
         fields = [
-            "titel", "firma", "kontakt", "geschaeftsbereich", "wert", "phase",
+            "titel", "firma", "kontakt", "geschaeftsbereich", "wert", "potenzial_tonnen", "phase",
             "wahrscheinlichkeit", "erwartetes_abschlussdatum", "zustaendiger",
             "verloren_grund", "notizen",
         ]
@@ -91,6 +91,13 @@ class DealForm(BootstrapFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         self._bootstrapify()
         self.fields["kontakt"].queryset = Kontakt.objects.all().select_related("firma")
+        # 24.10.2026, auf Wunsch von Björn ("muss bei allen immer vorhanden sein... auch bei
+        # Neuanlagen... auch für bestehende Deals"): Pflichtfeld sowohl bei Neuanlage als auch
+        # beim Bearbeiten. Das Modellfeld selbst bleibt null=True/blank=True, damit bestehende
+        # Deals ohne Wert nicht durch eine Migration zwangsweise invalide würden - erzwungen
+        # wird die Angabe stattdessen hier, sobald ein Deal angelegt oder als nächstes
+        # bearbeitet wird.
+        self.fields["potenzial_tonnen"].required = True
 
 
 class AktivitaetForm(BootstrapFormMixin, forms.ModelForm):

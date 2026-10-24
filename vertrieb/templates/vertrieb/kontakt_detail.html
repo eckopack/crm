@@ -5,10 +5,18 @@
     <div>
         <h2>{{ kontakt.vorname }} {{ kontakt.nachname }}</h2>
         <div class="text-muted">{{ kontakt.position }} bei <a href="{{ kontakt.firma.get_absolute_url }}">{{ kontakt.firma.name }}</a></div>
+        {% if kontakt.archiviert %}<span class="badge text-bg-secondary">Archiviert</span>{% endif %}
     </div>
     <div>
         <a href="{% url 'vertrieb:kontakt_update' kontakt.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
-        <a href="{% url 'vertrieb:kontakt_delete' kontakt.pk %}" class="btn btn-outline-danger">Löschen</a>
+        {% if kontakt.archiviert %}
+        <form method="post" action="{% url 'vertrieb:kontakt_reaktivieren' kontakt.pk %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-success">Reaktivieren</button>
+        </form>
+        {% else %}
+        <a href="{% url 'vertrieb:kontakt_archivieren' kontakt.pk %}" class="btn btn-outline-danger">Archivieren</a>
+        {% endif %}
     </div>
 </div>
 <div class="card mb-3" style="max-width:500px;">

@@ -1,0 +1,26 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Archivieren bestätigen{% endblock %}
+{% block content %}
+<div class="card" style="max-width: 500px;">
+    <div class="card-body">
+        <h5 class="card-title">Archivieren?</h5>
+        {% if kann_archiviert_werden %}
+        <p class="card-text">
+            „{{ object }}" wird archiviert und verschwindet aus der Standardliste.
+            Reaktivieren ist jederzeit möglich, gelöscht wird dabei nichts.
+        </p>
+        <form method="post">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-warning">Ja, archivieren</button>
+            <a href="{{ request.META.HTTP_REFERER }}" class="btn btn-outline-secondary">Abbrechen</a>
+        </form>
+        {% else %}
+        <p class="card-text text-danger">
+            „{{ object }}" ist noch mit etwas Aktivem verknüpft (offener Deal, unbezahlte
+            Rechnung oder offene Aktivität) und kann deshalb nicht archiviert werden.
+        </p>
+        <a href="{{ request.META.HTTP_REFERER }}" class="btn btn-outline-secondary">Zurück</a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

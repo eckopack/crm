@@ -14,17 +14,30 @@ class KontaktInline(admin.TabularInline):
 
 @admin.register(Firma)
 class FirmaAdmin(admin.ModelAdmin):
-    list_display = ("name", "geschaeftsbereich", "status", "ort", "zustaendiger", "aktualisiert_am")
-    list_filter = ("geschaeftsbereich", "status")
+    """24.10.2026, auf Wunsch von Björn: Firmen duerfen nicht mehr unwiderruflich geloescht
+    werden (siehe Firma.archiviert/kann_archiviert_werden und firma_archivieren-View in der
+    Oberflaeche) - Loeschen ist deshalb auch hier im Admin gesperrt, damit dieser Weg nicht
+    an der Archivierungs-Sperre vorbeigeht."""
+
+    list_display = ("name", "geschaeftsbereich", "status", "archiviert", "ort", "zustaendiger", "aktualisiert_am")
+    list_filter = ("geschaeftsbereich", "status", "archiviert")
     search_fields = ("name", "ort", "email")
     inlines = [KontaktInline]
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Kontakt)
 class KontaktAdmin(admin.ModelAdmin):
-    list_display = ("nachname", "vorname", "firma", "position", "email", "telefon")
-    list_filter = ("firma",)
+    """24.10.2026, auf Wunsch von Björn: siehe FirmaAdmin - dieselbe Sperre gilt hier."""
+
+    list_display = ("nachname", "vorname", "firma", "position", "email", "telefon", "archiviert")
+    list_filter = ("firma", "archiviert")
     search_fields = ("vorname", "nachname", "email")
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Deal)

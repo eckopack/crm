@@ -157,10 +157,17 @@ class FirmaListView(LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         qs = Firma.objects.all().select_related("zustaendiger")
+        self.zeige_archiv = self.request.GET.get("archiv") == "1"
+        qs = qs.filter(archiviert=self.zeige_archiv)
         suche = self.request.GET.get("q")
         if suche:
             qs = qs.filter(name__icontains=suche)
         return qs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["zeige_archiv"] = self.zeige_archiv
+        return context
 
 
 class FirmaDetailView(LoginRequiredMixin, DetailView):
@@ -181,10 +188,37 @@ class FirmaUpdateView(LoginRequiredMixin, UpdateView):
     template_name = "vertrieb/firma_form.html"
 
 
-class FirmaDeleteView(LoginRequiredMixin, DeleteView):
-    model = Firma
-    template_name = "vertrieb/confirm_delete.html"
-    success_url = reverse_lazy("vertrieb:firma_list")
+@login_required
+def firma_archivieren(request, pk):
+    """24.10.2026, auf Wunsch von Björn: ersetzt FirmaDeleteView - Firmen duerfen nicht mehr
+    unwiderruflich geloescht werden, nur noch archiviert, und auch das nur, solange nichts
+    Aktives mehr daran haengt (siehe Firma.kann_archiviert_werden)."""
+    firma = get_object_or_404(Firma, pk=pk)
+    if request.method == "POST":
+        if not firma.kann_archiviert_werden:
+            messages.warning(
+                request,
+                f"\"{firma.name}\" ist noch mit einem offenen Deal, einer unbezahlten Rechnung "
+                f"oder einer offenen Aktivität verknüpft und kann deshalb nicht archiviert werden.",
+            )
+            return redirect(firma.get_absolute_url())
+        firma.archiviert = True
+        firma.save(update_fields=["archiviert"])
+        messages.success(request, f"\"{firma.name}\" wurde archiviert.")
+        return redirect("vertrieb:firma_list")
+    return render(request, "vertrieb/confirm_archivieren.html", {
+        "object": firma, "kann_archiviert_werden": firma.kann_archiviert_werden,
+    })
+
+
+@login_required
+def firma_reaktivieren(request, pk):
+    firma = get_object_or_404(Firma, pk=pk)
+    if request.method == "POST":
+        firma.archiviert = False
+        firma.save(update_fields=["archiviert"])
+        messages.success(request, f"\"{firma.name}\" wurde reaktiviert.")
+    return redirect(firma.get_absolute_url())
 
 
 # ---------------------------------------------------------------------------
@@ -199,10 +233,17 @@ class KontaktListView(LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         qs = Kontakt.objects.all().select_related("firma")
+        self.zeige_archiv = self.request.GET.get("archiv") == "1"
+        qs = qs.filter(archiviert=self.zeige_archiv)
         suche = self.request.GET.get("q")
         if suche:
             qs = qs.filter(nachname__icontains=suche)
         return qs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["zeige_archiv"] = self.zeige_archiv
+        return context
 
 
 class KontaktDetailView(LoginRequiredMixin, DetailView):
@@ -230,10 +271,35 @@ class KontaktUpdateView(LoginRequiredMixin, UpdateView):
     template_name = "vertrieb/kontakt_form.html"
 
 
-class KontaktDeleteView(LoginRequiredMixin, DeleteView):
-    model = Kontakt
-    template_name = "vertrieb/confirm_delete.html"
-    success_url = reverse_lazy("vertrieb:kontakt_list")
+@login_required
+def kontakt_archivieren(request, pk):
+    """24.10.2026, auf Wunsch von Björn: ersetzt KontaktDeleteView, siehe firma_archivieren."""
+    kontakt = get_object_or_404(Kontakt, pk=pk)
+    if request.method == "POST":
+        if not kontakt.kann_archiviert_werden:
+            messages.warning(
+                request,
+                f"\"{kontakt}\" ist noch mit einem offenen Deal oder einer offenen Aktivität "
+                f"verknüpft und kann deshalb nicht archiviert werden.",
+            )
+            return redirect(kontakt.get_absolute_url())
+        kontakt.archiviert = True
+        kontakt.save(update_fields=["archiviert"])
+        messages.success(request, f"\"{kontakt}\" wurde archiviert.")
+        return redirect("vertrieb:kontakt_list")
+    return render(request, "vertrieb/confirm_archivieren.html", {
+        "object": kontakt, "kann_archiviert_werden": kontakt.kann_archiviert_werden,
+    })
+
+
+@login_required
+def kontakt_reaktivieren(request, pk):
+    kontakt = get_object_or_404(Kontakt, pk=pk)
+    if request.method == "POST":
+        kontakt.archiviert = False
+        kontakt.save(update_fields=["archiviert"])
+        messages.success(request, f"\"{kontakt}\" wurde reaktiviert.")
+    return redirect(kontakt.get_absolute_url())
 
 
 # ---------------------------------------------------------------------------
@@ -423,9 +489,27 @@ class DealUpdateView(LoginRequiredMixin, UpdateView):
 
 
 class DealDeleteView(LoginRequiredMixin, DeleteView):
+    """24.10.2026, auf Wunsch von Björn (im Zuge der Firma/Kontakt-Archivierung): bislang gab
+    es hier gar keine Sperre, obwohl ueber einen Deal gehaengte Angebote, Packscheine,
+    Lieferscheine, Rahmenvereinbarungen und sogar bezahlte Rechnungen per CASCADE mitgeloescht
+    wuerden. Siehe Deal.ist_loeschbar - Loeschen bleibt nur erlaubt, solange noch kein
+    einziges dieser Dokumente existiert."""
+
     model = Deal
     template_name = "vertrieb/confirm_delete.html"
     success_url = reverse_lazy("vertrieb:deal_list")
+
+    def form_valid(self, form):
+        deal = self.get_object()
+        if not deal.ist_loeschbar:
+            messages.warning(
+                self.request,
+                f"Deal \"{deal.titel}\" hat bereits Angebote, Packscheine, Lieferscheine, "
+                f"Rahmenvereinbarungen oder Rechnungen und darf deshalb nicht mehr geloescht "
+                f"werden.",
+            )
+            return redirect(deal.get_absolute_url())
+        return super().form_valid(form)
 
 
 # ---------------------------------------------------------------------------
