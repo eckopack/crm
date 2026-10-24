@@ -1,0 +1,20 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}{{ angebot.nummer }} als abgelehnt erfassen{% endblock %}
+{% block content %}
+<h2 class="mb-3">{{ angebot.nummer }} als abgelehnt erfassen</h2>
+<p class="text-muted">
+    Der Kunde hat dieses Angebot abgelehnt. Mit der Erfassung wird die automatische
+    Nachfasskette zu diesem Angebot beendet.
+</p>
+
+<form method="post">
+    {% csrf_token %}
+    <div class="card mb-3" style="max-width: 500px;">
+        <div class="card-body">
+            {% include "vertrieb/_form_fields.html" %}
+        </div>
+    </div>
+    <button type="submit" class="btn btn-danger">Als abgelehnt erfassen</button>
+    <a href="{{ angebot.get_absolute_url }}" class="btn btn-outline-secondary">Abbrechen</a>
+</form>
+{% endblock %}

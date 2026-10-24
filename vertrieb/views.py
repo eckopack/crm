@@ -20,7 +20,7 @@ from django.views.generic import CreateView, DeleteView, DetailView, ListView, U
 
 from . import nurture, pdf
 from .forms import (
-    AktivitaetForm, AngebotForm, AngebotPositionFormSet, ArtikelForm,
+    AktivitaetForm, AngebotAblehnenForm, AngebotForm, AngebotPositionFormSet, ArtikelForm,
     BonusstaffelFormSet, DealForm, FirmaForm, KontaktForm,
     PackscheinForm, PackscheinPositionFormSet, PackscheinVersandForm,
     LieferscheinForm, LieferscheinPositionFormSet, LieferscheinVersandForm,
@@ -618,6 +618,38 @@ def angebot_versand_senden_view(request, pk):
                     f"Angebot {angebot.nummer} konnte NICHT per Mail versendet werden ({fehler}).",
                 )
     return redirect(angebot.get_absolute_url())
+
+
+@login_required
+def angebot_ablehnen(request, pk):
+    """Erfasst eine Kundenablehnung zu einem versendeten Angebot, inkl. Pflichtgrund
+    (24.10.2026, auf Wunsch von Björn: "aus Kundensicht" identifizierte Luecke - bisher gab
+    es keinen Weg, der erfasst HAT, warum ein Angebot abgelehnt wurde, siehe Model-Doku bei
+    Angebot.ablehnungsgrund). Nur aus status='versendet' moeglich - ein Entwurf wurde nie
+    beim Kunden, ein bereits angenommenes/abgelaufenes/abgelehntes Angebot korrigiert man
+    stattdessen ueber "Bearbeiten". Das eigentliche Beenden der Nachfasskette passiert wie
+    gehabt ereignisbasiert ueber signals.angebot_status_wechsel (Status wechselt weg von
+    "versendet")."""
+    angebot = get_object_or_404(Angebot, pk=pk)
+    if angebot.status != "versendet":
+        messages.warning(
+            request,
+            f"Angebot {angebot.nummer} kann nicht abgelehnt werden (Status ist "
+            f"\"{angebot.get_status_display()}\", nicht \"Versendet\"). Korrekturen bitte über "
+            f"\"Bearbeiten\" vornehmen.",
+        )
+        return redirect(angebot.get_absolute_url())
+
+    if request.method == "POST":
+        form = AngebotAblehnenForm(request.POST, instance=angebot)
+        if form.is_valid():
+            angebot.status = "abgelehnt"
+            form.save()
+            messages.success(request, f"Angebot {angebot.nummer} wurde als abgelehnt erfasst.")
+            return redirect(angebot.get_absolute_url())
+    else:
+        form = AngebotAblehnenForm(instance=angebot)
+    return render(request, "vertrieb/angebot_ablehnen_form.html", {"form": form, "angebot": angebot})
 
 
 # ---------------------------------------------------------------------------
