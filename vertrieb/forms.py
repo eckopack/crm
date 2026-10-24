@@ -112,7 +112,7 @@ class AngebotForm(BootstrapFormMixin, forms.ModelForm):
         model = Angebot
         fields = [
             "deal", "rahmenvereinbarung", "datum", "gueltig_bis", "status", "sprache",
-            "ansprechpartner", "notizen",
+            "ansprechpartner", "ablehnungsgrund", "notizen",
         ]
         widgets = {
             "notizen": forms.Textarea(attrs={"rows": 3}),
@@ -130,6 +130,29 @@ class AngebotForm(BootstrapFormMixin, forms.ModelForm):
         # zeigt die Firma ohnehin mit an, sodass die Auswahl eindeutig bleibt.
         self.fields["ansprechpartner"].queryset = Kontakt.objects.all().select_related("firma")
         self.fields["ansprechpartner"].required = False
+        # ablehnungsgrund bewusst NICHT required hier (siehe Model-Doku bei
+        # Angebot.ablehnungsgrund) - nur auf dem dedizierten "Angebot ablehnen"-Weg
+        # (AngebotAblehnenForm unten) ist das Feld Pflicht.
+        self.fields["ablehnungsgrund"].required = False
+
+
+class AngebotAblehnenForm(BootstrapFormMixin, forms.ModelForm):
+    """Dedizierter, bewusst schlanker Weg, ein Angebot als abgelehnt zu markieren (24.10.2026,
+    auf Wunsch von Björn) - anders als beim generischen AngebotForm oben ist der Grund hier
+    PFLICHT, weil das genau der Moment ist, in dem Björn die Ablehnung bewusst erfasst."""
+
+    class Meta:
+        model = Angebot
+        fields = ["ablehnungsgrund"]
+        widgets = {
+            "ablehnungsgrund": forms.Textarea(attrs={"rows": 3}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()
+        self.fields["ablehnungsgrund"].required = True
+        self.fields["ablehnungsgrund"].label = "Grund der Ablehnung"
 
 
 class AngebotPositionForm(BootstrapFormMixin, forms.ModelForm):

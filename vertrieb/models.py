@@ -333,6 +333,14 @@ class Angebot(models.Model):
     # gleichzeitig status='versendet', was automatisch die Angebot-Nachfasskette startet
     # (siehe signals.angebot_status_wechsel).
     versandmail_gesendet_am = models.DateTimeField("Versand-Mail gesendet am", null=True, blank=True)
+    # 24.10.2026, auf Wunsch von Björn ("aus Kundensicht" identifizierte Luecke): bisher gab
+    # es fuer Status "abgelehnt" keinerlei Weg, der auch erfasst HAT, warum - anders als bei
+    # Deal.verloren_grund fehlte hier das Pendant komplett. Analog angelegt (gleicher Typ,
+    # gleiche Laenge), aber bewusst als PFLICHTFELD auf dem dedizierten
+    # "Angebot ablehnen"-Weg (views.angebot_ablehnen/AngebotAblehnenForm) - der generische
+    # Status-Wechsel ueber das normale Bearbeiten-Formular (AngebotForm) bleibt wie bei Deal
+    # lose/optional, um bestehende Angebote nicht nachtraeglich zu blockieren.
+    ablehnungsgrund = models.CharField("Grund (bei Ablehnung)", max_length=300, blank=True)
 
     class Meta:
         verbose_name = "Angebot"
