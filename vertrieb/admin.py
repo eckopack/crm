@@ -68,11 +68,16 @@ class ArtikelAdmin(admin.ModelAdmin):
     )
     list_filter = ("vertriebskanal", "geschaeftsbereich", "warengruppe", "materialtyp", "status")
     search_fields = ("artikelnummer", "bezeichnung")
+    autocomplete_fields = ["lieferant"]
     inlines = [PreisstaffelInline]
 
 
 # ---------------------------------------------------------------------------
 # Materialwirtschaft (Phase A: Admin-Verwaltung, eigene Bedienoberfläche folgt)
+#
+# Lieferanten (24.10.2026) sind Firmen mit status="lieferant" - siehe FirmaAdmin oben, kein
+# eigenes Admin-Modell nötig. FirmaAdmin.search_fields deckt bereits das Autocomplete für
+# Artikel.lieferant/Charge.lieferant unten ab.
 # ---------------------------------------------------------------------------
 
 @admin.register(Rezeptur)
@@ -86,13 +91,13 @@ class RezepturAdmin(admin.ModelAdmin):
 @admin.register(Charge)
 class ChargeAdmin(admin.ModelAdmin):
     list_display = (
-        "artikel", "chargennummer", "wareneingang_datum", "mindesthaltbarkeitsdatum",
+        "artikel", "chargennummer", "wareneingang_datum", "lieferant", "mindesthaltbarkeitsdatum",
         "menge_eingang", "bestand_aktuell", "abgelaufen",
     )
-    list_filter = ("artikel",)
+    list_filter = ("artikel", "lieferant")
     search_fields = ("artikel__artikelnummer", "chargennummer")
     readonly_fields = ("bestand_aktuell",)
-    autocomplete_fields = ["artikel"]
+    autocomplete_fields = ["artikel", "lieferant"]
 
     def get_readonly_fields(self, request, obj=None):
         # bestand_aktuell wird ausschliesslich ueber Lagerbewegungen fortgeschrieben (siehe

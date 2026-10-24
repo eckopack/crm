@@ -155,6 +155,25 @@ class Firma(models.Model):
         settings.AUTH_USER_MODEL, verbose_name="Zuständiger Mitarbeiter",
         null=True, blank=True, on_delete=models.SET_NULL, related_name="firmen"
     )
+    # Lieferanten-Felder (24.10.2026, auf Wunsch von Björn, im Zuge der Materialwirtschaft-
+    # Erweiterung um Rohmaterial-/Verpackungsmaterial-Lieferanten wie TECNARO GmbH oder
+    # traceless materials GmbH): bewusst KEIN eigenes Lieferant-Modell, sondern Erweiterung
+    # von Firma - status="lieferant" existiert hier schon (siehe FIRMA_STATUS_CHOICES), und
+    # Ansprechpartner werden bereits über das bestehende Kontakt-Modell abgebildet. Ein
+    # separates Lieferant-Modell hätte TECNARO/traceless doppelt im System geführt. Die drei
+    # Felder sind nur bei Lieferanten relevant, bleiben bei allen anderen Firmen leer.
+    ust_idnr = models.CharField("USt-IdNr.", max_length=20, blank=True)
+    kundennummer_bei_lieferant = models.CharField(
+        "Unsere Kundennummer bei diesem Lieferanten", max_length=50, blank=True,
+        help_text="Nur relevant, wenn diese Firma als Lieferant geführt wird (Status "
+                   "\"Lieferant\").",
+    )
+    zahlungsbedingungen = models.CharField(
+        "Zahlungsbedingungen (Freitext)", max_length=200, blank=True,
+        help_text="Z. B. \"14 Tage netto\" oder \"50% bei Auftrag, 50% bei Lieferung\" - "
+                   "variiert teils je Bestellung, deshalb Freitext statt fester Auswahl. Nur "
+                   "relevant, wenn diese Firma als Lieferant geführt wird.",
+    )
     notizen = models.TextField("Notizen", blank=True)
     externe_id = models.CharField(
         "Externe ID (z.B. aus Lead-Recherche-Liste)", max_length=30, blank=True, db_index=True,
@@ -1151,6 +1170,7 @@ class EmailVersand(models.Model):
 MATERIALTYP_CHOICES = [
     ("handelsware", "Handelsware (zugekauft, keine eigene Produktion)"),
     ("rohmaterial", "Rohmaterial"),
+    ("verpackungsmaterial", "Verpackungsmaterial (z. B. Kartonage)"),
     ("fertigware", "Fertigware (Eigenproduktion)"),
 ]
 
@@ -1265,7 +1285,21 @@ class Artikel(models.Model):
         help_text="Z. B. 500 bei einem 500er-Schlauchbeutel oder 150 bei einem 150er-Karton.",
     )
     lagerort = models.CharField("Lagerort", max_length=100, blank=True)
-    lieferant = models.CharField("Lieferant", max_length=200, blank=True)
+    lieferant_freitext = models.CharField(
+        "Lieferant (Freitext, Altfeld)", max_length=200, blank=True,
+        help_text="Historisches Freitextfeld, weiterhin genutzt für Handelsware aus dem Excel-"
+                   "Artikelstamm-Import (siehe import_artikelstamm.py). Für Rohmaterial/"
+                   "Verpackungsmaterial/Fertigware bitte stattdessen das strukturierte Feld "
+                   "'Lieferant' unten (Lieferanten-Stammdaten) nutzen.",
+    )
+    lieferant = models.ForeignKey(
+        Firma, verbose_name="Lieferant", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="artikel_als_lieferant",
+        limit_choices_to={"status": "lieferant"},
+        help_text="Firma mit Status \"Lieferant\" (24.10.2026) - vorgesehen für Rohmaterial/"
+                   "Verpackungsmaterial/Fertigware. Für Handelsware weiterhin meist über das "
+                   "Altfeld 'Lieferant (Freitext, Altfeld)' aus dem Excel-Import gepflegt.",
+    )
     status = models.CharField(
         "Status", max_length=30, choices=ARTIKEL_STATUS_CHOICES, default="in_vorbereitung", blank=True,
         help_text="Rein informativ - verhindert aktuell NICHT die Verwendung in Angeboten/Packscheinen.",
@@ -1331,21 +1365,37 @@ class Preisstaffel(models.Model):
 # Ändern einer bestehenden Zeile. Phase A legt nur das Datenmodell + Admin an, ohne eigene
 # Bedienoberfläche - Wareneingang-Erfassung (Phase B), Produktionsbuchung (Phase C) und
 # automatische Buchung beim Lieferschein-Versand (Phase D) folgen als eigene Schritte.
+#
+# ERWEITERUNG 24.10.2026 (auf Wunsch von Björn, im Zuge hochgeladener Lieferanten-Rechnungen
+# TECNARO GmbH/traceless materials GmbH): materialtyp um "verpackungsmaterial" (Kartonage)
+# ergänzt, gleichberechtigt zu Rohmaterial in der Rezeptur nutzbar (siehe Rezeptur-Doku
+# unten) - Kartonage wird demnach bei der Produktion verbraucht, nicht erst beim Versand.
+# Lieferanten werden dafür NICHT als eigenes Modell gefuehrt, sondern als Firma mit
+# status="lieferant" (siehe Firma-Doku) - ersetzt das bisherige Freitextfeld auf Artikel/
+# Charge für diese Fälle. Lieferanten-Firmen bleiben für Phase A ebenfalls nur per Admin
+# pflegbar - eine eigene Oberfläche folgt zusammen mit Phase B (Wareneingang).
 # ---------------------------------------------------------------------------
 
 class Rezeptur(models.Model):
-    """Verknüpft ein Fertigprodukt mit dem/den Rohmaterial(ien), aus dem es entsteht,
-    plus Umrechnungsfaktor (z. B. "1 Stück Fertigprodukt verbraucht 0,05 kg Rohmaterial
-    X"). Bewusst als Zeilen-Tabelle (nicht ein einzelnes FK-Feld am Artikel), damit auch
-    ein Fertigprodukt mit mehr als einem Rohmaterial abbildbar ist, auch wenn das laut
-    Björn aktuell der Ausnahmefall ist."""
+    """Verknüpft ein Fertigprodukt mit dem/den Rohmaterial(ien)/Verpackungsmaterial(ien), aus
+    denen es entsteht, plus Umrechnungsfaktor (z. B. "1 Stück Fertigprodukt verbraucht 0,05 kg
+    Rohmaterial X"). Bewusst als Zeilen-Tabelle (nicht ein einzelnes FK-Feld am Artikel), damit
+    auch ein Fertigprodukt mit mehr als einem Rohmaterial abbildbar ist, auch wenn das laut
+    Björn aktuell der Ausnahmefall ist.
+
+    Feld heißt weiterhin "rohmaterial" (nicht umbenannt, um bestehende Referenzen/Doku nicht
+    unnötig zu brechen), lässt aber seit 24.10.2026 auf Wunsch von Björn auch Artikel mit
+    materialtyp="verpackungsmaterial" zu (z. B. Kartonage) - Kartonage wird demnach genau wie
+    chemisches Rohmaterial über einen Umrechnungsfaktor pro produzierter Fertigware-Einheit in
+    der Produktion verbraucht, nicht erst beim Packschein/Versand."""
     fertigprodukt = models.ForeignKey(
         Artikel, verbose_name="Fertigprodukt", on_delete=models.CASCADE,
         related_name="rezeptur_zeilen", limit_choices_to={"materialtyp": "fertigware"},
     )
     rohmaterial = models.ForeignKey(
-        Artikel, verbose_name="Rohmaterial", on_delete=models.PROTECT,
-        related_name="verwendet_in_rezepturen", limit_choices_to={"materialtyp": "rohmaterial"},
+        Artikel, verbose_name="Rohmaterial/Verpackungsmaterial", on_delete=models.PROTECT,
+        related_name="verwendet_in_rezepturen",
+        limit_choices_to=models.Q(materialtyp__in=["rohmaterial", "verpackungsmaterial"]),
     )
     menge_je_einheit = models.DecimalField(
         "Menge Rohmaterial je Einheit Fertigprodukt", max_digits=12, decimal_places=5,
@@ -1370,14 +1420,23 @@ class Rezeptur(models.Model):
 
 
 class Charge(models.Model):
-    """Eine konkrete Wareneingangs-Charge eines Artikels (Rohmaterial oder Fertigware) mit
-    eigenem Mindesthaltbarkeitsdatum und eigenem Restbestand. Lagerbewegungen verbrauchen
-    Chargen in der Reihenfolge der Meta.ordering (älteste zuerst = FIFO)."""
+    """Eine konkrete Wareneingangs-Charge eines Artikels (Rohmaterial, Verpackungsmaterial oder
+    Fertigware) mit eigenem Mindesthaltbarkeitsdatum und eigenem Restbestand. Lagerbewegungen
+    verbrauchen Chargen in der Reihenfolge der Meta.ordering (älteste zuerst = FIFO)."""
     artikel = models.ForeignKey(Artikel, verbose_name="Artikel", on_delete=models.PROTECT, related_name="chargen")
     chargennummer = models.CharField("Chargennummer", max_length=100, blank=True)
     wareneingang_datum = models.DateField("Wareneingangsdatum", default=timezone.localdate)
     mindesthaltbarkeitsdatum = models.DateField("Mindesthaltbarkeitsdatum (MHD)", null=True, blank=True)
-    lieferant = models.CharField("Lieferant", max_length=200, blank=True)
+    lieferant_freitext = models.CharField(
+        "Lieferant (Freitext, Altfeld)", max_length=200, blank=True,
+        help_text="Historisches Freitextfeld. Bitte für neue Chargen stattdessen das "
+                   "strukturierte Feld 'Lieferant' unten nutzen.",
+    )
+    lieferant = models.ForeignKey(
+        Firma, verbose_name="Lieferant", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="chargen_als_lieferant",
+        limit_choices_to={"status": "lieferant"},
+    )
     menge_eingang = models.DecimalField(
         "Menge bei Wareneingang", max_digits=14, decimal_places=3,
         help_text="Historischer Wert, ändert sich nie - nur zur Dokumentation der Ursprungsmenge.",

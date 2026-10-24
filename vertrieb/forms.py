@@ -432,13 +432,19 @@ class ArtikelForm(BootstrapFormMixin, forms.ModelForm):
             "artikelnummer", "bezeichnung", "bezeichnung_en", "beschreibung", "beschreibung_en",
             "geschaeftsbereich", "vertriebskanal", "warengruppe", "einheit", "verkaufspreis",
             "ust_satz", "einkaufspreis", "lagerbestand_aktuell", "mindestbestand",
-            "verpackungseinheit_stk", "lagerort", "lieferant", "status", "notizen",
+            "verpackungseinheit_stk", "lagerort", "lieferant_freitext", "status", "notizen",
         ]
         widgets = {
             "beschreibung": forms.Textarea(attrs={"rows": 3}),
             "beschreibung_en": forms.Textarea(attrs={"rows": 3}),
             "notizen": forms.Textarea(attrs={"rows": 3}),
         }
+        # 24.10.2026: Label hier bewusst auf "Lieferant" vereinfacht (statt dem technischeren
+        # Model-Label "Lieferant (Freitext, Altfeld)") - dieses Formular bedient weiterhin fast
+        # ausschließlich Handelsware (materialtyp ist hier gar nicht wählbar), für die es noch
+        # keine Umstellung auf Lieferanten-Stammdaten gibt. Die Unterscheidung Alt-/Neufeld ist
+        # nur im Admin relevant, wo beide Felder nebeneinander auftauchen.
+        labels = {"lieferant_freitext": "Lieferant"}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
