@@ -179,6 +179,14 @@ class Firma(models.Model):
         "Externe ID (z.B. aus Lead-Recherche-Liste)", max_length=30, blank=True, db_index=True,
         help_text="Für Abgleich beim wiederholten Import aus einer Excel-Liste, z.B. 'F001'.",
     )
+    # 24.10.2026, auf Wunsch von Björn: Firmen duerfen nicht mehr unwiderruflich geloescht
+    # werden koennen (das hat bisher ueber on_delete=CASCADE auch Kontakte, Deals, Angebote,
+    # Packscheine, Lieferscheine, Rahmenvereinbarungen und Rechnungen mitgerissen und damit
+    # dokumentierte Vorgaenge zerstoert). Stattdessen gibt es jetzt "archivieren" (siehe
+    # kann_archiviert_werden unten und firma_archivieren-View) - ein eigenes Boolean-Feld statt
+    # Wiederverwendung von status="inaktiv", weil sonst die Information verloren ginge, ob die
+    # archivierte Firma mal Kunde/Lieferant/Lead war.
+    archiviert = models.BooleanField("Archiviert", default=False)
     erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
     aktualisiert_am = models.DateTimeField("Aktualisiert am", auto_now=True)
 
@@ -198,9 +206,27 @@ class Firma(models.Model):
         teile = [t for t in [self.strasse, f"{self.plz} {self.ort}".strip(), self.land] if t and t.strip()]
         return ", ".join(teile)
 
+    @property
+    def kann_archiviert_werden(self):
+        """Blockiert das Archivieren, solange die Firma noch mit etwas Aktivem verknuepft ist:
+        ein offener Deal, eine ueber einen ihrer Deals noch unbezahlte/nicht stornierte
+        Rechnung, oder eine nicht erledigte Aktivitaet (direkt an der Firma, einem ihrer
+        Kontakte oder einem ihrer Deals)."""
+        if self.deals.exclude(phase__in=("gewonnen", "verloren")).exists():
+            return False
+        if Rechnung.objects.filter(deal__firma=self).exclude(status__in=("bezahlt", "storniert")).exists():
+            return False
+        if self.aktivitaeten.filter(erledigt=False).exists():
+            return False
+        if Aktivitaet.objects.filter(kontakt__firma=self, erledigt=False).exists():
+            return False
+        if Aktivitaet.objects.filter(deal__firma=self, erledigt=False).exists():
+            return False
+        return True
+
 
 class Kontakt(models.Model):
-    firma = models.ForeignKey(Firma, verbose_name="Firma", on_delete=models.CASCADE, related_name="kontakte")
+    firma = models.ForeignKey(Firma, verbose_name="Firma", on_delete=models.PROTECT, related_name="kontakte")
     vorname = models.CharField("Vorname", max_length=100)
     nachname = models.CharField("Nachname", max_length=100)
     position = models.CharField("Position", max_length=150, blank=True)
@@ -213,6 +239,9 @@ class Kontakt(models.Model):
         "Externe ID (z.B. aus Lead-Recherche-Liste)", max_length=30, blank=True, db_index=True,
         help_text="Für Abgleich beim wiederholten Import aus einer Excel-Liste, z.B. 'K001'.",
     )
+    # 24.10.2026, auf Wunsch von Björn: siehe Firma.archiviert - dieselbe Begruendung gilt
+    # hier, Kontakte duerfen ebenfalls nicht mehr unwiderruflich geloescht werden.
+    archiviert = models.BooleanField("Archiviert", default=False)
     erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
 
     class Meta:
@@ -226,10 +255,21 @@ class Kontakt(models.Model):
     def get_absolute_url(self):
         return reverse("vertrieb:kontakt_detail", args=[self.pk])
 
+    @property
+    def kann_archiviert_werden(self):
+        """Blockiert das Archivieren, solange der Kontakt noch mit etwas Aktivem verknuepft
+        ist: ein offener Deal, bei dem er Ansprechpartner ist, oder eine nicht erledigte
+        Aktivitaet, die direkt an ihm haengt."""
+        if self.deals.exclude(phase__in=("gewonnen", "verloren")).exists():
+            return False
+        if self.aktivitaeten.filter(erledigt=False).exists():
+            return False
+        return True
+
 
 class Deal(models.Model):
     titel = models.CharField("Titel", max_length=200)
-    firma = models.ForeignKey(Firma, verbose_name="Firma", on_delete=models.CASCADE, related_name="deals")
+    firma = models.ForeignKey(Firma, verbose_name="Firma", on_delete=models.PROTECT, related_name="deals")
     kontakt = models.ForeignKey(
         Kontakt, verbose_name="Ansprechpartner", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="deals"
@@ -277,6 +317,22 @@ class Deal(models.Model):
     def ist_offen(self):
         return self.phase not in ("gewonnen", "verloren")
 
+    @property
+    def ist_loeschbar(self):
+        """24.10.2026, auf Wunsch von Björn (im Zuge der Firma/Kontakt-Archivierung): ohne
+        diese Sperre liesse sich ueber "Deal loeschen" weiterhin derselbe Schaden anrichten,
+        den die Firma/Kontakt-Archivierung gerade verhindern soll - denn Angebot.deal,
+        Packschein.deal, Lieferschein.deal, Rahmenvereinbarung.deal und Rechnung.deal haengen
+        alle an diesem Deal. Loeschen bleibt nur erlaubt, solange noch kein einziges dieser
+        Dokumente existiert (reiner, unangetasteter Lead/Pipeline-Eintrag)."""
+        return not (
+            self.angebote.exists()
+            or self.packscheine.exists()
+            or self.lieferscheine.exists()
+            or self.rahmenvereinbarungen.exists()
+            or self.rechnungen.exists()
+        )
+
 
 class Aktivitaet(models.Model):
     typ = models.CharField("Typ", max_length=20, choices=AKTIVITAET_TYP_CHOICES, default="aufgabe")
@@ -285,10 +341,10 @@ class Aktivitaet(models.Model):
     datum = models.DateTimeField("Datum/Fällig", default=timezone.now)
     erledigt = models.BooleanField("Erledigt", default=False)
     firma = models.ForeignKey(
-        Firma, verbose_name="Firma", null=True, blank=True, on_delete=models.CASCADE, related_name="aktivitaeten"
+        Firma, verbose_name="Firma", null=True, blank=True, on_delete=models.PROTECT, related_name="aktivitaeten"
     )
     kontakt = models.ForeignKey(
-        Kontakt, verbose_name="Kontakt", null=True, blank=True, on_delete=models.CASCADE, related_name="aktivitaeten"
+        Kontakt, verbose_name="Kontakt", null=True, blank=True, on_delete=models.PROTECT, related_name="aktivitaeten"
     )
     deal = models.ForeignKey(
         Deal, verbose_name="Deal", null=True, blank=True, on_delete=models.CASCADE, related_name="aktivitaeten"
@@ -317,7 +373,7 @@ class Aktivitaet(models.Model):
 
 class Angebot(models.Model):
     nummer = models.CharField("Angebotsnummer", max_length=30, unique=True, blank=True)
-    deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.CASCADE, related_name="angebote")
+    deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.PROTECT, related_name="angebote")
     # 22.10.2026, Björns Rückfrage: ist dieses Angebot aus einer Rahmenvereinbarung erzeugt
     # (siehe dort), dokumentiert es dem Kunden gegenüber die dort vereinbarte Jahresmenge je
     # Artikel zum eingefrorenen Preis - rein informativ/zur Nachverfolgung, keine
@@ -458,7 +514,7 @@ class Packschein(models.Model):
     auf dem Ausdruck.
     """
     nummer = models.CharField("Packscheinnummer", max_length=30, unique=True, blank=True)
-    deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.CASCADE, related_name="packscheine")
+    deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.PROTECT, related_name="packscheine")
     angebot = models.ForeignKey(
         Angebot, verbose_name="Angebot", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="packscheine"
@@ -572,7 +628,7 @@ class PackscheinPosition(models.Model):
 
 class Lieferschein(models.Model):
     nummer = models.CharField("Lieferscheinnummer", max_length=30, unique=True, blank=True)
-    deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.CASCADE, related_name="lieferscheine")
+    deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.PROTECT, related_name="lieferscheine")
     angebot = models.ForeignKey(
         Angebot, verbose_name="Angebot", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="lieferscheine"
@@ -725,7 +781,7 @@ class Rahmenvereinbarung(models.Model):
     dieser Rahmenvereinbarung (über alle Positionen hinweg) - siehe Bonusstaffel unten
     und Rahmenvereinbarung.aktueller_bonus_prozent/bonus_betrag."""
     nummer = models.CharField("Vereinbarungsnummer", max_length=30, unique=True, blank=True)
-    deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.CASCADE, related_name="rahmenvereinbarungen")
+    deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.PROTECT, related_name="rahmenvereinbarungen")
     gueltig_ab = models.DateField("Gültig ab", default=timezone.localdate)
     gueltig_bis = models.DateField("Gültig bis", null=True, blank=True)
     sprache = models.CharField(
@@ -862,7 +918,7 @@ class Bonusstaffel(models.Model):
 
 class Rechnung(models.Model):
     nummer = models.CharField("Rechnungsnummer", max_length=30, unique=True, blank=True)
-    deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.CASCADE, related_name="rechnungen")
+    deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.PROTECT, related_name="rechnungen")
     angebot = models.ForeignKey(
         Angebot, verbose_name="Angebot", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="rechnungen"

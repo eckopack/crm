@@ -6,10 +6,18 @@
         <h2>{{ firma.name }}</h2>
         <span class="badge text-bg-secondary">{{ firma.get_geschaeftsbereich_display }}</span>
         <span class="badge text-bg-light border">{{ firma.get_status_display }}</span>
+        {% if firma.archiviert %}<span class="badge text-bg-secondary">Archiviert</span>{% endif %}
     </div>
     <div>
         <a href="{% url 'vertrieb:firma_update' firma.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
-        <a href="{% url 'vertrieb:firma_delete' firma.pk %}" class="btn btn-outline-danger">Löschen</a>
+        {% if firma.archiviert %}
+        <form method="post" action="{% url 'vertrieb:firma_reaktivieren' firma.pk %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-success">Reaktivieren</button>
+        </form>
+        {% else %}
+        <a href="{% url 'vertrieb:firma_archivieren' firma.pk %}" class="btn btn-outline-danger">Archivieren</a>
+        {% endif %}
     </div>
 </div>
 

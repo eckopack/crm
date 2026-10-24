@@ -14,13 +14,15 @@ urlpatterns = [
     path("firmen/neu/", views.FirmaCreateView.as_view(), name="firma_create"),
     path("firmen/<int:pk>/", views.FirmaDetailView.as_view(), name="firma_detail"),
     path("firmen/<int:pk>/bearbeiten/", views.FirmaUpdateView.as_view(), name="firma_update"),
-    path("firmen/<int:pk>/loeschen/", views.FirmaDeleteView.as_view(), name="firma_delete"),
+    path("firmen/<int:pk>/archivieren/", views.firma_archivieren, name="firma_archivieren"),
+    path("firmen/<int:pk>/reaktivieren/", views.firma_reaktivieren, name="firma_reaktivieren"),
 
     path("kontakte/", views.KontaktListView.as_view(), name="kontakt_list"),
     path("kontakte/neu/", views.KontaktCreateView.as_view(), name="kontakt_create"),
     path("kontakte/<int:pk>/", views.KontaktDetailView.as_view(), name="kontakt_detail"),
     path("kontakte/<int:pk>/bearbeiten/", views.KontaktUpdateView.as_view(), name="kontakt_update"),
-    path("kontakte/<int:pk>/loeschen/", views.KontaktDeleteView.as_view(), name="kontakt_delete"),
+    path("kontakte/<int:pk>/archivieren/", views.kontakt_archivieren, name="kontakt_archivieren"),
+    path("kontakte/<int:pk>/reaktivieren/", views.kontakt_reaktivieren, name="kontakt_reaktivieren"),
 
     path("deals/", views.DealListView.as_view(), name="deal_list"),
     path("deals/neu/", views.DealCreateView.as_view(), name="deal_create"),
