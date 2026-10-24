@@ -27,9 +27,11 @@
             <button type="submit" class="btn btn-primary">Jetzt versenden</button>
         </form>
         {% endif %}
+        {% if angebot.status == "versendet" or angebot.status == "angenommen" %}
         <a href="{% url 'vertrieb:packschein_create' %}?angebot={{ angebot.pk }}" class="btn btn-primary">Packschein erstellen</a>
-        <a href="{% url 'vertrieb:lieferschein_create' %}?angebot={{ angebot.pk }}" class="btn btn-primary">Lieferschein erstellen</a>
-        <a href="{% url 'vertrieb:rechnung_create' %}?angebot={{ angebot.pk }}" class="btn btn-primary">Rechnung erstellen</a>
+        {% else %}
+        <button type="button" class="btn btn-primary" disabled title="Erst möglich, wenn das Angebot an den Kunden versendet wurde">Packschein erstellen</button>
+        {% endif %}
         <a href="{% url 'vertrieb:angebot_pdf' angebot.pk %}" target="_blank" class="btn btn-outline-primary">PDF</a>
         <a href="{% url 'vertrieb:angebot_update' angebot.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
         <a href="{% url 'vertrieb:angebot_delete' angebot.pk %}" class="btn btn-outline-danger">Löschen</a>
@@ -38,6 +40,20 @@
 {% if angebot.versandmail_gesendet_am %}
 <div class="text-muted small mb-3">
     Angebot per Mail an Kunde gesendet am {{ angebot.versandmail_gesendet_am|date:"d.m.Y H:i" }}.
+</div>
+{% endif %}
+
+{% if angebot.packscheine.exists %}
+<div class="card mb-3">
+    <div class="card-header fw-semibold">Packscheine zu diesem Angebot</div>
+    <ul class="list-group list-group-flush">
+        {% for packschein in angebot.packscheine.all %}
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+            <a href="{{ packschein.get_absolute_url }}">{{ packschein.nummer|default:"(Entwurf)" }}</a>
+            <span class="badge text-bg-light border">{{ packschein.get_status_display }}</span>
+        </li>
+        {% endfor %}
+    </ul>
 </div>
 {% endif %}
 

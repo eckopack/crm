@@ -11,6 +11,17 @@
 
 {% if sprache == "en" %}If you have any questions about your delivery, feel free to reach out any time.{% else %}Bei Fragen zu Ihrer Lieferung melden Sie sich jederzeit gerne bei uns.{% endif %}
 
-{% if sprache == "en" %}Kind regards,
-Your ECKO-PACK Team{% else %}Mit freundlichen Grüßen
-Ihr ECKO-PACK Team{% endif %}
+Mit freundlichen Grüßen
+Best regards
+
+Björn Gallenkamp
+Geschäftsführer / CEO
+Telefon:  +49 4331 1348 0
+Mobil:    +49 171 977 77 21
+Fax:      +49 4331 1348 999
+E-Mail:   b.gallenkamp@ecko-pack.de
+Web:      https://www.ecko-pack.de
+
+ECKO-PACK GmbH
+Wasbeker Straße 324
+D-24537 Neumünster

@@ -729,16 +729,42 @@ def packschein_erstellen(request):
     if request.method == "POST":
         form = PackscheinForm(request.POST)
         if form.is_valid():
-            packschein = form.save()
-            formset = PackscheinPositionFormSet(request.POST, instance=packschein)
-            if formset.is_valid():
-                formset.save()
-                # 24.10.2026, auf Wunsch von Björn: ein Packschein zu einem Angebot bedeutet,
-                # der Kunde hat das Angebot angenommen - die Nachfasskette soll dann stoppen
-                # (siehe nurture.angebot_als_angenommen_markieren).
-                if packschein.angebot_id:
-                    nurture.angebot_als_angenommen_markieren(packschein.angebot)
-                return redirect(packschein.get_absolute_url())
+            # Auftrags-Pflicht vor Packschein-Erstellung (24.10.2026, auf Wunsch von Björn:
+            # "wenn wir ein Angebot anlegen, wenn es denn zum Auftrag kommt, wir dann einen
+            # Packschein anlegen ... Schritt für Schritt" - vorher liess sich ein Packschein zu
+            # JEDEM Angebot anlegen, auch zu einem noch nicht einmal versendeten Entwurf).
+            # Musterversand-Packscheine (ist_musterversand) sind bewusst ausgenommen - das sind
+            # Vorab-Musterlieferungen an Leads OHNE Angebot (siehe views.musterkarton_anfordern,
+            # ein komplett eigener View, der diese Form hier gar nicht durchläuft - die Ausnahme
+            # greift trotzdem defensiv, falls doch einmal über dieses Formular angelegt).
+            # Bewusst nur hier bei der NEU-Erstellung geprueft (wie beim Rechnung-Pendant unten),
+            # nicht in PackscheinForm.clean() oder bei packschein_bearbeiten - damit bereits
+            # bestehende (vor dieser Regel angelegte) Packscheine beim Bearbeiten nicht
+            # nachtraeglich blockiert werden.
+            gewaehltes_angebot = form.cleaned_data.get("angebot")
+            ist_musterversand = form.cleaned_data.get("ist_musterversand")
+            if gewaehltes_angebot and not ist_musterversand and gewaehltes_angebot.status == "entwurf":
+                form.add_error(
+                    "angebot",
+                    f"Angebot {gewaehltes_angebot.nummer} wurde noch nicht an den Kunden "
+                    f"versendet (Status \"Entwurf\"). Ein Packschein kann erst erstellt werden, "
+                    f"wenn das Angebot tatsächlich beim Kunden ist und zum Auftrag geworden ist.",
+                )
+                formset = PackscheinPositionFormSet(request.POST)
+            else:
+                packschein = form.save()
+                formset = PackscheinPositionFormSet(request.POST, instance=packschein)
+                if formset.is_valid():
+                    formset.save()
+                    # 24.10.2026, auf Wunsch von Björn: ein Packschein zu einem Angebot bedeutet,
+                    # der Kunde hat das Angebot angenommen - die Nachfasskette soll dann stoppen
+                    # (siehe nurture.angebot_als_angenommen_markieren).
+                    if packschein.angebot_id:
+                        nurture.angebot_als_angenommen_markieren(packschein.angebot)
+                    return redirect(packschein.get_absolute_url())
+                return render(request, "vertrieb/packschein_form.html", {
+                    "form": form, "formset": formset, "angebot_quelle": angebot_quelle,
+                })
         else:
             formset = PackscheinPositionFormSet(request.POST)
     else:
@@ -866,15 +892,60 @@ def lieferschein_erstellen(request):
     if request.method == "POST":
         form = LieferscheinForm(request.POST)
         if form.is_valid():
-            lieferschein = form.save()
-            formset = LieferscheinPositionFormSet(request.POST, instance=lieferschein)
-            if formset.is_valid():
-                formset.save()
-                # 24.10.2026, auf Wunsch von Björn: wie beim Packschein (siehe dort) -
-                # Nachfasskette stoppen, sobald zu diesem Angebot ein Lieferschein angelegt wird.
-                if lieferschein.angebot_id:
-                    nurture.angebot_als_angenommen_markieren(lieferschein.angebot)
-                return redirect(lieferschein.get_absolute_url())
+            # Versand-Pflicht vor Lieferschein-Erstellung (24.10.2026, auf Wunsch von Björn:
+            # "Schritt für Schritt" - Packschein vor Lieferschein, nicht parallel/alles auf
+            # einmal; vorher liess sich ein Lieferschein zu JEDEM Angebot/Deal anlegen, auch
+            # ganz ohne Packschein). Ausnahme: ein Abruf aus einer laufenden Rahmenvereinbarung
+            # (Grosskunden-Jahresmengenvertrag, 21.10.2026) kommt bewusst OHNE eigenen
+            # Packschein je Teillieferung aus (siehe Formular-Kommentar dort). Bewusst nur hier
+            # bei der NEU-Erstellung geprueft (wie beim Rechnung-Pendant unten), nicht in
+            # LieferscheinForm.clean() oder bei lieferschein_bearbeiten.
+            gewaehlter_packschein = form.cleaned_data.get("packschein")
+            gewaehlte_rahmenvereinbarung = form.cleaned_data.get("rahmenvereinbarung")
+            fehler = False
+            if not gewaehlte_rahmenvereinbarung:
+                if not gewaehlter_packschein:
+                    form.add_error(
+                        "packschein",
+                        "Pflichtfeld: Ein Lieferschein kann erst zu einem bereits versendeten "
+                        "Packschein erzeugt werden - außer als Abruf aus einer "
+                        "Rahmenvereinbarung.",
+                    )
+                    fehler = True
+                elif gewaehlter_packschein.ist_musterversand:
+                    form.add_error(
+                        "packschein",
+                        f"Packschein {gewaehlter_packschein.nummer} ist ein Musterversand an "
+                        f"einen Lead und kann nicht zu einem Lieferschein werden.",
+                    )
+                    fehler = True
+                elif gewaehlter_packschein.status != "versendet":
+                    form.add_error(
+                        "packschein",
+                        f"Packschein {gewaehlter_packschein.nummer} wurde noch nicht als "
+                        f"versendet markiert. Bitte zuerst dort auf der Detailseite \"Als "
+                        f"versendet markieren\" ausfüllen, dann kann der Lieferschein erzeugt "
+                        f"werden.",
+                    )
+                    fehler = True
+            if fehler:
+                formset = LieferscheinPositionFormSet(request.POST)
+            else:
+                lieferschein = form.save()
+                formset = LieferscheinPositionFormSet(request.POST, instance=lieferschein)
+                if formset.is_valid():
+                    formset.save()
+                    # 24.10.2026, auf Wunsch von Björn: wie beim Packschein (siehe dort) -
+                    # Nachfasskette stoppen, sobald zu diesem Angebot ein Lieferschein angelegt
+                    # wird.
+                    if lieferschein.angebot_id:
+                        nurture.angebot_als_angenommen_markieren(lieferschein.angebot)
+                    return redirect(lieferschein.get_absolute_url())
+                return render(request, "vertrieb/lieferschein_form.html", {
+                    "form": form, "formset": formset,
+                    "angebot_quelle": angebot_quelle, "packschein_quelle": packschein_quelle,
+                    "rahmenvereinbarung_quelle": rahmenvereinbarung_quelle,
+                })
         else:
             formset = LieferscheinPositionFormSet(request.POST)
     else:
