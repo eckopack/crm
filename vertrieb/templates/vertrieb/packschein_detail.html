@@ -21,7 +21,13 @@
         {% if packschein.status != "versendet" %}
         <a href="{% url 'vertrieb:packschein_versand' packschein.pk %}" class="btn btn-success">Als versendet markieren</a>
         {% endif %}
-        <a href="{% url 'vertrieb:lieferschein_create' %}?packschein={{ packschein.pk }}" class="btn btn-primary">Lieferschein erstellen</a>
+        {% if not packschein.ist_musterversand %}
+            {% if packschein.status == "versendet" %}
+            <a href="{% url 'vertrieb:lieferschein_create' %}?packschein={{ packschein.pk }}" class="btn btn-primary">Lieferschein erstellen</a>
+            {% else %}
+            <button type="button" class="btn btn-primary" disabled title="Erst möglich, wenn der Packschein als versendet markiert wurde">Lieferschein erstellen</button>
+            {% endif %}
+        {% endif %}
         <a href="{% url 'vertrieb:packschein_pdf' packschein.pk %}" target="_blank" class="btn btn-outline-primary">PDF</a>
         <a href="{% url 'vertrieb:packschein_update' packschein.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
         <a href="{% url 'vertrieb:packschein_delete' packschein.pk %}" class="btn btn-outline-danger">Löschen</a>
