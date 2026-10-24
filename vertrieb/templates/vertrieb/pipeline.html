@@ -20,7 +20,7 @@
                     <div class="card-body p-2">
                         <a href="{{ deal.get_absolute_url }}" class="fw-semibold text-decoration-none d-block">{{ deal.titel }}</a>
                         <div class="small text-muted">{{ deal.firma.name }}</div>
-                        <div class="small">{{ deal.wert|floatformat:0 }} € · {{ deal.wahrscheinlichkeit }}%{% if deal.potenzial_tonnen is not None %} · {{ deal.potenzial_tonnen|floatformat:1 }} t{% endif %}</div>
+                        <div class="small">{{ deal.wert|floatformat:0 }} € · {{ deal.wahrscheinlichkeit }}%{% if deal.potenzial_tonnen_gesamt is not None %} · {{ deal.potenzial_tonnen_gesamt|floatformat:1 }} t{% endif %}</div>
                         {% if deal.ist_offen %}
                         <div class="dropdown mt-1">
                             <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
