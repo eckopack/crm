@@ -144,6 +144,18 @@ USE_I18N = True
 
 USE_TZ = True
 
+# 24.10.2026, auf Wunsch von Björn ("Stück mit 1.000er Punkt... für das komplette System...
+# inkl. Summen, Werte, etc."): aktiviert Tausendertrennzeichen bei allen ueber Templates
+# ausgegebenen Zahlen (z. B. |floatformat, direkte {{ zahl }}-Ausgabe) - bei LANGUAGE_CODE
+# "de-de" also Punkt als Tausender-, Komma als Dezimaltrennzeichen (z. B. "67.764.706" statt
+# "67764706", "1.234,56 €" statt "1234.56 €"). Betrifft nur die TEXT-Ausgabe in Templates,
+# NICHT den value=""-Wert, den Django-Formularfelder in <input>-Elemente schreiben - die
+# bleiben unlokalisiert (Field.localize=False ist der Default und wurde hier nirgends
+# gesetzt), bleiben also fuer <input type="number"> weiterhin korrekt mit Punkt als
+# Dezimaltrennzeichen geschrieben und damit vom Browser verarbeitbar - siehe
+# verify_deal_list_summenzeile.py fuer den Verifikationsnachweis dieser Annahme.
+USE_THOUSAND_SEPARATOR = True
+
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
