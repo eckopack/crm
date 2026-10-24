@@ -38,6 +38,22 @@
         <tr><td colspan="9" class="text-muted text-center py-3">Noch keine Deals angelegt.</td></tr>
         {% endfor %}
         </tbody>
+        {% if deals %}
+        <tfoot>
+        <tr class="table-light fw-semibold">
+            <td colspan="4" class="text-end">Summe (alle Deals):</td>
+            <td>
+                {{ summe_trinkhalm_t|floatformat:2 }} t
+                <div class="text-muted small fw-normal">≈ {{ summe_trinkhalm_stueck|floatformat:0 }} Stück</div>
+            </td>
+            <td>
+                {{ summe_besteck_t|floatformat:2 }} t
+                <div class="text-muted small fw-normal">≈ {{ summe_besteck_stueck|floatformat:0 }} Stück</div>
+            </td>
+            <td colspan="3"></td>
+        </tr>
+        </tfoot>
+        {% endif %}
     </table>
 </div>
 {% include "vertrieb/_pagination.html" %}

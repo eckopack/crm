@@ -29,7 +29,8 @@ from .forms import (
     WareneingangForm,
 )
 from .models import (
-    ANGEBOT_NACHFASS_SCHRITTE, DEAL_PHASE_CHOICES, MUSTERKARTON_ARTIKEL,
+    ANGEBOT_NACHFASS_SCHRITTE, DEAL_PHASE_CHOICES, GRAMM_JE_STUECK_BESTECK,
+    GRAMM_JE_STUECK_TRINKHALM, MUSTERKARTON_ARTIKEL,
     PHASE_STANDARD_WAHRSCHEINLICHKEIT, Aktivitaet, Angebot, AngebotNachfassStatus, Artikel,
     Charge, Deal, EmailVersand, Firma, Kontakt, Lagerbewegung, MATERIALTYPEN_MIT_CHARGENBESTAND,
     MusterboxNachfassStatus, Packschein, PackscheinPosition,
@@ -319,6 +320,23 @@ class DealListView(LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         return Deal.objects.all().select_related("firma", "zustaendiger")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # 24.10.2026, auf Wunsch von Björn: Summenzeile unter der Tabelle mit der Gesamt-
+        # Tonnage je Kategorie und der daraus berechneten Gesamt-Stückzahl. Bewusst ueber
+        # self.get_queryset() (alle gefilterten Deals) aggregiert statt ueber die paginierte
+        # "deals"-Liste im Context, sonst wuerde die Summe nur die aktuelle Seite abbilden.
+        agg = self.get_queryset().aggregate(
+            trinkhalm=Sum("potenzial_tonnen_trinkhalm"), besteck=Sum("potenzial_tonnen_besteck"),
+        )
+        trinkhalm_t = agg["trinkhalm"] or Decimal("0")
+        besteck_t = agg["besteck"] or Decimal("0")
+        context["summe_trinkhalm_t"] = trinkhalm_t
+        context["summe_besteck_t"] = besteck_t
+        context["summe_trinkhalm_stueck"] = (trinkhalm_t * Decimal("1000000")) / GRAMM_JE_STUECK_TRINKHALM
+        context["summe_besteck_stueck"] = (besteck_t * Decimal("1000000")) / GRAMM_JE_STUECK_BESTECK
+        return context
 
 
 class DealDetailView(LoginRequiredMixin, DetailView):
