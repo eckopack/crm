@@ -1,12 +1,16 @@
+from decimal import Decimal
+
 from django import forms
+from django.contrib.auth import get_user_model
 from django.forms import inlineformset_factory
+from django.utils import timezone
 
 from .models import (
     Aktivitaet, Angebot, AngebotPosition, Artikel, Bonusstaffel, Charge, Deal, Firma,
     Kontakt, MATERIALTYPEN_MIT_CHARGENBESTAND,
     Packschein, PackscheinPosition, Lieferschein, LieferscheinPosition,
     Rahmenvereinbarung, RahmenvereinbarungPosition,
-    Rechnung, RechnungPosition, RechnungZahlung,
+    Rechnung, RechnungPosition, RechnungZahlung, Rezeptur,
 )
 
 
@@ -418,10 +422,12 @@ class WareneingangForm(BootstrapFormMixin, forms.ModelForm):
     views.wareneingang_erfassen) in derselben Transaktion, weil eine Charge laut Modell
     nie ohne ihre erste Bewegung entstehen soll.
 
-    Artikelauswahl bewusst auf Rohmaterial/Verpackungsmaterial beschränkt (siehe
-    MATERIALTYPEN_MIT_CHARGENBESTAND): Handelsware bleibt beim bisherigen Feld, Fertigware
-    bekommt ihren Zugang erst über die Produktionsbuchung (Phase 3), nicht über
-    Wareneingang."""
+    Artikelauswahl bewusst auf Rohmaterial/Verpackungsmaterial beschränkt: Handelsware
+    bleibt beim bisherigen Feld, Fertigware bekommt ihren Zugang ausschließlich über die
+    Produktionsbuchung (Phase 3, 25.10.2026), nicht über Wareneingang - deshalb hier
+    bewusst NICHT mehr MATERIALTYPEN_MIT_CHARGENBESTAND verwendet (das umfasst seit
+    Phase 3 auch "fertigware"), sondern die beiden Wareneingangs-Materialtypen explizit
+    benannt."""
 
     class Meta:
         model = Charge
@@ -437,7 +443,7 @@ class WareneingangForm(BootstrapFormMixin, forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["artikel"].queryset = Artikel.objects.filter(
-            materialtyp__in=MATERIALTYPEN_MIT_CHARGENBESTAND,
+            materialtyp__in=["rohmaterial", "verpackungsmaterial"],
         ).order_by("artikelnummer")
         self._bootstrapify()
 
@@ -446,6 +452,117 @@ class WareneingangForm(BootstrapFormMixin, forms.ModelForm):
         if menge <= 0:
             raise forms.ValidationError("Die Menge muss größer als 0 sein.")
         return menge
+
+
+class ProduktionsbuchungForm(BootstrapFormMixin, forms.Form):
+    """Bucht eine Produktionsbuchung (Phase 3 Materialwirtschaft, 25.10.2026, auf Wunsch
+    von Björn "phase 3 starten") - bewusst ein einfaches forms.Form statt eines
+    ModelForm, weil die Anzahl der Rohmaterial-Chargenfelder von der Rezeptur des
+    jeweiligen Fertigprodukts abhängt und deshalb erst zur Laufzeit (in __init__)
+    entstehen kann. Legt selbst weder Produktionsbuchung noch Charge/Lagerbewegung an -
+    das übernimmt views.produktionsbuchung_erfassen in einer Transaktion, siehe dort.
+
+    Pro Rezeptur-Zeile genau EIN Chargenfeld (Björns Entscheidung "erstmal nur eine
+    Charge pro Buchung", 25.10.2026) - die Mengenprüfung gegen den Chargenbestand
+    passiert hier in clean() (reicht nicht: Buchung wird blockiert, siehe
+    Produktionsbuchung-Model-Doku) sowie sicherheitshalber ein zweites Mal mit
+    select_for_update() im View unmittelbar vor dem Speichern."""
+
+    menge_soll = forms.DecimalField(
+        label="Geplante Menge (Soll)", max_digits=14, decimal_places=3, required=False,
+        help_text="Optional, nur zur Dokumentation.",
+    )
+    menge_ist = forms.DecimalField(
+        label="Produzierte Gutmenge (Ist)", max_digits=14, decimal_places=3,
+        help_text="Bestimmt den Fertigware-Zugang.",
+    )
+    menge_ausschuss = forms.DecimalField(
+        label="Ausschussmenge", max_digits=14, decimal_places=3, required=False,
+        help_text="Verbraucht ebenfalls Rohmaterial, erzeugt aber keinen Fertigware-Zugang.",
+    )
+    datum = forms.DateTimeField(
+        label="Datum/Zeit der Produktion", initial=timezone.now,
+        widget=forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"),
+        input_formats=["%Y-%m-%dT%H:%M"],
+    )
+    zustaendiger = forms.ModelChoiceField(
+        label="Zuständiger Mitarbeiter", queryset=get_user_model().objects.order_by("username"),
+        required=False,
+    )
+    chargennummer = forms.CharField(label="Chargennummer (Fertigware)", max_length=100, required=False)
+    mindesthaltbarkeitsdatum = forms.DateField(
+        label="Mindesthaltbarkeitsdatum (Fertigware)", required=False, widget=date_input(),
+    )
+    notizen = forms.CharField(label="Notizen", required=False, widget=forms.Textarea(attrs={"rows": 3}))
+
+    def __init__(self, fertigprodukt, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fertigprodukt = fertigprodukt
+        self.rezeptur_zeilen = list(
+            Rezeptur.objects.filter(fertigprodukt=fertigprodukt).select_related("rohmaterial")
+        )
+        self._charge_feldnamen = {}
+        for zeile in self.rezeptur_zeilen:
+            feldname = f"charge_{zeile.pk}"
+            self._charge_feldnamen[zeile.pk] = feldname
+            self.fields[feldname] = forms.ModelChoiceField(
+                label=(
+                    f"Charge für {zeile.rohmaterial.artikelnummer} "
+                    f"({zeile.menge_je_einheit} {zeile.rohmaterial.get_einheit_display()} je Einheit)"
+                ),
+                queryset=Charge.objects.filter(
+                    artikel=zeile.rohmaterial, bestand_aktuell__gt=Decimal("0"),
+                ).order_by("wareneingang_datum", "erstellt_am"),
+                help_text="Älteste verfügbare Charge zuerst (FIFO). Reicht die gewählte Charge "
+                          "nicht aus, muss eine zweite Produktionsbuchung mit der nächsten "
+                          "Charge erfasst werden.",
+            )
+        self._bootstrapify()
+
+    def rezeptur_zeilen_mit_feld(self):
+        """Für das Template (kann dort keine Methode mit Argument aufrufen): liefert je
+        Rezeptur-Zeile ein (zeile, bound_field)-Tupel des zugehörigen Chargenfelds."""
+        return [(zeile, self[self._charge_feldnamen[zeile.pk]]) for zeile in self.rezeptur_zeilen]
+
+    def clean_menge_ist(self):
+        menge = self.cleaned_data["menge_ist"]
+        if menge <= 0:
+            raise forms.ValidationError("Die Gutmenge muss größer als 0 sein.")
+        return menge
+
+    def clean_menge_ausschuss(self):
+        menge = self.cleaned_data.get("menge_ausschuss")
+        if menge is None:
+            return Decimal("0")
+        if menge < 0:
+            raise forms.ValidationError("Die Ausschussmenge darf nicht negativ sein.")
+        return menge
+
+    def clean(self):
+        cleaned = super().clean()
+        if not self.rezeptur_zeilen:
+            raise forms.ValidationError(
+                f"Für {self.fertigprodukt.artikelnummer} ist keine Rezeptur hinterlegt - "
+                "bitte zuerst im Admin unter Rezeptur-Zeilen anlegen."
+            )
+        menge_ist = cleaned.get("menge_ist")
+        menge_ausschuss = cleaned.get("menge_ausschuss") or Decimal("0")
+        if menge_ist is None:
+            return cleaned
+        gesamtmenge = menge_ist + menge_ausschuss
+        for zeile in self.rezeptur_zeilen:
+            feldname = self._charge_feldnamen[zeile.pk]
+            charge = cleaned.get(feldname)
+            if charge is None:
+                continue
+            benoetigt = zeile.menge_je_einheit * gesamtmenge
+            if charge.bestand_aktuell < benoetigt:
+                self.add_error(
+                    feldname,
+                    f"Reicht nicht aus: benötigt {benoetigt} {zeile.rohmaterial.get_einheit_display()}, "
+                    f"Charge hat nur noch {charge.bestand_aktuell} {zeile.rohmaterial.get_einheit_display()}.",
+                )
+        return cleaned
 
 
 class RechnungKorrekturForm(BootstrapFormMixin, forms.ModelForm):

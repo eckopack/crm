@@ -1,0 +1,29 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Produktion buchen – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<h2 class="mb-3">Produktion buchen</h2>
+<p class="text-muted">
+    Bitte zuerst das Fertigprodukt wählen – die benötigten Rohmaterial-Chargen werden
+    danach anhand der hinterlegten Rezeptur angezeigt.
+</p>
+<form method="get" class="card" style="max-width: 500px;">
+    <div class="card-body">
+        <div class="mb-3">
+            <label class="form-label" for="fertigprodukt">Fertigprodukt</label>
+            <select name="fertigprodukt" id="fertigprodukt" class="form-select" required>
+                <option value="">– bitte wählen –</option>
+                {% for artikel in fertigprodukte %}
+                <option value="{{ artikel.pk }}">{{ artikel.artikelnummer }} – {{ artikel.bezeichnung }}</option>
+                {% endfor %}
+            </select>
+            {% if not fertigprodukte %}
+            <div class="form-text text-danger">
+                Noch kein Artikel mit Materialtyp "Fertigware (Eigenproduktion)" angelegt.
+            </div>
+            {% endif %}
+        </div>
+        <button type="submit" class="btn btn-primary">Weiter</button>
+        <a href="{% url 'vertrieb:artikel_list' %}" class="btn btn-outline-secondary">Abbrechen</a>
+    </div>
+</form>
+{% endblock %}

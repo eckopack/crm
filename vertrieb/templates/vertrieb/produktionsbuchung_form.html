@@ -1,0 +1,87 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Produktion buchen – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<h2 class="mb-1">Produktion buchen</h2>
+<p class="text-muted mb-3">{{ fertigprodukt.artikelnummer }} – {{ fertigprodukt.bezeichnung }}</p>
+
+{% for error in form.non_field_errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+
+<form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="fertigprodukt" value="{{ fertigprodukt.pk }}">
+
+    <div class="card mb-3" style="max-width: 700px;">
+        <div class="card-header fw-semibold">Produzierte Menge</div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label class="form-label" for="{{ form.menge_soll.id_for_label }}">{{ form.menge_soll.label }}</label>
+                    {{ form.menge_soll }}
+                    {% for error in form.menge_soll.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label" for="{{ form.menge_ist.id_for_label }}">{{ form.menge_ist.label }}</label>
+                    {{ form.menge_ist }}
+                    {% for error in form.menge_ist.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label" for="{{ form.menge_ausschuss.id_for_label }}">{{ form.menge_ausschuss.label }}</label>
+                    {{ form.menge_ausschuss }}
+                    <div class="form-text">{{ form.menge_ausschuss.help_text }}</div>
+                    {% for error in form.menge_ausschuss.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label" for="{{ form.datum.id_for_label }}">{{ form.datum.label }}</label>
+                    {{ form.datum }}
+                    {% for error in form.datum.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label" for="{{ form.zustaendiger.id_for_label }}">{{ form.zustaendiger.label }}</label>
+                    {{ form.zustaendiger }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3" style="max-width: 700px;">
+        <div class="card-header fw-semibold">Rohmaterial-Verbrauch (laut Rezeptur)</div>
+        <div class="card-body">
+            {% for zeile, feld in form.rezeptur_zeilen_mit_feld %}
+            <div class="mb-3">
+                <label class="form-label" for="{{ feld.id_for_label }}">{{ feld.label }}</label>
+                {{ feld }}
+                {% if feld.help_text %}<div class="form-text">{{ feld.help_text }}</div>{% endif %}
+                {% for error in feld.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+            {% empty %}
+            <p class="text-muted mb-0">Keine Rezeptur-Zeilen hinterlegt.</p>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="card mb-3" style="max-width: 700px;">
+        <div class="card-header fw-semibold">Neue Fertigware-Charge</div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label" for="{{ form.chargennummer.id_for_label }}">{{ form.chargennummer.label }}</label>
+                    {{ form.chargennummer }}
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label" for="{{ form.mindesthaltbarkeitsdatum.id_for_label }}">{{ form.mindesthaltbarkeitsdatum.label }}</label>
+                    {{ form.mindesthaltbarkeitsdatum }}
+                </div>
+            </div>
+            <div class="mb-0">
+                <label class="form-label" for="{{ form.notizen.id_for_label }}">{{ form.notizen.label }}</label>
+                {{ form.notizen }}
+            </div>
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-success">Produktionsbuchung speichern</button>
+    <a href="{{ fertigprodukt.get_absolute_url }}" class="btn btn-outline-secondary">Abbrechen</a>
+</form>
+{% endblock %}
