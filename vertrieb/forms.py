@@ -2,7 +2,8 @@ from django import forms
 from django.forms import inlineformset_factory
 
 from .models import (
-    Aktivitaet, Angebot, AngebotPosition, Artikel, Bonusstaffel, Deal, Firma, Kontakt,
+    Aktivitaet, Angebot, AngebotPosition, Artikel, Bonusstaffel, Charge, Deal, Firma,
+    Kontakt, MATERIALTYPEN_MIT_CHARGENBESTAND,
     Packschein, PackscheinPosition, Lieferschein, LieferscheinPosition,
     Rahmenvereinbarung, RahmenvereinbarungPosition,
     Rechnung, RechnungPosition, RechnungZahlung,
@@ -401,6 +402,43 @@ class RechnungZahlungForm(BootstrapFormMixin, forms.ModelForm):
         self._bootstrapify()
 
 
+class WareneingangForm(BootstrapFormMixin, forms.ModelForm):
+    """Bucht einen Wareneingang (Phase 2 Materialwirtschaft, 24.10.2026, auf Wunsch von
+    Björn) - erzeugt eine neue Charge. Die zugehörige erste Lagerbewegung (Typ
+    "Wareneingang") legt NICHT dieses Formular an, sondern der View (siehe
+    views.wareneingang_erfassen) in derselben Transaktion, weil eine Charge laut Modell
+    nie ohne ihre erste Bewegung entstehen soll.
+
+    Artikelauswahl bewusst auf Rohmaterial/Verpackungsmaterial beschränkt (siehe
+    MATERIALTYPEN_MIT_CHARGENBESTAND): Handelsware bleibt beim bisherigen Feld, Fertigware
+    bekommt ihren Zugang erst über die Produktionsbuchung (Phase 3), nicht über
+    Wareneingang."""
+
+    class Meta:
+        model = Charge
+        fields = [
+            "artikel", "lieferant", "chargennummer", "wareneingang_datum",
+            "mindesthaltbarkeitsdatum", "menge_eingang",
+        ]
+        widgets = {
+            "wareneingang_datum": date_input(),
+            "mindesthaltbarkeitsdatum": date_input(),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["artikel"].queryset = Artikel.objects.filter(
+            materialtyp__in=MATERIALTYPEN_MIT_CHARGENBESTAND,
+        ).order_by("artikelnummer")
+        self._bootstrapify()
+
+    def clean_menge_eingang(self):
+        menge = self.cleaned_data["menge_eingang"]
+        if menge <= 0:
+            raise forms.ValidationError("Die Menge muss größer als 0 sein.")
+        return menge
+
+
 class RechnungKorrekturForm(BootstrapFormMixin, forms.ModelForm):
     """Formular fuer eine Stornorechnung/Rechnungskorrektur (24.10.2026, auf Wunsch von
     Björn - NICHT "Gutschrift": dieser Begriff ist nach §14 UStG rechtlich eine vom KAEUFER
@@ -449,3 +487,18 @@ class ArtikelForm(BootstrapFormMixin, forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._bootstrapify()
+        # Phase 2 Materialwirtschaft (24.10.2026): für Rohmaterial/Verpackungsmaterial wird
+        # der Bestand seit der Wareneingang-Oberfläche aus Chargen berechnet (siehe
+        # Artikel.lagerbestand_anzeige) - das Feld hier von Hand zu befüllen würde nur
+        # stillschweigend ignoriert, deshalb hier gesperrt statt eine wirkungslose Eingabe
+        # zuzulassen. Neue Artikel starten immer mit materialtyp="handelsware" (hier gar
+        # nicht wählbar), betrifft also nur das Bearbeiten bestehender Rohmaterial-/
+        # Verpackungsmaterial-Artikel.
+        if self.instance.pk and self.instance.materialtyp in MATERIALTYPEN_MIT_CHARGENBESTAND:
+            feld = self.fields["lagerbestand_aktuell"]
+            feld.disabled = True
+            feld.help_text = (
+                "Wird seit der Wareneingang-Oberfläche automatisch aus den Chargen berechnet "
+                "- bitte über \"Wareneingang buchen\" auf der Artikel-Seite erfassen, nicht "
+                "hier von Hand eintragen."
+            )

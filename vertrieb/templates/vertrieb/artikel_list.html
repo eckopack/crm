@@ -48,8 +48,8 @@
                 {% if artikel.preisstaffeln.exists %}<span class="badge text-bg-light border">Staffelpreise</span>{% endif %}
             </td>
             <td>
-                {% if artikel.lagerbestand_aktuell is not None %}
-                    {{ artikel.lagerbestand_aktuell }}
+                {% if artikel.lagerbestand_anzeige is not None %}
+                    {{ artikel.lagerbestand_anzeige }}
                     {% if artikel.unter_mindestbestand %}<span class="badge text-bg-danger">unter Meldebestand</span>{% endif %}
                 {% else %}–{% endif %}
             </td>

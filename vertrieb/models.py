@@ -1174,6 +1174,20 @@ MATERIALTYP_CHOICES = [
     ("fertigware", "Fertigware (Eigenproduktion)"),
 ]
 
+# Phase 2 Materialwirtschaft (24.10.2026, Wareneingang-Oberfläche, auf Wunsch von Björn):
+# diese beiden materialtyp-Werte führen ab jetzt ihren Lagerbestand über Chargen/
+# Lagerbewegungen statt über das manuell gepflegte Artikel.lagerbestand_aktuell-Feld
+# (siehe Artikel.lagerbestand_berechnet/.lagerbestand_anzeige unten). Handelsware bleibt
+# BEWUSST außen vor (Björn, 24.10.2026: kein MHD-/Chargen-Bedarf, würde den Scope stark
+# aufblähen - eigenes Projekt, falls das je gewünscht wird). Fertigware bleibt ebenfalls
+# außen vor, obwohl das Modell ihren Bestand genauso über Chargen führen könnte: ihr
+# Zugang entsteht nicht über Wareneingang, sondern über einen eigenen Bewegungstyp
+# ("Fertigwarenzugang (Produktion)"), der erst mit der Produktionsbuchung (Phase 3,
+# noch nicht gebaut) eine Buchungsmöglichkeit bekommt. Vorher auf "berechnet" umzustellen
+# würde bei allen 30 LUAMO-Fertigprodukten dauerhaft eine konfident falsche 0 anzeigen,
+# statt wie bisher ehrlich "unbekannt" - siehe Chat-Verlauf 24.10.2026.
+MATERIALTYPEN_MIT_CHARGENBESTAND = ("rohmaterial", "verpackungsmaterial")
+
 VERTRIEBSKANAL_CHOICES = [
     ("standard", "Standard (Großhandel/B2B)"),
     ("amazon", "Amazon/E-Commerce (reine Zweitlistung, kein eigener Lagerbestand)"),
@@ -1320,10 +1334,37 @@ class Artikel(models.Model):
         return reverse("vertrieb:artikel_detail", args=[self.pk])
 
     @property
+    def fuehrt_chargen(self):
+        """True für materialtyp, deren Bestand über Chargen/Lagerbewegungen geführt wird
+        (siehe MATERIALTYPEN_MIT_CHARGENBESTAND oben)."""
+        return self.materialtyp in MATERIALTYPEN_MIT_CHARGENBESTAND
+
+    @property
+    def lagerbestand_berechnet(self):
+        """Aktueller Bestand aus der Summe aller Chargen.bestand_aktuell - nur aussagekräftig
+        für fuehrt_chargen=True (siehe dort), liefert sonst None. Phase 2 Materialwirtschaft,
+        24.10.2026."""
+        if not self.fuehrt_chargen:
+            return None
+        ergebnis = self.chargen.aggregate(summe=models.Sum("bestand_aktuell"))["summe"]
+        return ergebnis if ergebnis is not None else Decimal("0")
+
+    @property
+    def lagerbestand_anzeige(self):
+        """Bestand zur Anzeige in Artikel-Liste/-Detail und Positionsauswahl: berechnet für
+        Rohmaterial/Verpackungsmaterial (siehe lagerbestand_berechnet), sonst weiterhin das
+        klassische, manuell gepflegte Feld lagerbestand_aktuell (Handelsware - und vorerst
+        auch Fertigware, siehe MATERIALTYPEN_MIT_CHARGENBESTAND-Kommentar oben)."""
+        if self.fuehrt_chargen:
+            return self.lagerbestand_berechnet
+        return self.lagerbestand_aktuell
+
+    @property
     def unter_mindestbestand(self):
-        if self.lagerbestand_aktuell is None or self.mindestbestand is None:
+        bestand = self.lagerbestand_anzeige
+        if bestand is None or self.mindestbestand is None:
             return False
-        return self.lagerbestand_aktuell < self.mindestbestand
+        return bestand < self.mindestbestand
 
     def preis_fuer_menge(self, menge):
         """Liefert den Nettopreis je Einheit für eine bestellte Menge: die höchste

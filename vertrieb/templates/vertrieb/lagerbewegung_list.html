@@ -1,0 +1,45 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Lagerbewegungen – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Lagerbewegungen</h2>
+    <a href="{% url 'vertrieb:wareneingang_erfassen' %}" class="btn btn-primary">+ Wareneingang buchen</a>
+</div>
+<p class="text-muted">
+    Unveränderliches Journal – Buchungen werden nie geändert oder gelöscht. Korrekturen
+    entstehen durch eine neue, gegenläufige Buchung.
+</p>
+
+<div class="card">
+    <table class="table table-hover mb-0">
+        <thead>
+        <tr>
+            <th>Datum</th>
+            <th>Artikel</th>
+            <th>Typ</th>
+            <th>Menge</th>
+            <th>Charge</th>
+            <th>Erfasst von</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for bewegung in bewegungen %}
+        <tr>
+            <td>{{ bewegung.datum|date:"d.m.Y H:i" }}</td>
+            <td><a href="{{ bewegung.artikel.get_absolute_url }}">{{ bewegung.artikel.artikelnummer }}</a></td>
+            <td>{{ bewegung.get_bewegungstyp_display }}</td>
+            <td class="{% if bewegung.menge < 0 %}text-danger{% else %}text-success{% endif %}">
+                {{ bewegung.menge }}
+            </td>
+            <td>{{ bewegung.charge.chargennummer|default:bewegung.charge.pk|default:"–" }}</td>
+            <td>{{ bewegung.erstellt_von|default:"–" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-muted text-center py-3">Noch keine Lagerbewegungen erfasst.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% include "vertrieb/_pagination.html" %}
+{% endblock %}
