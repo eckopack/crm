@@ -28,7 +28,11 @@
         {% endwith %}
         <a href="{% url 'vertrieb:lieferschein_pdf' lieferschein.pk %}" target="_blank" class="btn btn-outline-primary">PDF</a>
         <a href="{% url 'vertrieb:lieferschein_update' lieferschein.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
+        {% if lieferschein.ist_loeschbar %}
         <a href="{% url 'vertrieb:lieferschein_delete' lieferschein.pk %}" class="btn btn-outline-danger">Löschen</a>
+        {% else %}
+        <button type="button" class="btn btn-outline-danger" disabled title="Bereits versendet - sollte nicht mehr gelöscht werden">Löschen</button>
+        {% endif %}
     </div>
 </div>
 
