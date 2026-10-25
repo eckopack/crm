@@ -1,0 +1,58 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Bestandsübersicht – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Bestandsübersicht</h2>
+</div>
+
+<form method="get" class="row g-2 align-items-end mb-4">
+    <div class="col-auto">
+        <label class="form-label">{{ form.von.label }}</label>
+        {{ form.von }}
+    </div>
+    <div class="col-auto">
+        <label class="form-label">{{ form.bis.label }}</label>
+        {{ form.bis }}
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-primary">Anzeigen</button>
+    </div>
+</form>
+<p class="text-muted">
+    Zeitraum {{ von|date:"d.m.Y" }} – {{ bis|date:"d.m.Y" }}. Anfangsbestand = Stand zu Beginn des
+    Zeitraums, Endbestand = Stand am Ende des Zeitraums, jeweils aus dem Lagerbewegungs-Journal
+    rekonstruiert.
+</p>
+
+{% for abschnitt in abschnitte %}
+<div class="card mb-4">
+    <div class="card-header fw-semibold">{{ abschnitt.label }}</div>
+    <table class="table table-hover mb-0">
+        <thead>
+        <tr>
+            <th>Artikel</th>
+            <th>Einheit</th>
+            <th class="text-end">Anfangsbestand</th>
+            <th class="text-end">Zugänge</th>
+            <th class="text-end">Abgänge</th>
+            <th class="text-end">Endbestand</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for zeile in abschnitt.zeilen %}
+        <tr>
+            <td><a href="{{ zeile.artikel.get_absolute_url }}">{{ zeile.artikel.artikelnummer }} – {{ zeile.artikel.bezeichnung }}</a></td>
+            <td>{{ zeile.artikel.get_einheit_display }}</td>
+            <td class="text-end">{{ zeile.anfangsbestand|floatformat:2 }}</td>
+            <td class="text-end text-success">{{ zeile.zugaenge|floatformat:2 }}</td>
+            <td class="text-end text-danger">{{ zeile.abgaenge|floatformat:2 }}</td>
+            <td class="text-end fw-semibold">{{ zeile.endbestand|floatformat:2 }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-muted text-center py-3">Keine Artikel dieser Kategorie angelegt.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endfor %}
+{% endblock %}
