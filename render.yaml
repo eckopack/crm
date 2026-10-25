@@ -223,7 +223,7 @@ services:
   # KOSTEN-HINWEIS: das ist ein ZWEITER separater Render-"Cron Job"-Service (plan: starter,
   # wie beim bestehenden eckopack-crm-nachfass) - bitte vor dem ersten echten Deploy dieses
   # Services im Render-Dashboard bestätigen, dass der zusätzliche monatliche Preis passt
-  # (genau dieselbe Prufung, die schon beim ersten Cron-Job am 12.10.2026 empfohlen wurde).
+  # (genau dieselbe Prüfung, die schon beim ersten Cron-Job am 12.10.2026 empfohlen wurde).
   - type: cron
     name: eckopack-crm-graph-antworten
     runtime: python
