@@ -19,6 +19,10 @@ ERLAUBTE_URL_NAMEN_FUER_PRODUKTION = {
     "vertrieb:produktionsbericht_list",
     "vertrieb:produktionsbericht_detail",
     "vertrieb:produktionsbericht_pdf",
+    # 25.10.2026 (Korrektur-Workflow): MA müssen einen abgelehnten eigenen Bericht
+    # bearbeiten können - produktionsbericht_korrigieren selbst prüft zusätzlich, dass nur
+    # der ursprüngliche Einreicher zugreift (siehe views.py).
+    "vertrieb:produktionsbericht_korrigieren",
     "logout",
 }
 

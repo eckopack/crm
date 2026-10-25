@@ -21,6 +21,9 @@
         <a href="{% url 'vertrieb:produktionsbericht_freigeben' bericht.pk %}" class="btn btn-success">Freigeben</a>
         <a href="{% url 'vertrieb:produktionsbericht_ablehnen' bericht.pk %}" class="btn btn-outline-danger">Ablehnen</a>
         {% endif %}
+        {% if kann_korrigieren %}
+        <a href="{% url 'vertrieb:produktionsbericht_korrigieren' bericht.pk %}" class="btn btn-warning">Korrigieren und erneut einreichen</a>
+        {% endif %}
     </div>
 </div>
 

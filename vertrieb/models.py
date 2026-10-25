@@ -1870,8 +1870,14 @@ class Produktionsbericht(models.Model):
     """Von einem MA eingereichter Schichtbericht einer Produktionslinie - noch KEINE
     Bestandsbuchung (siehe Moduldoku oben). Erst nach Freigabe durch den Produktionsleiter
     entsteht daraus eine echte Produktionsbuchung mit Lagerbewegungen (Feld
-    produktionsbuchung unten). Wird nach dem Einreichen nicht mehr vom MA editiert -
-    bei Ablehnung legt der MA stattdessen einen neuen Bericht an (siehe Moduldoku).
+    produktionsbuchung unten). Wird nach dem Einreichen nicht mehr vom MA editiert, AUSSER
+    bei Ablehnung: dann kann der ursprüngliche Einreicher den Bericht über
+    views.produktionsbericht_korrigieren bearbeiten und erneut einreichen (status zurück auf
+    "eingereicht", eingereicht_am wird dabei aktualisiert) - alternativ legt er wie bisher
+    auch einen komplett neuen Bericht an (25.10.2026, Björns Rückfrage "nein, umsetzen!").
+    ablehnungsgrund/freigegeben_von/freigegeben_am bleiben dabei bewusst als Audit-Spur
+    stehen, auch wenn sie im UI nur noch angezeigt werden, solange status == "abgelehnt" ist -
+    es gibt keine Historie mehrerer Ablehnungen in dieser ersten Version.
 
     DATENSCHUTZ (26.10.2026, auf Rückfrage von Björn "was fehlt noch..."): Björn hat
     entschieden, dass es KEINEN Betriebsrat gibt, Datenschutz aber trotzdem wichtig ist,

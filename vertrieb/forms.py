@@ -653,6 +653,14 @@ class ProduktionsberichtForm(BootstrapFormMixin, forms.ModelForm):
             bereits_vorhanden = Produktionsbericht.objects.filter(
                 linie="trinkhalm_l1", datum=datum, schicht=schicht,
             ).exclude(status="abgelehnt")
+            # 25.10.2026 (Björns Rückfrage "nein, umsetzen!" zum Korrektur-Workflow): beim
+            # Bearbeiten eines abgelehnten Berichts über produktionsbericht_korrigieren läuft
+            # genau diese Instanz (noch mit altem Status "abgelehnt" im DB-Snapshot, aber
+            # gleich auf "eingereicht" gesetzt) durch denselben Form.clean() - ohne den
+            # Ausschluss der eigenen PK würde sie sich hier fälschlich selbst blockieren,
+            # sobald zwischenzeitlich kein zweiter abgelehnter Bericht mehr existiert.
+            if self.instance.pk:
+                bereits_vorhanden = bereits_vorhanden.exclude(pk=self.instance.pk)
             if bereits_vorhanden.exists():
                 schicht_anzeige = dict(self.fields["schicht"].choices).get(schicht, schicht)
                 self.add_error(
