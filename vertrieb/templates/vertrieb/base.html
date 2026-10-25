@@ -49,6 +49,17 @@
             border-color: var(--ecko-mint-dark);
             color: #fff;
         }
+        /* 25.10.2026, auf Wunsch von Björn ("Blau auf ECKO-PACK-Grün"): .text-bg-primary wird
+           u.a. für die Dashboard-Kennzahl "Offene Pipeline (netto)" sowie die Badges
+           "Hauptansprechpartner"/"Haupt"/"Musterversand" genutzt und kam bisher im
+           Bootstrap-Standardblau. Bootstrap setzt hier Hintergrund UND Textfarbe per
+           !important, daher hier ebenfalls mit !important überschrieben - dunkler statt
+           weißer Text, weil Weiß auf dem hellen Mint schlecht lesbar wäre (wie beim
+           .btn-primary oben). Gilt automatisch für jede Stelle, die .text-bg-primary nutzt. */
+        .text-bg-primary {
+            background: linear-gradient(135deg, var(--ecko-mint) 0%, var(--ecko-mint-dark) 100%) !important;
+            color: var(--ecko-dark) !important;
+        }
         a { color: var(--ecko-mint-dark); }
         a:hover { color: var(--ecko-dark); }
     </style>
