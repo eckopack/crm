@@ -2015,18 +2015,35 @@ def bestandsuebersicht(request):
     abschnitte = []
     for materialtyp, label in BESTANDSUEBERSICHT_KATEGORIEN:
         zeilen = []
+        summe_gesamt_ek = Decimal("0")
         for artikel in Artikel.objects.filter(materialtyp=materialtyp).order_by("artikelnummer"):
             anfangsbestand = anfangsbestand_je_artikel.get(artikel.pk) or Decimal("0")
             zugaenge = zugaenge_je_artikel.get(artikel.pk) or Decimal("0")
             abgaenge = abgaenge_je_artikel.get(artikel.pk) or Decimal("0")
+            endbestand = anfangsbestand + zugaenge + abgaenge
+            # 25.10.2026, auf Wunsch von Björn ("eine Wert-Spalte nach EK ... Einzel-EK und
+            # Gesamt-EK nach Bestand"): Lagerwert = Einkaufspreis je Einheit * Endbestand
+            # (NICHT Anfangsbestand - der aktuelle/Perioden-Endwert ist die wirtschaftlich
+            # relevante Kennzahl "was liegt gerade im Wert X im Lager"). Fehlt der
+            # Einkaufspreis (einkaufspreis=None, z. B. bei Fertigware ohne gepflegten EK),
+            # bleibt Gesamt-EK ebenfalls None statt stillschweigend mit 0 zu rechnen - sonst
+            # würde ein fehlender Preis fälschlich als "Lagerwert 0" erscheinen.
+            gesamt_ek = artikel.einkaufspreis * endbestand if artikel.einkaufspreis is not None else None
+            if gesamt_ek is not None:
+                summe_gesamt_ek += gesamt_ek
             zeilen.append({
                 "artikel": artikel,
                 "anfangsbestand": anfangsbestand,
                 "zugaenge": zugaenge,
                 "abgaenge": abgaenge,
-                "endbestand": anfangsbestand + zugaenge + abgaenge,
+                "endbestand": endbestand,
+                "einzel_ek": artikel.einkaufspreis,
+                "gesamt_ek": gesamt_ek,
             })
-        abschnitte.append({"materialtyp": materialtyp, "label": label, "zeilen": zeilen})
+        abschnitte.append({
+            "materialtyp": materialtyp, "label": label, "zeilen": zeilen,
+            "summe_gesamt_ek": summe_gesamt_ek,
+        })
 
     return render(request, "vertrieb/bestandsuebersicht.html", {
         "form": form, "von": von, "bis": bis, "abschnitte": abschnitte,

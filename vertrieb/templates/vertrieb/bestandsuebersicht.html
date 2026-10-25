@@ -36,6 +36,8 @@
             <th class="text-end">Zugänge</th>
             <th class="text-end">Abgänge</th>
             <th class="text-end">Endbestand</th>
+            <th class="text-end">Einzel-EK</th>
+            <th class="text-end">Gesamt-EK (Endbestand)</th>
         </tr>
         </thead>
         <tbody>
@@ -47,11 +49,21 @@
             <td class="text-end text-success">{{ zeile.zugaenge|floatformat:2 }}</td>
             <td class="text-end text-danger">{{ zeile.abgaenge|floatformat:2 }}</td>
             <td class="text-end fw-semibold">{{ zeile.endbestand|floatformat:2 }}</td>
+            <td class="text-end">{% if zeile.einzel_ek is not None %}{{ zeile.einzel_ek|floatformat:2 }} €{% else %}–{% endif %}</td>
+            <td class="text-end fw-semibold">{% if zeile.gesamt_ek is not None %}{{ zeile.gesamt_ek|floatformat:2 }} €{% else %}–{% endif %}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="text-muted text-center py-3">Keine Artikel dieser Kategorie angelegt.</td></tr>
+        <tr><td colspan="8" class="text-muted text-center py-3">Keine Artikel dieser Kategorie angelegt.</td></tr>
         {% endfor %}
         </tbody>
+        {% if abschnitt.zeilen %}
+        <tfoot>
+        <tr class="table-light fw-semibold">
+            <td colspan="7" class="text-end">Summe Gesamt-EK (Endbestand, nur Artikel mit gepflegtem Einkaufspreis):</td>
+            <td class="text-end">{{ abschnitt.summe_gesamt_ek|floatformat:2 }} €</td>
+        </tr>
+        </tfoot>
+        {% endif %}
     </table>
 </div>
 {% endfor %}
