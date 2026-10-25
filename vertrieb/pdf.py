@@ -1299,3 +1299,281 @@ def rahmenvertrag_pdf_erzeugen(rahmenvereinbarung):
         onLaterPages=_kopf_folgeseite(titel, rahmenvereinbarung.nummer, sprache),
     )
     return buffer.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Produktionsbericht-PDF (26.10.2026, Pilot Trinkhalm-L1) - siehe Produktionsbericht-
+# Moduldoku in vertrieb/models.py.
+#
+# Bewusst NICHT das Kunden-Briefpapier (_hintergrund_zeichnen/_kopf_erste_seite oben): das
+# hier ist ein internes Schichtprotokoll für die eigene Produktion, kein Dokument an einen
+# Kunden - es braucht weder Empfänger-Adresse noch die Bank-/Geschäftsführungs-Fußzeile.
+#
+# Das Layout ist stattdessen bewusst eng an das ursprüngliche GUTOM-Papierformular
+# angelehnt (Vorlage, die Björn zu Beginn dieses Features hochgeladen hatte) - sein
+# ausdrücklicher Wunsch: "im gleichen Design nur mit ECKO-PACK [statt GUTOM]". Übernommen:
+# der umlaufende Rahmen, Logo oben links/Titel oben rechts, und vor allem das Gitter aus
+# beschrifteten Zellen (kleines fettes Farblabel oben in der Zelle, größerer Wert
+# darunter). Bewusst NICHT übernommen: GUTOMs konkrete Feldauswahl (Traysealer/Stacker/
+# Schalen/Folie/Boards) - die ist für Spritzguss (Trinkhalm-/Besteckproduktion) technisch
+# irrelevant (siehe Rückfrage/Antwort dazu zu Beginn dieses Features) und durch die
+# tatsächlichen Produktionsbericht-Felder ersetzt. Farbe: ECKO-PACK-Mint (#05db8e, MINT
+# oben) statt GUTOMs Grün - exakt der Akzentton, der auch im Web-CRM (base.html) verwendet
+# wird, damit Bildschirm- und Papierform gleich aussehen.
+# ---------------------------------------------------------------------------
+
+_PB_LOGO_PFAD = os.path.join(settings.BASE_DIR, "static", "img", "eckopack-logo.png")
+_PB_RAHMEN_ABSTAND = 22       # Abstand des gezeichneten Rahmens zum Seitenrand
+_PB_RAHMEN_BREITE = 1.6
+
+# Kopfbereich-Maße (Logo links, Titel/Untertitel rechtsbündig daneben, Trennlinie darunter)
+# - als Konstanten statt doppelt verwendeter Zahlen, damit topMargin unten UND das
+# tatsächliche Zeichnen in _kopf() garantiert zusammenpassen (erster Entwurf hatte hier
+# zwei unabhängig "von Hand" ausgerechnete Werte, die auseinanderliefen und die Trennlinie
+# mitten durch den Untertitel legten).
+_PB_KOPF_PAD_OBEN = 16
+_PB_KOPF_LOGO_HOEHE = 24
+_PB_KOPF_TITEL_LEADING = 20
+_PB_KOPF_UNTERTITEL_LEADING = 15
+_PB_KOPF_TITEL_UNTERTITEL_ABSTAND = 2
+_PB_KOPF_LINIE_ABSTAND = 10     # Abstand Untertitel/Logo-Unterkante -> Trennlinie
+_PB_KOPF_INHALT_ABSTAND = 14    # Abstand Trennlinie -> erste Gitterzeile
+
+_PB_KOPF_HOEHE_GESAMT = (
+    _PB_KOPF_PAD_OBEN
+    + max(_PB_KOPF_LOGO_HOEHE,
+          _PB_KOPF_TITEL_LEADING + _PB_KOPF_TITEL_UNTERTITEL_ABSTAND + _PB_KOPF_UNTERTITEL_LEADING)
+    + _PB_KOPF_LINIE_ABSTAND
+    + _PB_KOPF_INHALT_ABSTAND
+)
+
+_PB_STIL_LABEL = ParagraphStyle(
+    "PBLabel", fontName="Helvetica-Bold", fontSize=7, leading=9, textColor=MINT,
+)
+_PB_STIL_ZELLE = ParagraphStyle(
+    "PBZelle", fontName="Helvetica", fontSize=11, leading=13.5, textColor=DUNKEL, spaceBefore=2,
+)
+_PB_STIL_ZELLE_KLEIN = ParagraphStyle(
+    "PBZelleKlein", parent=_PB_STIL_ZELLE, fontSize=9.5, leading=12,
+)
+_PB_STIL_BEMERKUNGEN = ParagraphStyle(
+    "PBBemerkungen", fontName="Helvetica", fontSize=9.5, leading=13, textColor=DUNKEL,
+)
+_PB_STIL_TITEL = ParagraphStyle(
+    "PBTitel", fontName="Helvetica-Bold", fontSize=17, leading=20, textColor=MINT, alignment=TA_RIGHT,
+)
+_PB_STIL_UNTERTITEL = ParagraphStyle(
+    "PBUntertitel", parent=_PB_STIL_TITEL, fontSize=12.5, leading=15,
+)
+_PB_STIL_FUSS = ParagraphStyle(
+    "PBFuss", fontName="Helvetica", fontSize=8.5, leading=12, textColor=GRAU,
+)
+_PB_STIL_FUSS_FETT = ParagraphStyle("PBFussFett", parent=_PB_STIL_FUSS, fontName="Helvetica-Bold", textColor=DUNKEL)
+
+
+def _pb_gitterzeile(felder, breiten=None):
+    """felder: Liste von (label, wert, optional klein=True) - wird zu gleich breiten
+    Spalten (sofern `breiten` nicht gesetzt ist). Jede Zelle bekommt EIGENE Label-/
+    Wert-Paragraphen (nicht einen gemeinsamen Paragraph mit <br/>), damit Label und Wert
+    sauber übereinander in derselben Gitterzelle sitzen (reportlab-Tabellenzellen können
+    mehrere Flowables stapeln)."""
+    n = len(felder)
+    breite_gesamt = INHALT_BREITE - 2 * (_PB_RAHMEN_ABSTAND + 6)
+    if breiten is None:
+        breiten = [breite_gesamt / n] * n
+    zeile = []
+    for feld in felder:
+        if len(feld) == 3:
+            label, wert, klein = feld
+        else:
+            label, wert = feld
+            klein = False
+        from xml.sax.saxutils import escape as _esc
+        stil_wert = _PB_STIL_ZELLE_KLEIN if klein else _PB_STIL_ZELLE
+        wert_text = _esc(str(wert)) if wert not in (None, "") else "–"
+        zeile.append([
+            Paragraph(f"<b>{_esc(str(label)).upper()}</b>", _PB_STIL_LABEL),
+            Paragraph(wert_text, stil_wert),
+        ])
+    tabelle = Table([zeile], colWidths=breiten)
+    tabelle.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.6, colors.HexColor("#c7c7c7")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    return tabelle
+
+
+def _pb_rahmen(canvas_obj, doc):
+    """Zeichnet den umlaufenden Mint-Rahmen um die gesamte Seite (GUTOMs grüner
+    Seitenrahmen, siehe Moduldoku oben)."""
+    canvas_obj.saveState()
+    canvas_obj.setStrokeColor(MINT)
+    canvas_obj.setLineWidth(_PB_RAHMEN_BREITE)
+    canvas_obj.rect(
+        _PB_RAHMEN_ABSTAND, _PB_RAHMEN_ABSTAND,
+        SEITENBREITE - 2 * _PB_RAHMEN_ABSTAND, SEITENHOEHE - 2 * _PB_RAHMEN_ABSTAND,
+    )
+    canvas_obj.restoreState()
+
+
+def produktionsbericht_pdf_erzeugen(bericht):
+    """Erzeugt das ausdruckbare Produktionsbericht-PDF zu einem Produktionsbericht
+    (egal welchen Status - auch ein noch nicht freigegebener Bericht lässt sich bereits
+    ausdrucken, z. B. um ihn dem Produktionsleiter in Papierform vorzulegen, oder als
+    Akten-/Signatur-Ausdruck nach Freigabe). Siehe Moduldoku oben für die Design-
+    Entscheidungen."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        # topMargin aus denselben Konstanten wie _kopf() unten berechnet, damit die erste
+        # Gitterzeile garantiert unterhalb der Trennlinie beginnt.
+        topMargin=_PB_RAHMEN_ABSTAND + _PB_KOPF_HOEHE_GESAMT,
+        bottomMargin=_PB_RAHMEN_ABSTAND + 24,
+        leftMargin=RAND_LINKS, rightMargin=RAND_RECHTS,
+    )
+
+    fertigprodukt = bericht.fertigprodukt
+    produktionsdauer = bericht.produktionsdauer_anzeige or "–"
+
+    story = []
+
+    story.append(_pb_gitterzeile([
+        ("Bediener 1", bericht.bediener_1.get_full_name() or bericht.bediener_1.username),
+        ("Bediener 2", bericht.bediener_2 or "– keiner –"),
+    ]))
+    story.append(_pb_gitterzeile([
+        ("Fertigprodukt", f"{fertigprodukt.artikelnummer} – {fertigprodukt.bezeichnung}", True),
+        ("Schicht", bericht.get_schicht_display()),
+    ], breiten=[
+        (INHALT_BREITE - 2 * (_PB_RAHMEN_ABSTAND + 6)) * 0.62,
+        (INHALT_BREITE - 2 * (_PB_RAHMEN_ABSTAND + 6)) * 0.38,
+    ]))
+    story.append(_pb_gitterzeile([
+        ("Produktionszeit von", bericht.produktionszeit_von.strftime("%d.%m.%Y %H:%M Uhr")),
+        ("Produktionszeit bis", bericht.produktionszeit_bis.strftime("%d.%m.%Y %H:%M Uhr")),
+        ("Dauer (HH:MM)", produktionsdauer),
+    ]))
+    story.append(_pb_gitterzeile([
+        ("Werkzeug/Form", bericht.werkzeug_bezeichnung or "–"),
+        ("Schussanzahl", bericht.schussanzahl if bericht.schussanzahl is not None else "–"),
+    ]))
+    story.append(_pb_gitterzeile([
+        ("Gutmenge (Stück)", bericht.menge_gut_stueck),
+        ("Ausschuss (Stück)", bericht.menge_ausschuss_stueck),
+        ("Ausschussgrund", bericht.get_ausschussgrund_display() if bericht.ausschussgrund else "–", True),
+    ]))
+    story.append(_pb_gitterzeile([
+        ("Rüstzeit (Min.)", bericht.ruestzeit_minuten if bericht.ruestzeit_minuten is not None else "–"),
+        ("Stillstandszeit (Min.)", bericht.stillstandszeit_minuten if bericht.stillstandszeit_minuten is not None else "–"),
+        ("Stromverbrauch (KWh)", bericht.stromverbrauch_kwh if bericht.stromverbrauch_kwh is not None else "–"),
+    ]))
+    story.append(_pb_gitterzeile([
+        ("Stillstandsgrund", bericht.stillstandsgrund or "–", True),
+        ("Reinigung durchgeführt von", bericht.reinigung_durchgefuehrt_von or "– keiner –", True),
+    ]))
+
+    # Bemerkungen - laut GUTOM-Vorlage der wertvollste Teil des Berichts (siehe Model-
+    # Doku), deshalb als eigene, breite Zeile mit Mint-Label wie die übrigen Zellen.
+    from xml.sax.saxutils import escape as _esc
+    bemerkungen_text = "<br/>".join(
+        _esc(z) for z in (bericht.bemerkungen or "– keine –").split("\n")
+    )
+    bemerkungen_tabelle = Table(
+        [[Paragraph("<b>BEMERKUNGEN</b>", _PB_STIL_LABEL)], [Paragraph(bemerkungen_text, _PB_STIL_BEMERKUNGEN)]],
+        colWidths=[INHALT_BREITE - 2 * (_PB_RAHMEN_ABSTAND + 6)],
+    )
+    bemerkungen_tabelle.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.6, colors.HexColor("#c7c7c7")),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 1), (0, 1), 4),
+    ]))
+    story.append(bemerkungen_tabelle)
+
+    # Workflow-Status: bewusst unterhalb des Gitters, in kleinerer, gedämpfter Schrift -
+    # dies ist Audit-/Nachweisinformation (wer hat erfasst/freigegeben/abgelehnt, wann),
+    # keine vom MA erfasste Produktionsangabe, und soll sich optisch davon absetzen.
+    story.append(Spacer(1, 10))
+    status_zeilen = [
+        f"<b>Status:</b> {_esc(bericht.get_status_display())}",
+        f"<b>Eingereicht von:</b> {_esc(str(bericht.eingereicht_von))} am "
+        f"{bericht.eingereicht_am.strftime('%d.%m.%Y %H:%M')} Uhr",
+    ]
+    if bericht.status == "freigegeben":
+        status_zeilen.append(
+            f"<b>Freigegeben von:</b> {_esc(str(bericht.freigegeben_von)) if bericht.freigegeben_von else '–'} "
+            f"am {bericht.freigegeben_am.strftime('%d.%m.%Y %H:%M') if bericht.freigegeben_am else '–'} Uhr"
+        )
+        if bericht.produktionsbuchung_id:
+            status_zeilen.append(f"<b>Produktionsbuchung:</b> #{bericht.produktionsbuchung_id}")
+    elif bericht.status == "abgelehnt":
+        status_zeilen.append(
+            f"<b>Abgelehnt von:</b> {_esc(str(bericht.freigegeben_von)) if bericht.freigegeben_von else '–'} "
+            f"am {bericht.freigegeben_am.strftime('%d.%m.%Y %H:%M') if bericht.freigegeben_am else '–'} Uhr"
+        )
+        status_zeilen.append(f"<b>Ablehnungsgrund:</b> {_esc(bericht.ablehnungsgrund or '–')}")
+    for zeile in status_zeilen:
+        story.append(Paragraph(zeile, _PB_STIL_FUSS))
+
+    story.append(Spacer(1, 26))
+    unterschrift = Table(
+        [["", ""]],
+        colWidths=[(INHALT_BREITE - 2 * (_PB_RAHMEN_ABSTAND + 6)) / 2] * 2,
+        rowHeights=[28],
+    )
+    unterschrift.setStyle(TableStyle([
+        ("LINEABOVE", (0, 0), (0, 0), 0.8, DUNKEL),
+        ("LINEABOVE", (1, 0), (1, 0), 0.8, DUNKEL),
+    ]))
+    story.append(unterschrift)
+    unterschrift_labels = Table(
+        [[Paragraph("Bediener (Unterschrift)", _PB_STIL_FUSS), Paragraph("Produktionsleiter (Unterschrift)", _PB_STIL_FUSS)]],
+        colWidths=[(INHALT_BREITE - 2 * (_PB_RAHMEN_ABSTAND + 6)) / 2] * 2,
+    )
+    story.append(unterschrift_labels)
+
+    def _kopf(canvas_obj, doc_):
+        _pb_rahmen(canvas_obj, doc_)
+        canvas_obj.saveState()
+
+        # Kopfbereich: Logo links, Titel/Untertitel rechtsbündig daneben, darunter eine
+        # Mint-Trennlinie - alle Positionen aus denselben Konstanten wie _PB_KOPF_HOEHE_GESAMT
+        # oben berechnet (Titel/Untertitel sind immer genau eine Zeile), damit Titel und
+        # Trennlinie sich nicht überlappen (erster Entwurf: die Trennlinie lag mitten im
+        # Untertitel, weil topMargin und diese Zeichenfunktion unabhängig berechnet waren).
+        logo_breite = _PB_KOPF_LOGO_HOEHE * (2048 / 420)
+        header_oben = SEITENHOEHE - _PB_RAHMEN_ABSTAND - _PB_KOPF_PAD_OBEN
+        logo_y = header_oben - _PB_KOPF_LOGO_HOEHE
+        if os.path.exists(_PB_LOGO_PFAD):
+            canvas_obj.drawImage(
+                _PB_LOGO_PFAD, _PB_RAHMEN_ABSTAND + 14, logo_y,
+                width=logo_breite, height=_PB_KOPF_LOGO_HOEHE, mask="auto", preserveAspectRatio=True,
+            )
+
+        titel = Paragraph(
+            f"Produktionsbericht vom {bericht.datum.strftime('%d.%m.%Y')}", _PB_STIL_TITEL,
+        )
+        untertitel = Paragraph(bericht.get_linie_display(), _PB_STIL_UNTERTITEL)
+        titel_breite = INHALT_BREITE - logo_breite - 14
+        titel.wrap(titel_breite, 100)
+        untertitel.wrap(titel_breite, 100)
+
+        titel_y = header_oben - _PB_KOPF_TITEL_LEADING
+        untertitel_y = titel_y - _PB_KOPF_TITEL_UNTERTITEL_ABSTAND - _PB_KOPF_UNTERTITEL_LEADING
+        titel.drawOn(canvas_obj, RAND_LINKS + logo_breite + 14, titel_y)
+        untertitel.drawOn(canvas_obj, RAND_LINKS + logo_breite + 14, untertitel_y)
+
+        linie_y = min(logo_y, untertitel_y) - _PB_KOPF_LINIE_ABSTAND
+        canvas_obj.setStrokeColor(MINT)
+        canvas_obj.setLineWidth(1.2)
+        canvas_obj.line(RAND_LINKS, linie_y, SEITENBREITE - RAND_RECHTS, linie_y)
+        canvas_obj.restoreState()
+
+    doc.build(story, onFirstPage=_kopf, onLaterPages=_kopf)
+    return buffer.getvalue()

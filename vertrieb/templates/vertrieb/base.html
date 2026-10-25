@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 {% load static %}
+{% load produktion_extras %}
 <html lang="de">
 <head>
     <meta charset="UTF-8">
@@ -63,6 +64,15 @@
             <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse" id="navbarNav">
+            {% if user|ist_nur_produktion %}
+            {# 26.10.2026, Produktionsbericht-Pilot: MA (Gruppe "Produktion") sehen nur diese beiden
+               Links statt der vollen CRM-Navigation - die Middleware (ProduktionszugriffMiddleware)
+               würde sie von allem anderen ohnehin wegleiten, siehe vertrieb/middleware.py. #}
+            <ul class="navbar-nav me-auto">
+                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:produktionsbericht_erfassen' %}">Neuer Produktionsbericht</a></li>
+                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:produktionsbericht_list' %}">Meine Produktionsberichte</a></li>
+            </ul>
+            {% else %}
             <ul class="navbar-nav me-auto">
                 <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:dashboard' %}">Dashboard</a></li>
 
@@ -107,12 +117,17 @@
                         <li><a class="dropdown-item" href="{% url 'vertrieb:produktionsbuchung_list' %}">Produktionsbuchungen</a></li>
                         <li><a class="dropdown-item" href="{% url 'vertrieb:lagerbewegung_list' %}">Lagerbewegungen</a></li>
                         <li><a class="dropdown-item" href="{% url 'vertrieb:bestandsuebersicht' %}">Bestandsübersicht</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="{% url 'vertrieb:produktionsbericht_list' %}">Produktionsberichte{% if user|ist_produktionsleiter %} (Freigabe){% endif %}</a></li>
                     </ul>
                 </li>
             </ul>
+            {% endif %}
             {% if user.is_authenticated %}
             <ul class="navbar-nav">
+                {% if not user|ist_nur_produktion %}
                 <li class="nav-item"><a class="nav-link" href="/admin/">Admin</a></li>
+                {% endif %}
                 <li class="nav-item">
                     <span class="nav-link disabled">{{ user.get_full_name|default:user.username }}</span>
                 </li>

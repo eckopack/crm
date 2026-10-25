@@ -3,7 +3,8 @@ from django.contrib import admin
 from .models import (
     Aktivitaet, Angebot, AngebotNachfassStatus, AngebotNachfassVorlage, AngebotPosition,
     Artikel, Charge, Deal, Firma, Kontakt, Lagerbewegung, MusterboxNachfassStatus,
-    MusterboxNachfassVorlage, Preisstaffel, Produktionsbuchung, Rechnung, RechnungZahlung, Rezeptur,
+    MusterboxNachfassVorlage, Preisstaffel, Produktionsbericht, Produktionsbuchung,
+    Rechnung, RechnungZahlung, Rezeptur,
 )
 
 
@@ -245,6 +246,30 @@ class ProduktionsbuchungAdmin(admin.ModelAdmin):
     list_filter = ("fertigprodukt",)
     search_fields = ("fertigprodukt__artikelnummer",)
     autocomplete_fields = ["fertigprodukt", "charge", "zustaendiger"]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(Produktionsbericht)
+class ProduktionsberichtAdmin(admin.ModelAdmin):
+    """26.10.2026, Pilot Trinkhalm-L1: ebenfalls rein lesend im Admin, aus demselben Grund
+    wie ProduktionsbuchungAdmin oben - Einreichen/Freigeben/Ablehnen laufen ausschließlich
+    über die eigene Oberfläche (siehe views.produktionsbericht_*), damit Statuswechsel und
+    die daraus entstehende Produktionsbuchung konsistent bleiben."""
+    list_display = (
+        "datum", "linie", "fertigprodukt", "status", "menge_gut_stueck",
+        "eingereicht_von", "freigegeben_von",
+    )
+    list_filter = ("linie", "status", "fertigprodukt")
+    search_fields = ("fertigprodukt__artikelnummer",)
+    autocomplete_fields = ["fertigprodukt", "bediener_1", "freigegeben_von", "produktionsbuchung"]
 
     def has_add_permission(self, request):
         return False

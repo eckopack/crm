@@ -7,7 +7,7 @@ from io import BytesIO
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.management import call_command
 from django.core.paginator import Paginator
 from django.core.validators import validate_email
@@ -27,7 +27,7 @@ from .forms import (
     BonusstaffelFormSet, DealForm, FirmaForm, KontaktForm,
     PackscheinForm, PackscheinPositionFormSet, PackscheinVersandForm,
     LieferscheinForm, LieferscheinPositionFormSet, LieferscheinVersandForm,
-    ProduktionsbuchungForm,
+    ProduktionsberichtAblehnenForm, ProduktionsberichtForm, ProduktionsbuchungForm,
     RahmenvereinbarungForm, RahmenvereinbarungPositionFormSet,
     RechnungForm, RechnungKorrekturForm, RechnungPositionFormSet, RechnungZahlungForm,
     WareneingangForm,
@@ -37,9 +37,11 @@ from .models import (
     GRAMM_JE_STUECK_TRINKHALM, MUSTERKARTON_ARTIKEL,
     PHASE_STANDARD_WAHRSCHEINLICHKEIT, Aktivitaet, Angebot, AngebotNachfassStatus, Artikel,
     Charge, Deal, EmailVersand, Firma, Kontakt, Lagerbewegung, MATERIALTYPEN_MIT_CHARGENBESTAND,
-    MusterboxNachfassStatus, Packschein, PackscheinPosition, Produktionsbuchung,
+    MusterboxNachfassStatus, Packschein, PackscheinPosition, Produktionsbericht,
+    Produktionsbuchung,
     Lieferschein, Rahmenvereinbarung, Rechnung, RechnungPosition, RechnungZahlung,
 )
+from .produktionsleiter import ist_produktionsleiter
 from django.forms import inlineformset_factory
 
 
@@ -2097,52 +2099,10 @@ def produktionsbuchung_erfassen(request):
         form = ProduktionsbuchungForm(fertigprodukt, request.POST)
         if form.is_valid():
             try:
-                with transaction.atomic():
-                    gesamtmenge = form.cleaned_data["menge_ist"] + form.cleaned_data["menge_ausschuss"]
-                    verbrauchszeilen = []
-                    for zeile in form.rezeptur_zeilen:
-                        gewaehlte_charge = form.cleaned_data[f"charge_{zeile.pk}"]
-                        aktuelle_charge = Charge.objects.select_for_update().get(pk=gewaehlte_charge.pk)
-                        benoetigt = zeile.menge_je_einheit * gesamtmenge
-                        if aktuelle_charge.bestand_aktuell < benoetigt:
-                            raise ValidationError(
-                                f"Charge für {zeile.rohmaterial.artikelnummer} reicht nicht mehr "
-                                "aus (inzwischen durch eine andere Buchung verbraucht) - bitte "
-                                "erneut versuchen."
-                            )
-                        verbrauchszeilen.append((zeile, aktuelle_charge, benoetigt))
-
-                    fertigware_charge = Charge.objects.create(
-                        artikel=fertigprodukt,
-                        chargennummer=form.cleaned_data["chargennummer"],
-                        wareneingang_datum=form.cleaned_data["datum"].date(),
-                        mindesthaltbarkeitsdatum=form.cleaned_data["mindesthaltbarkeitsdatum"],
-                        menge_eingang=form.cleaned_data["menge_ist"],
-                    )
-                    buchung = Produktionsbuchung.objects.create(
-                        fertigprodukt=fertigprodukt,
-                        charge=fertigware_charge,
-                        menge_soll=form.cleaned_data["menge_soll"],
-                        menge_ist=form.cleaned_data["menge_ist"],
-                        menge_ausschuss=form.cleaned_data["menge_ausschuss"],
-                        datum=form.cleaned_data["datum"],
-                        zustaendiger=form.cleaned_data["zustaendiger"],
-                        notizen=form.cleaned_data["notizen"],
-                        erstellt_von=request.user if request.user.is_authenticated else None,
-                    )
-                    Lagerbewegung.objects.create(
-                        artikel=fertigprodukt, charge=fertigware_charge,
-                        bewegungstyp="produktion_zugang", menge=form.cleaned_data["menge_ist"],
-                        produktionsbuchung=buchung,
-                        erstellt_von=request.user if request.user.is_authenticated else None,
-                    )
-                    for zeile, aktuelle_charge, benoetigt in verbrauchszeilen:
-                        Lagerbewegung.objects.create(
-                            artikel=zeile.rohmaterial, charge=aktuelle_charge,
-                            bewegungstyp="produktion_verbrauch", menge=-benoetigt,
-                            produktionsbuchung=buchung,
-                            erstellt_von=request.user if request.user.is_authenticated else None,
-                        )
+                buchung = _produktionsbuchung_anlegen(
+                    fertigprodukt=fertigprodukt, form=form,
+                    erstellt_von=request.user if request.user.is_authenticated else None,
+                )
             except ValidationError as exc:
                 buchung = None
                 form.add_error(None, exc)
@@ -2159,6 +2119,64 @@ def produktionsbuchung_erfassen(request):
         request, "vertrieb/produktionsbuchung_form.html",
         {"form": form, "fertigprodukt": fertigprodukt},
     )
+
+
+def _produktionsbuchung_anlegen(*, fertigprodukt, form, erstellt_von):
+    """Gemeinsame Kernlogik aus produktionsbuchung_erfassen herausgezogen (26.10.2026, im
+    Zuge der Produktionsbericht-Freigabe): legt Fertigware-Charge, Produktionsbuchung und
+    alle Lagerbewegungen (Zugang + je Rezeptur-Zeile ein Verbrauch) in EINER Transaktion
+    an. form ist ein bereits validiertes ProduktionsbuchungForm - der Aufrufer entscheidet,
+    woher dessen Daten kommen (manuelle Erfassung ODER aus einem freigegebenen
+    Produktionsbericht vorbefüllt, siehe views.produktionsbericht_freigeben). Wirft
+    ValidationError, wenn eine gewählte Charge inzwischen (durch eine andere, zwischenzeitig
+    abgeschlossene Buchung) nicht mehr ausreicht - der Aufrufer fängt das ab und zeigt es
+    im Formular an, bucht aber NICHTS (kein Verbuchen ins Minus, siehe Produktionsbuchung-
+    Moduldoku)."""
+    with transaction.atomic():
+        gesamtmenge = form.cleaned_data["menge_ist"] + form.cleaned_data["menge_ausschuss"]
+        verbrauchszeilen = []
+        for zeile in form.rezeptur_zeilen:
+            gewaehlte_charge = form.cleaned_data[f"charge_{zeile.pk}"]
+            aktuelle_charge = Charge.objects.select_for_update().get(pk=gewaehlte_charge.pk)
+            benoetigt = zeile.menge_je_einheit * gesamtmenge
+            if aktuelle_charge.bestand_aktuell < benoetigt:
+                raise ValidationError(
+                    f"Charge für {zeile.rohmaterial.artikelnummer} reicht nicht mehr "
+                    "aus (inzwischen durch eine andere Buchung verbraucht) - bitte "
+                    "erneut versuchen."
+                )
+            verbrauchszeilen.append((zeile, aktuelle_charge, benoetigt))
+
+        fertigware_charge = Charge.objects.create(
+            artikel=fertigprodukt,
+            chargennummer=form.cleaned_data["chargennummer"],
+            wareneingang_datum=form.cleaned_data["datum"].date(),
+            mindesthaltbarkeitsdatum=form.cleaned_data["mindesthaltbarkeitsdatum"],
+            menge_eingang=form.cleaned_data["menge_ist"],
+        )
+        buchung = Produktionsbuchung.objects.create(
+            fertigprodukt=fertigprodukt,
+            charge=fertigware_charge,
+            menge_soll=form.cleaned_data["menge_soll"],
+            menge_ist=form.cleaned_data["menge_ist"],
+            menge_ausschuss=form.cleaned_data["menge_ausschuss"],
+            datum=form.cleaned_data["datum"],
+            zustaendiger=form.cleaned_data["zustaendiger"],
+            notizen=form.cleaned_data["notizen"],
+            erstellt_von=erstellt_von,
+        )
+        Lagerbewegung.objects.create(
+            artikel=fertigprodukt, charge=fertigware_charge,
+            bewegungstyp="produktion_zugang", menge=form.cleaned_data["menge_ist"],
+            produktionsbuchung=buchung, erstellt_von=erstellt_von,
+        )
+        for zeile, aktuelle_charge, benoetigt in verbrauchszeilen:
+            Lagerbewegung.objects.create(
+                artikel=zeile.rohmaterial, charge=aktuelle_charge,
+                bewegungstyp="produktion_verbrauch", menge=-benoetigt,
+                produktionsbuchung=buchung, erstellt_von=erstellt_von,
+            )
+    return buchung
 
 
 class ProduktionsbuchungListView(LoginRequiredMixin, ListView):
@@ -2185,6 +2203,203 @@ class ProduktionsbuchungDetailView(LoginRequiredMixin, DetailView):
             bewegungstyp="produktion_verbrauch",
         ).select_related("artikel", "charge")
         return context
+
+
+# ---------------------------------------------------------------------------
+# Produktionsbericht (26.10.2026, Pilot Trinkhalm-L1) - siehe ausführliche Moduldoku bei
+# Produktionsbericht in models.py: MA erfasst, Produktionsleiter (Gruppe
+# "Produktionsleiter", siehe .produktionsleiter.ist_produktionsleiter) gibt frei, erst dann
+# entsteht über _produktionsbuchung_anlegen oben eine echte Produktionsbuchung.
+# ---------------------------------------------------------------------------
+
+@login_required
+def produktionsbericht_erfassen(request):
+    """MA-Eingabemaske (siehe ProduktionsberichtForm - bewusst ein einfaches ModelForm,
+    keine Chargen-Auswahl hier). linie ist in dieser ersten Version fest "trinkhalm_l1" -
+    siehe Moduldoku."""
+    if request.method == "POST":
+        form = ProduktionsberichtForm(request.POST, angemeldeter_benutzer=request.user)
+        if form.is_valid():
+            bericht = form.save(commit=False)
+            bericht.linie = "trinkhalm_l1"
+            bericht.eingereicht_von = request.user
+            bericht.save()
+            messages.success(
+                request,
+                f"Produktionsbericht eingereicht - wartet jetzt auf Freigabe durch den "
+                f"Produktionsleiter.",
+            )
+            return redirect(bericht.get_absolute_url())
+    else:
+        form = ProduktionsberichtForm(angemeldeter_benutzer=request.user)
+    return render(request, "vertrieb/produktionsbericht_form.html", {"form": form})
+
+
+class ProduktionsberichtListView(LoginRequiredMixin, ListView):
+    """MA sehen nur ihre eigenen Berichte, Produktionsleiter/Superuser alle (siehe
+    .produktionsleiter.ist_produktionsleiter) - keine separate Berechtigungsklasse nötig,
+    weil hier (anders als bei der Zugriffsbeschränkung in middleware.py) reines
+    Queryset-Filtern reicht."""
+    model = Produktionsbericht
+    template_name = "vertrieb/produktionsbericht_list.html"
+    context_object_name = "berichte"
+    paginate_by = 50
+
+    def get_queryset(self):
+        qs = Produktionsbericht.objects.select_related(
+            "fertigprodukt", "bediener_1", "eingereicht_von", "freigegeben_von",
+        )
+        if ist_produktionsleiter(self.request.user):
+            return qs
+        return qs.filter(eingereicht_von=self.request.user)
+
+
+class ProduktionsberichtDetailView(LoginRequiredMixin, DetailView):
+    model = Produktionsbericht
+    template_name = "vertrieb/produktionsbericht_detail.html"
+    context_object_name = "bericht"
+
+    def get_queryset(self):
+        qs = Produktionsbericht.objects.select_related(
+            "fertigprodukt", "bediener_1", "eingereicht_von", "freigegeben_von",
+            "produktionsbuchung",
+        )
+        if ist_produktionsleiter(self.request.user):
+            return qs
+        return qs.filter(eingereicht_von=self.request.user)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["ist_produktionsleiter"] = ist_produktionsleiter(self.request.user)
+        return context
+
+
+@login_required
+def produktionsbericht_freigeben(request, pk):
+    """Produktionsleiter-Ansicht (siehe .produktionsleiter.ist_produktionsleiter): wählt
+    die zu verbrauchende Rohmaterial-Charge je Rezeptur-Zeile (identisches Formular/
+    dieselbe Prüfung wie produktionsbuchung_erfassen - siehe ProduktionsbuchungForm) und
+    gibt frei. Wandelt dabei die vom MA in STÜCK erfassten Mengen in die Verpackungseinheit
+    (Gebinde) des Fertigprodukts um, wie es Produktionsbuchung.menge_ist erwartet (siehe
+    Produktionsbericht-Moduldoku in models.py) - bricht mit einer klaren Fehlermeldung ab,
+    falls verpackungseinheit_stk am Artikel fehlt, statt durch 0 zu teilen."""
+    if not ist_produktionsleiter(request.user):
+        raise PermissionDenied("Nur der Produktionsleiter darf Produktionsberichte freigeben.")
+
+    bericht = get_object_or_404(Produktionsbericht, pk=pk)
+    if bericht.status != "eingereicht":
+        messages.error(request, "Dieser Bericht wurde bereits freigegeben oder abgelehnt.")
+        return redirect(bericht.get_absolute_url())
+
+    fertigprodukt = bericht.fertigprodukt
+    if not fertigprodukt.verpackungseinheit_stk:
+        messages.error(
+            request,
+            f"{fertigprodukt.artikelnummer} hat keine Verpackungseinheit (Stück je Gebinde) "
+            "hinterlegt - bitte zuerst im Artikel nachtragen, dann erneut versuchen.",
+        )
+        return redirect(bericht.get_absolute_url())
+
+    menge_ist_gebinde = Decimal(bericht.menge_gut_stueck) / fertigprodukt.verpackungseinheit_stk
+    menge_ausschuss_gebinde = (
+        Decimal(bericht.menge_ausschuss_stueck) / fertigprodukt.verpackungseinheit_stk
+    )
+    notizen_vorschlag = (
+        f"Aus Produktionsbericht #{bericht.pk} ({bericht.get_linie_display()}, "
+        f"{bericht.get_schicht_display()}, Bediener: {bericht.bediener_1}"
+        f"{', ' + bericht.bediener_2 if bericht.bediener_2 else ''})."
+    )
+    if bericht.ausschussgrund:
+        notizen_vorschlag += f" Ausschussgrund: {bericht.get_ausschussgrund_display()}."
+    if bericht.bemerkungen:
+        notizen_vorschlag += f"\n\n{bericht.bemerkungen}"
+
+    initial = {
+        "menge_ist": menge_ist_gebinde,
+        "menge_ausschuss": menge_ausschuss_gebinde,
+        "datum": bericht.produktionszeit_bis,
+        "zustaendiger": bericht.bediener_1,
+        "notizen": notizen_vorschlag,
+    }
+
+    buchung = None
+    if request.method == "POST":
+        form = ProduktionsbuchungForm(fertigprodukt, request.POST)
+        if form.is_valid():
+            try:
+                buchung = _produktionsbuchung_anlegen(
+                    fertigprodukt=fertigprodukt, form=form, erstellt_von=request.user,
+                )
+            except ValidationError as exc:
+                buchung = None
+                form.add_error(None, exc)
+            else:
+                bericht.status = "freigegeben"
+                bericht.freigegeben_von = request.user
+                bericht.freigegeben_am = timezone.now()
+                bericht.produktionsbuchung = buchung
+                bericht.save(update_fields=[
+                    "status", "freigegeben_von", "freigegeben_am", "produktionsbuchung",
+                ])
+                messages.success(
+                    request,
+                    f"Produktionsbericht freigegeben - Produktionsbuchung "
+                    f"{buchung.menge_ist} {fertigprodukt.get_einheit_display()} "
+                    f"{fertigprodukt.artikelnummer} angelegt.",
+                )
+                return redirect(bericht.get_absolute_url())
+    else:
+        form = ProduktionsbuchungForm(fertigprodukt, initial=initial)
+    return render(
+        request, "vertrieb/produktionsbericht_freigeben.html",
+        {"form": form, "bericht": bericht, "fertigprodukt": fertigprodukt},
+    )
+
+
+@login_required
+def produktionsbericht_ablehnen(request, pk):
+    """Produktionsleiter-Ansicht: Bericht mit Begründung ablehnen (siehe
+    ProduktionsberichtAblehnenForm und Moduldoku - der MA legt dann einen neuen Bericht
+    an, kein Edit-/Resubmit-Zustand in dieser ersten Version)."""
+    if not ist_produktionsleiter(request.user):
+        raise PermissionDenied("Nur der Produktionsleiter darf Produktionsberichte ablehnen.")
+
+    bericht = get_object_or_404(Produktionsbericht, pk=pk)
+    if bericht.status != "eingereicht":
+        messages.error(request, "Dieser Bericht wurde bereits freigegeben oder abgelehnt.")
+        return redirect(bericht.get_absolute_url())
+
+    if request.method == "POST":
+        form = ProduktionsberichtAblehnenForm(request.POST, instance=bericht)
+        if form.is_valid():
+            abgelehnter_bericht = form.save(commit=False)
+            abgelehnter_bericht.status = "abgelehnt"
+            abgelehnter_bericht.freigegeben_von = request.user
+            abgelehnter_bericht.freigegeben_am = timezone.now()
+            abgelehnter_bericht.save()
+            messages.success(request, "Produktionsbericht abgelehnt.")
+            return redirect(bericht.get_absolute_url())
+    else:
+        form = ProduktionsberichtAblehnenForm(instance=bericht)
+    return render(
+        request, "vertrieb/produktionsbericht_ablehnen.html",
+        {"form": form, "bericht": bericht},
+    )
+
+
+@login_required
+def produktionsbericht_pdf_download(request, pk):
+    """Ausdruckbares Produktionsbericht-PDF (26.10.2026, siehe pdf.produktionsbericht_pdf_erzeugen
+    und Björns Anforderung "im gleichen Design nur mit ECKO-PACK wie GUTOM"). Dieselbe
+    Sichtbarkeits-Regel wie ProduktionsberichtListView/-DetailView: MA sehen nur das PDF
+    ihrer eigenen Berichte, der Produktionsleiter das PDF aller Berichte."""
+    bericht = get_object_or_404(Produktionsbericht, pk=pk)
+    if not ist_produktionsleiter(request.user) and bericht.eingereicht_von_id != request.user.id:
+        raise PermissionDenied("Du kannst nur das PDF deiner eigenen Produktionsberichte abrufen.")
+    pdf_bytes = pdf.produktionsbericht_pdf_erzeugen(bericht)
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'inline; filename="Produktionsbericht-{bericht.pk}.pdf"'
+    return response
 
 
 @login_required

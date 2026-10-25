@@ -1799,6 +1799,185 @@ class Produktionsbuchung(models.Model):
         return reverse("vertrieb:produktionsbuchung_detail", args=[self.pk])
 
 
+# 26.10.2026, auf Wunsch von Björn (Vorlage: GUTOM-Produktionsbericht für eine Traysealer-
+# Linie, als Referenz eingereicht): MA sollen ihren Schichtbericht direkt im CRM erfassen,
+# statt ihn auf Papier zu schreiben und manuell nachzupflegen. WICHTIG: der GUTOM-Vordruck
+# wurde NICHT 1:1 übernommen - er ist für eine Traysealer/Stacker-Verpackungslinie gemacht
+# (Schalen, Folie, Boards), was mit Trinkhalm-/Besteck-Spritzguss nichts zu tun hat. Das
+# Feldraster unten orientiert sich stattdessen an Spritzguss-Schichtberichten (siehe PR-
+# Beschreibung für die Recherche-Quellen) UND an dem, was vom GUTOM-Vordruck strukturell
+# übertragbar ist (Bediener/Schicht, Produktionszeit von/bis, Stromverbrauch, freie
+# Bemerkungen für Störungen).
+#
+# Zweistufiger Workflow (Björns Entscheidung, AskUserQuestion vor dem Bau):
+# 1. MA (eigene, stark eingeschränkte CRM-Konten in der Gruppe "Produktion" - siehe
+#    vertrieb/middleware.py) füllt diesen Bericht aus und reicht ihn ein (status=
+#    "eingereicht"). Mengen werden in STÜCK erfasst (nicht in der Verpackungseinheit/
+#    Gebinde des Fertigprodukts, wie es Produktionsbuchung.menge_ist tut) - das ist für
+#    einen MA an der Linie die natürliche Zähleinheit. Die Umrechnung in Gebinde passiert
+#    erst bei der Freigabe (siehe views.produktionsbericht_freigeben).
+# 2. Produktionsleiter (Gruppe "Produktionsleiter", konkret Bizer/Gallenkamp - 25.10.2026)
+#    sieht alle eingereichten Berichte, wählt dort (wie bei einer normalen
+#    Produktionsbuchung schon immer) die zu verbrauchende Rohmaterial-Charge je Rezeptur-
+#    Zeile aus und gibt frei - das legt im Hintergrund eine echte Produktionsbuchung mit
+#    allen Lagerbewegungen an (dieselbe Kernlogik wie produktionsbuchung_erfassen, siehe
+#    views._produktionsbuchung_anlegen) und verknüpft sie hier über das Feld
+#    produktionsbuchung. Alternativ kann der Produktionsleiter mit Begründung ablehnen
+#    (status="abgelehnt") - der MA muss dann einen NEUEN Bericht anlegen (bewusst kein
+#    Edit-/Resubmit-Zustand in diesem ersten Schritt, Scope-Entscheidung für die einfache
+#    erste Version).
+#
+# Scope dieser ersten Version: nur linie="trinkhalm_l1" ist in der Oberfläche anwählbar
+# (siehe ProduktionsberichtForm) - die Besteck-Linien sind hier als Choices bereits
+# vorgesehen, werden aber erst in einem Folge-PR an die Oberfläche angeschlossen, nachdem
+# Trinkhalm-L1 einmal produktiv getestet wurde (Björns ausdrücklicher Wunsch: "erst eine
+# Maske als Pilot").
+PRODUKTIONSBERICHT_LINIE_CHOICES = [
+    ("trinkhalm_l1", "Trinkhalm-Produktion L1"),
+    ("besteck_l1", "Besteck-Produktion L1"),
+    ("besteck_l2", "Besteck-Produktion L2"),
+    ("besteck_l3", "Besteck-Produktion L3"),
+]
+
+PRODUKTIONSBERICHT_SCHICHT_CHOICES = [
+    ("frueh", "Frühschicht"),
+    ("spaet", "Spätschicht"),
+    ("nacht", "Nachtschicht"),
+    ("sonder", "Sonderschicht"),
+]
+
+# [Vermutung] Diese Kategorien sind gängige Spritzguss-Ausschussgründe (siehe PR-
+# Beschreibung), keine ECKO-PACK-spezifische Bestätigung - bei Bedarf anpassen.
+PRODUKTIONSBERICHT_AUSSCHUSSGRUND_CHOICES = [
+    ("", "– nicht angegeben –"),
+    ("kaltfliessnase", "Kaltfließnase"),
+    ("grat", "Grat"),
+    ("verzug", "Verzug"),
+    ("lufteinschluss", "Lufteinschluss/Blase"),
+    ("kurzschuss", "Kurzschuss (Teil nicht vollständig gefüllt)"),
+    ("anfahrverlust", "Anfahrverlust (Rüsten/Anlaufphase)"),
+    ("sonstiges", "Sonstiges (siehe Bemerkungen)"),
+]
+
+PRODUKTIONSBERICHT_STATUS_CHOICES = [
+    ("eingereicht", "Eingereicht – wartet auf Freigabe"),
+    ("freigegeben", "Freigegeben"),
+    ("abgelehnt", "Abgelehnt"),
+]
+
+
+class Produktionsbericht(models.Model):
+    """Von einem MA eingereichter Schichtbericht einer Produktionslinie - noch KEINE
+    Bestandsbuchung (siehe Moduldoku oben). Erst nach Freigabe durch den Produktionsleiter
+    entsteht daraus eine echte Produktionsbuchung mit Lagerbewegungen (Feld
+    produktionsbuchung unten). Wird nach dem Einreichen nicht mehr vom MA editiert -
+    bei Ablehnung legt der MA stattdessen einen neuen Bericht an (siehe Moduldoku)."""
+    linie = models.CharField("Linie", max_length=20, choices=PRODUKTIONSBERICHT_LINIE_CHOICES)
+    fertigprodukt = models.ForeignKey(
+        Artikel, verbose_name="Fertigprodukt", on_delete=models.PROTECT,
+        related_name="produktionsberichte", limit_choices_to={"materialtyp": "fertigware"},
+    )
+    datum = models.DateField("Produktionsdatum", default=timezone.localdate)
+    schicht = models.CharField("Schicht", max_length=10, choices=PRODUKTIONSBERICHT_SCHICHT_CHOICES)
+    bediener_1 = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="Bediener 1", on_delete=models.PROTECT,
+        related_name="produktionsberichte_als_bediener_1",
+        help_text="Standardmäßig der eingeloggte MA - kann angepasst werden, falls jemand "
+                   "den Bericht für einen Kollegen einträgt.",
+    )
+    bediener_2 = models.CharField(
+        "Bediener 2", max_length=150, blank=True,
+        help_text="Freitext, falls ein zweiter Bediener ohne eigenes CRM-Konto beteiligt war.",
+    )
+    produktionszeit_von = models.DateTimeField("Produktionszeit von")
+    produktionszeit_bis = models.DateTimeField("Produktionszeit bis")
+    werkzeug_bezeichnung = models.CharField(
+        "Werkzeug/Form", max_length=100, blank=True,
+        help_text="Freitext, z. B. Formennummer - optional, falls je Artikel ohnehin nur ein "
+                   "Werkzeug im Einsatz ist.",
+    )
+    schussanzahl = models.PositiveIntegerField(
+        "Schussanzahl", null=True, blank=True, help_text="Optional, rein informativ.",
+    )
+    menge_gut_stueck = models.PositiveIntegerField(
+        "Gutmenge (Stück)", help_text="Tatsächlich produzierte, verwendbare Stückzahl.",
+    )
+    menge_ausschuss_stueck = models.PositiveIntegerField(
+        "Ausschussmenge (Stück)", default=0,
+    )
+    ausschussgrund = models.CharField(
+        "Ausschussgrund", max_length=20, choices=PRODUKTIONSBERICHT_AUSSCHUSSGRUND_CHOICES,
+        blank=True,
+    )
+    ruestzeit_minuten = models.PositiveIntegerField(
+        "Rüstzeit (Minuten)", null=True, blank=True,
+    )
+    stillstandszeit_minuten = models.PositiveIntegerField(
+        "Stillstandszeit (Minuten)", null=True, blank=True,
+    )
+    stillstandsgrund = models.CharField(
+        "Stillstandsgrund", max_length=300, blank=True,
+        help_text="Kurzbeschreibung, falls Stillstandszeit > 0 (Details ggf. in Bemerkungen).",
+    )
+    stromverbrauch_kwh = models.DecimalField(
+        "Stromverbrauch (KWh)", max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Optional, nur falls die Linie einen eigenen Zähler hat.",
+    )
+    reinigung_durchgefuehrt_von = models.CharField(
+        "Reinigung durchgeführt von", max_length=150, blank=True,
+    )
+    bemerkungen = models.TextField(
+        "Bemerkungen", blank=True,
+        help_text="Freitext für Störungen/Besonderheiten - laut GUTOM-Vorlage der wertvollste "
+                   "Teil des Berichts.",
+    )
+
+    status = models.CharField(
+        "Status", max_length=20, choices=PRODUKTIONSBERICHT_STATUS_CHOICES, default="eingereicht",
+    )
+    eingereicht_von = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="Eingereicht von", on_delete=models.PROTECT,
+        related_name="produktionsberichte_eingereicht",
+    )
+    eingereicht_am = models.DateTimeField("Eingereicht am", auto_now_add=True)
+    freigegeben_von = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="Freigegeben/abgelehnt von", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="produktionsberichte_freigegeben",
+    )
+    freigegeben_am = models.DateTimeField("Freigegeben/abgelehnt am", null=True, blank=True)
+    ablehnungsgrund = models.TextField("Ablehnungsgrund", blank=True)
+    produktionsbuchung = models.OneToOneField(
+        Produktionsbuchung, verbose_name="Produktionsbuchung", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="produktionsbericht",
+        help_text="Wird beim Freigeben automatisch gesetzt - verknüpft den Bericht mit der "
+                   "daraus erzeugten Bestandsbuchung.",
+    )
+
+    class Meta:
+        verbose_name = "Produktionsbericht"
+        verbose_name_plural = "Produktionsberichte"
+        ordering = ["-datum", "-eingereicht_am"]
+
+    def __str__(self):
+        return (f"{self.get_linie_display()} – {self.datum:%d.%m.%Y} "
+                f"({self.get_status_display()})")
+
+    def get_absolute_url(self):
+        return reverse("vertrieb:produktionsbericht_detail", args=[self.pk])
+
+    @property
+    def produktionsdauer_anzeige(self):
+        """HH:MM-Anzeige wie im GUTOM-Vordruck ("Produktionszeit (HH:MM)") - bewusst nicht
+        gespeichert, sondern aus von/bis berechnet, damit beide Felder konsistent bleiben."""
+        if not self.produktionszeit_von or not self.produktionszeit_bis:
+            return None
+        delta = self.produktionszeit_bis - self.produktionszeit_von
+        gesamtminuten = int(delta.total_seconds() // 60)
+        if gesamtminuten < 0:
+            return None
+        return f"{gesamtminuten // 60:02d}:{gesamtminuten % 60:02d}"
+
+
 MUSTERBOX_NACHFASS_WOCHEN = 8
 
 MUSTERBOX_NACHFASS_ENDE_CHOICES = [
