@@ -174,6 +174,18 @@ services:
         sync: false
       - key: DJANGO_DEFAULT_FROM_EMAIL
         sync: false
+      # GRAPH-ANTWORTEN (25.10.2026, neu): Zugangsdaten der App-Registrierung "ECKO-PACK CRM
+      # Mail Reader" (Microsoft Entra/Azure AD), client_credentials-Flow gegen Microsoft Graph.
+      # Von Björn selbst in Render eingetragen (nicht von Claude) - der App-Registrierung
+      # wurde BEWUSST keine API-Berechtigung in Entra gegeben, der Zugriff läuft ausschließlich
+      # über eine auf vertrieb@/rechnung@ecko-pack.de beschränkte RBAC-for-Applications-
+      # Rollenzuweisung (Application Mail.Read) in Exchange Online, siehe graph_antworten.py.
+      - key: GRAPH_TENANT_ID
+        sync: false
+      - key: GRAPH_CLIENT_ID
+        sync: false
+      - key: GRAPH_CLIENT_SECRET
+        sync: false
 
   # Anstoss der Nachfass-Pruefung (siehe Kommentar "NACHFASS-CRON" oben). Braucht keine
   # Disk und keinen DB-Zugriff, nur ausgehende HTTPS-Verbindungen zum eigenen Web-Service.
@@ -195,6 +207,32 @@ services:
     startCommand: >
       curl -fsS -X POST -H "X-Cron-Secret: $NACHFASS_CRON_SECRET"
       "https://eckopack-crm.onrender.com/interna/nachfass-cron/"
+    envVars:
+      - key: NACHFASS_CRON_SECRET
+        sync: false
+
+  # GRAPH-ANTWORTEN-CRON (25.10.2026, neu, auf Wunsch von Björn): prüft vertrieb@ecko-pack.de
+  # per Microsoft Graph auf Kundenantworten zu Musterbox-/Angebot-Nachfassmails (siehe
+  # graph_antworten.py). Gleiches Muster wie eckopack-crm-nachfass oben (kein DB-/Disk-Zugriff
+  # nötig, ruft nur den eigenen Web-Service per HTTPS an) - bewusst dasselbe
+  # NACHFASS_CRON_SECRET wiederverwendet statt ein zweites Secret anzulegen.
+  #
+  # TAKT: alle 2 Stunden vorgeschlagen (Björn, 24.10.2026) - noch nicht ausdrücklich
+  # bestätigt, bei Bedarf hier einfach die schedule-Zeile anpassen.
+  #
+  # KOSTEN-HINWEIS: das ist ein ZWEITER separater Render-"Cron Job"-Service (plan: starter,
+  # wie beim bestehenden eckopack-crm-nachfass) - bitte vor dem ersten echten Deploy dieses
+  # Services im Render-Dashboard bestätigen, dass der zusätzliche monatliche Preis passt
+  # (genau dieselbe Prufung, die schon beim ersten Cron-Job am 12.10.2026 empfohlen wurde).
+  - type: cron
+    name: eckopack-crm-graph-antworten
+    runtime: python
+    plan: starter
+    schedule: "0 */2 * * *"
+    buildCommand: "true"
+    startCommand: >
+      curl -fsS -X POST -H "X-Cron-Secret: $NACHFASS_CRON_SECRET"
+      "https://eckopack-crm.onrender.com/interna/graph-antworten-cron/"
     envVars:
       - key: NACHFASS_CRON_SECRET
         sync: false
