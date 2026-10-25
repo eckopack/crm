@@ -9,6 +9,10 @@ urlpatterns = [
     path("pipeline/", views.pipeline_kanban, name="pipeline"),
     path("pipeline/<int:pk>/phase/", views.deal_phase_setzen, name="deal_phase_setzen"),
     path("interna/nachfass-cron/", views.interner_nachfass_cron, name="interner_nachfass_cron"),
+    path(
+        "interna/graph-antworten-cron/", views.interner_graph_antworten_cron,
+        name="interner_graph_antworten_cron",
+    ),
 
     path("firmen/", views.FirmaListView.as_view(), name="firma_list"),
     path("firmen/neu/", views.FirmaCreateView.as_view(), name="firma_create"),

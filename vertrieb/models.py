@@ -1275,6 +1275,28 @@ class EmailVersand(models.Model):
         on_delete=models.SET_NULL, related_name="email_versaende",
     )
 
+    # 25.10.2026, auf Wunsch von Björn ("Graph-Antworten"): ermöglicht, eine Kundenantwort im
+    # Postfach vertrieb@ecko-pack.de einem konkreten automatischen Versand zuzuordnen. Die
+    # Mails verlassen das System über Resend (SMTP), nicht über Exchange - Exchange/Graph sieht
+    # also nie den ausgehenden Versand und kann deshalb keine eigene conversationId dafür
+    # vergeben. Wir setzen die Message-ID deshalb selbst beim Versand (siehe nurture.py,
+    # email.utils.make_msgid) und matchen beim Lesen der Antwort über Graph gegen deren
+    # In-Reply-To-/References-Header (siehe graph_antworten.py). Bleibt leer bei Mailtypen, für
+    # die noch keine Antwort-Erkennung gebaut ist. ANTWORT STOPPT DIE KETTE NICHT automatisch
+    # (auf Wunsch von Björn, 25.10.2026: "bis wir eingreifen") - sie legt nur eine interne
+    # Aktivität (typ="nachfass") für den zuständigen Mitarbeiter an.
+    message_id = models.CharField(
+        "Message-ID (ausgehend)", max_length=255, blank=True, db_index=True,
+        help_text="Nur gesetzt für Mailtypen mit Antwort-Erkennung (aktuell: Musterbox-/"
+                   "Angebot-Nachfass). Siehe graph_antworten.py.",
+    )
+    antwort_erkannt_am = models.DateTimeField(
+        "Kundenantwort erkannt am", null=True, blank=True,
+        help_text="Gesetzt vom graph_antworten_pruefen-Cron, sobald im Postfach vertrieb@ "
+                   "eine Antwort mit passendem In-Reply-To-/References-Header gefunden wurde. "
+                   "Beendet NICHT automatisch die laufende Nachfasskette, siehe Doku oben.",
+    )
+
     class Meta:
         verbose_name = "E-Mail-Versand"
         verbose_name_plural = "E-Mail-Versände"
