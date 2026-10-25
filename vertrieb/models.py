@@ -46,13 +46,26 @@ PHASE_STANDARD_WAHRSCHEINLICHKEIT = {
 
 # 24.10.2026, auf Wunsch von Björn: Gramm-pro-Stück-Werte zur automatischen Umrechnung von
 # Deal.potenzial_tonnen_trinkhalm/_besteck (Tonnen) in eine geschätzte Stückzahl - siehe
-# Deal.stueck_trinkhalm/stueck_besteck unten. Trinkhalm = 1,0 g/Stück, identisch zu
-# GRAMM_JE_STUECK_STROH in Migration 0032 (ARBOBLEND). Besteck = 4,25 g/Stück, der einfache
-# Durchschnitt aus Klein- (2,5 g) und Großbesteck (6,0 g) aus derselben Migration - auf
-# Björns ausdrücklichen Wunsch gemittelt ("bei Besteck mitteln"), weil ein Deal keine
-# Aufteilung nach Besteckgröße erfasst. Das ist eine grobe Schätzung, keine exakte Angabe:
-# der tatsächliche Mix aus Klein-/Großbesteck je Deal ist nicht bekannt.
-GRAMM_JE_STUECK_TRINKHALM = Decimal("1.0")
+# Deal.stueck_trinkhalm/stueck_besteck unten. Besteck = 4,25 g/Stück, der einfache
+# Durchschnitt aus Klein- (2,5 g) und Großbesteck (6,0 g) aus Migration 0032 - auf Björns
+# ausdrücklichen Wunsch gemittelt ("bei Besteck mitteln"), weil ein Deal keine Aufteilung
+# nach Besteckgröße erfasst. Das ist eine grobe Schätzung, keine exakte Angabe: der
+# tatsächliche Mix aus Klein-/Großbesteck je Deal ist nicht bekannt.
+#
+# 25.10.2026, auf Wunsch von Björn (Technische Übersicht Trinkhalme, reale Stückgewichte
+# bestätigt: 15 cm=0,8 g, 20 cm=1,0 g, 23 cm=1,2 g, 25 cm=1,3 g, 30 cm hochgerechnet=1,5 g,
+# siehe Artikel.gewicht_je_stueck_g/Migration 0040): der bisherige pauschale Wert von 1,0 g
+# für ALLE Trinkhalm-Längen war zu grob (15 cm: -20 %, 25 cm: +30 % realer Abweichung) und
+# wird für die Rezeptur-Materialverbrauchsberechnung durch das neue, längenspezifische Feld
+# Artikel.gewicht_je_stueck_g ersetzt (siehe Rezeptur-Doku). GRAMM_JE_STUECK_TRINKHALM bleibt
+# als Konstante bestehen, weil ein Deal (anders als ein Fertigprodukt-Artikel) keiner
+# einzelnen Trinkhalm-Länge zugeordnet ist - sie ist jetzt aber der Durchschnitt der 5 realen
+# Längen-Gewichte statt eines einzelnen geschätzten Werts. Das ändert sichtbar die Stück-
+# Schätzung bestehender Deals (siehe PR-Beschreibung): bei gleichem Tonnen-Wert sinkt die
+# geschätzte Stückzahl um ca. 14 % (1,0 g -> 1,16 g je Stück).
+GRAMM_JE_STUECK_TRINKHALM = (
+    Decimal("0.8") + Decimal("1.0") + Decimal("1.2") + Decimal("1.3") + Decimal("1.5")
+) / 5
 GRAMM_JE_STUECK_BESTECK = (Decimal("2.5") + Decimal("6.0")) / 2
 
 AKTIVITAET_TYP_CHOICES = [
@@ -292,8 +305,9 @@ class Deal(models.Model):
     # 24.10.2026, auf Wunsch von Björn: das bisherige einzelne Mengenpotenzial-Feld wird nach
     # Produktkategorie aufgeteilt, weil die Gramm-pro-Stück-Werte (und damit die daraus
     # errechnete Stückzahl) für Trinkhalme und Besteck unterschiedlich sind (siehe
-    # GRAMM_JE_STUECK_TRINKHALM/GRAMM_JE_STUECK_BESTECK unten, aus der Rezeptur-Datenmigration
-    # 0032: Trinkhalm 1,0 g/Stück, Besteck gemittelt aus Klein-/Großbesteck). Bestehende Werte
+    # GRAMM_JE_STUECK_TRINKHALM/GRAMM_JE_STUECK_BESTECK unten; Trinkhalm seit 25.10.2026 der
+    # Durchschnitt der 5 realen Längen-Gewichte, Besteck gemittelt aus Klein-/Großbesteck,
+    # beide aus der Rezeptur-Datenmigration 0032/0040). Bestehende Werte
     # wurden per Datenmigration vollständig nach "Besteck" übernommen (Björns Entscheidung
     # 24.10.2026: "erstmal alle mengenpotenziale bei besteck lassen, ich ändere danach
     # manuell") - eine automatische Zuordnung zu Trinkhalm wäre geraten gewesen.
@@ -1351,7 +1365,15 @@ class Artikel(models.Model):
     beschreibung schon, nur mit falschem Retail-Preis) - inhaltlich von Björn noch zu
     prüfen/anzupassen, falls der Amazon-Wortlaut für ein förmliches B2B-Angebot nicht
     passt. Bleibt leer, wenn (noch) keine Übersetzung gepflegt ist; in dem Fall fällt
-    die Vorbefüllung auf die deutsche Bezeichnung zurück (siehe artikel_daten_json)."""
+    die Vorbefüllung auf die deutsche Bezeichnung zurück (siehe artikel_daten_json).
+
+    gewicht_je_stueck_g (25.10.2026, auf Wunsch von Björn, aus der "Technische Übersicht -
+    Trinkhalme"-Produktgrafik): strukturierte, pro Artikel gepflegte Alternative zum bisher
+    einzigen pauschalen Kategorie-Gramm-Wert (GRAMM_JE_STUECK_TRINKHALM/_BESTECK oben) - siehe
+    Rezeptur.menge_je_einheit-Doku für die genaue Verwendung in der Materialverbrauchs-
+    berechnung. Aktuell nur für die 16 längenspezifischen LUA-SW-*-Trinkhalmartikel befüllt
+    (Migration 0040); für alle anderen Artikel bleibt es leer und es gilt weiterhin der
+    pauschale Kategoriewert."""
     artikelnummer = models.CharField("Artikelnummer", max_length=50, unique=True)
     bezeichnung = models.CharField("Bezeichnung", max_length=300)
     bezeichnung_en = models.CharField(
@@ -1408,6 +1430,14 @@ class Artikel(models.Model):
     verpackungseinheit_stk = models.PositiveIntegerField(
         "Verpackungseinheit (Stück je Gebinde)", null=True, blank=True,
         help_text="Z. B. 500 bei einem 500er-Schlauchbeutel oder 150 bei einem 150er-Karton.",
+    )
+    gewicht_je_stueck_g = models.DecimalField(
+        "Gewicht je Stück (g)", max_digits=8, decimal_places=3, null=True, blank=True,
+        help_text="Reales Stückgewicht, z. B. je Trinkhalm-Länge unterschiedlich (25.10.2026, "
+                   "auf Wunsch von Björn - siehe Rezeptur-Doku). Wenn gesetzt, ist dies die "
+                   "Grundlage für die Rezeptur-Materialverbrauchsberechnung dieses "
+                   "Fertigprodukts und ersetzt dafür den pauschalen Kategorie-Durchschnitt "
+                   "(z. B. GRAMM_JE_STUECK_TRINKHALM). Leer = es gilt weiterhin der Pauschalwert.",
     )
     lagerort = models.CharField("Lagerort", max_length=100, blank=True)
     lieferant_freitext = models.CharField(
@@ -1539,7 +1569,16 @@ class Rezeptur(models.Model):
     unnötig zu brechen), lässt aber seit 24.10.2026 auf Wunsch von Björn auch Artikel mit
     materialtyp="verpackungsmaterial" zu (z. B. Kartonage) - Kartonage wird demnach genau wie
     chemisches Rohmaterial über einen Umrechnungsfaktor pro produzierter Fertigware-Einheit in
-    der Produktion verbraucht, nicht erst beim Packschein/Versand."""
+    der Produktion verbraucht, nicht erst beim Packschein/Versand.
+
+    menge_je_einheit ist ein gespeicherter Wert (keine Live-Berechnung) - er wird bei Anlage
+    der Rezeptur-Zeile einmalig gesetzt (siehe Migrationen 0032/0040) und bleibt es, bis er
+    hier oder im Admin von Hand/per neuer Migration geändert wird. Für die 16 längen-
+    spezifischen LUA-SW-*-Trinkhalmartikel (25.10.2026, Migration 0040) berechnet sich dieser
+    Wert aus fertigprodukt.gewicht_je_stueck_g * fertigprodukt.verpackungseinheit_stk / 1000 -
+    ändert sich eines der beiden Artikel-Felder nachträglich, muss menge_je_einheit erneut von
+    Hand (oder per neuer Datenmigration) nachgezogen werden, es gibt dafür noch keine
+    automatische Synchronisierung."""
     fertigprodukt = models.ForeignKey(
         Artikel, verbose_name="Fertigprodukt", on_delete=models.CASCADE,
         related_name="rezeptur_zeilen", limit_choices_to={"materialtyp": "fertigware"},

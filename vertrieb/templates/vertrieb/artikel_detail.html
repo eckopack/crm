@@ -27,6 +27,7 @@
                 <li class="list-group-item"><strong>USt-Satz:</strong> {{ artikel.ust_satz }} %</li>
                 <li class="list-group-item"><strong>Einkaufspreis:</strong> {{ artikel.einkaufspreis|default:"–" }}</li>
                 <li class="list-group-item"><strong>Verpackungseinheit:</strong> {{ artikel.verpackungseinheit_stk|default:"–" }} Stk/Gebinde</li>
+                <li class="list-group-item"><strong>Gewicht je Stück:</strong> {% if artikel.gewicht_je_stueck_g %}{{ artikel.gewicht_je_stueck_g }} g{% else %}–{% endif %}</li>
             </ul>
         </div>
         <div class="card mb-3">
