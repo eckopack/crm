@@ -65,9 +65,11 @@
         </button>
         <div class="collapse navbar-collapse" id="navbarNav">
             {% if user|ist_nur_produktion %}
-            {# 26.10.2026, Produktionsbericht-Pilot: MA (Gruppe "Produktion") sehen nur diese beiden
-               Links statt der vollen CRM-Navigation - die Middleware (ProduktionszugriffMiddleware)
-               würde sie von allem anderen ohnehin wegleiten, siehe vertrieb/middleware.py. #}
+            {% comment %}
+            26.10.2026, Produktionsbericht-Pilot: MA (Gruppe "Produktion") sehen nur diese beiden
+            Links statt der vollen CRM-Navigation - die Middleware (ProduktionszugriffMiddleware)
+            würde sie von allem anderen ohnehin wegleiten, siehe vertrieb/middleware.py.
+            {% endcomment %}
             <ul class="navbar-nav me-auto">
                 <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:produktionsbericht_erfassen' %}">Neuer Produktionsbericht</a></li>
                 <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:produktionsbericht_list' %}">Meine Produktionsberichte</a></li>
