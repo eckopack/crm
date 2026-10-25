@@ -35,7 +35,13 @@
                 <li class="list-group-item"><strong>Produktionszeit:</strong> {{ bericht.produktionszeit_von|date:"d.m.Y H:i" }} – {{ bericht.produktionszeit_bis|date:"H:i" }}
                     {% if bericht.produktionsdauer_anzeige %}<span class="text-muted">({{ bericht.produktionsdauer_anzeige }} h)</span>{% endif %}
                 </li>
-                <li class="list-group-item"><strong>Bediener:</strong> {{ bericht.bediener_1|default:"–" }}{% if bericht.bediener_2 %}, {{ bericht.bediener_2 }}{% endif %}</li>
+                <li class="list-group-item"><strong>Bediener:</strong>
+                    {% if bericht.personenbezug_entfernt %}
+                    <span class="text-muted fst-italic">anonymisiert (DSGVO, {{ bericht.personenbezug_entfernt_am|date:"d.m.Y" }})</span>
+                    {% else %}
+                    {{ bericht.bediener_1|default:"–" }}{% if bericht.bediener_2 %}, {{ bericht.bediener_2 }}{% endif %}
+                    {% endif %}
+                </li>
                 {% if bericht.werkzeug_bezeichnung %}<li class="list-group-item"><strong>Werkzeug/Form:</strong> {{ bericht.werkzeug_bezeichnung }}</li>{% endif %}
                 {% if bericht.schussanzahl %}<li class="list-group-item"><strong>Schussanzahl:</strong> {{ bericht.schussanzahl }}</li>{% endif %}
             </ul>
@@ -80,6 +86,9 @@
             <div class="card-header fw-semibold">Workflow</div>
             <ul class="list-group list-group-flush">
                 <li class="list-group-item"><strong>Eingereicht von:</strong> {{ bericht.eingereicht_von }} am {{ bericht.eingereicht_am|date:"d.m.Y H:i" }}</li>
+                {% if bericht.personenbezug_entfernt %}
+                <li class="list-group-item text-muted small">Personenbezogene Felder (Bediener, Reinigung, Bemerkungen) wurden am {{ bericht.personenbezug_entfernt_am|date:"d.m.Y" }} aus Datenschutzgründen entfernt.</li>
+                {% endif %}
                 {% if bericht.status == "freigegeben" %}
                 <li class="list-group-item"><strong>Freigegeben von:</strong> {{ bericht.freigegeben_von|default:"–" }} am {{ bericht.freigegeben_am|date:"d.m.Y H:i" }}</li>
                 {% if bericht.produktionsbuchung %}

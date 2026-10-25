@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.utils import timezone
 
 from .models import (
     Aktivitaet, Angebot, AngebotNachfassStatus, AngebotNachfassVorlage, AngebotPosition,
@@ -262,14 +263,23 @@ class ProduktionsberichtAdmin(admin.ModelAdmin):
     """26.10.2026, Pilot Trinkhalm-L1: ebenfalls rein lesend im Admin, aus demselben Grund
     wie ProduktionsbuchungAdmin oben - Einreichen/Freigeben/Ablehnen laufen ausschließlich
     über die eigene Oberfläche (siehe views.produktionsbericht_*), damit Statuswechsel und
-    die daraus entstehende Produktionsbuchung konsistent bleiben."""
+    die daraus entstehende Produktionsbuchung konsistent bleiben.
+
+    AUSNAHME (26.10.2026, Björns Rückfrage "was fehlt noch..." - Datenschutz ist ihm wichtig,
+    es gibt aber keinen Betriebsrat und er will die Löschfrist zunächst NICHT automatisieren,
+    sondern von Fall zu Fall entscheiden): die Aktion personenbezug_entfernen unten ist die
+    einzige Schreiboperation, die hier im Admin trotz has_change_permission=False möglich ist
+    (Django prüft bei eigenen Actions nicht has_change_permission, siehe ModelAdmin.
+    response_action) - bewusst so, weil sie unabhängig vom normalen Freigabe-Workflow sein muss
+    und nur die in Produktionsbericht.personenbezug_entfernt dokumentierten Felder anfasst."""
     list_display = (
         "datum", "linie", "fertigprodukt", "status", "menge_gut_stueck",
-        "eingereicht_von", "freigegeben_von",
+        "eingereicht_von", "freigegeben_von", "personenbezug_entfernt",
     )
-    list_filter = ("linie", "status", "fertigprodukt")
+    list_filter = ("linie", "status", "fertigprodukt", "personenbezug_entfernt")
     search_fields = ("fertigprodukt__artikelnummer",)
     autocomplete_fields = ["fertigprodukt", "bediener_1", "freigegeben_von", "produktionsbuchung"]
+    actions = ["personenbezug_entfernen"]
 
     def has_add_permission(self, request):
         return False
@@ -279,6 +289,33 @@ class ProduktionsberichtAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+    @admin.action(description="DSGVO: Personenbezug entfernen (Bediener/Reinigung/Bemerkungen)")
+    def personenbezug_entfernen(self, request, queryset):
+        """Anonymisiert die ausgewählten Berichte: Bediener 1/2, Reinigungsperson und
+        Bemerkungen werden geleert, Mengen/Status/Verknüpfung zur Produktionsbuchung bleiben
+        für Lagerführung und Audit-Trail unverändert erhalten (siehe Moduldoku in models.py).
+        Bereits anonymisierte Berichte werden übersprungen, damit personenbezug_entfernt_am
+        nicht versehentlich überschrieben wird."""
+        zu_bearbeiten = queryset.exclude(personenbezug_entfernt=True)
+        anzahl = zu_bearbeiten.count()
+        uebersprungen = queryset.count() - anzahl
+        jetzt = timezone.now()
+        for bericht in zu_bearbeiten:
+            bericht.bediener_1 = None
+            bericht.bediener_2 = ""
+            bericht.reinigung_durchgefuehrt_von = ""
+            bericht.bemerkungen = ""
+            bericht.personenbezug_entfernt = True
+            bericht.personenbezug_entfernt_am = jetzt
+            bericht.save(update_fields=[
+                "bediener_1", "bediener_2", "reinigung_durchgefuehrt_von", "bemerkungen",
+                "personenbezug_entfernt", "personenbezug_entfernt_am",
+            ])
+        meldung = f"{anzahl} Produktionsbericht(e) anonymisiert."
+        if uebersprungen:
+            meldung += f" {uebersprungen} war(en) bereits anonymisiert und wurde(n) übersprungen."
+        self.message_user(request, meldung)
 
 
 @admin.register(RechnungZahlung)

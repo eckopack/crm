@@ -947,3 +947,56 @@ def artikelliste_versenden(empfaenger_email, sprache="de", empfaenger_zeilen=Non
         deal=None, mailtyp="artikelliste", empfaenger=empfaenger_email, betreff=betreff, erfolg=True,
     )
     return True, None
+
+
+def produktionsbericht_eingereicht_benachrichtigen(bericht):
+    """Interne Hinweismail an alle Mitglieder der Gruppe "Produktionsleiter" (26.10.2026, auf
+    Björns Rückfrage "was fehlt noch für ein rundum Programm?" - vorher gab es überhaupt
+    keinen Hinweis auf einen neu eingereichten Produktionsbericht, der Produktionsleiter musste
+    die Liste von sich aus im Blick behalten). Rein intern, deshalb bewusst OHNE
+    EmailVersand-Protokolleintrag (der ist für Kunden-Mails gedacht, siehe Moduldoku oben) und
+    ohne HTML-Template - ein einfacher Texthinweis reicht hier völlig. Ein Fehlschlagen des
+    Mailversands darf die eigentliche Einreichung nicht verhindern (siehe views.
+    produktionsbericht_erfassen: wird nach dem bereits erfolgreichen .save() aufgerufen und
+    fängt alle Exceptions selbst ab)."""
+    from django.contrib.auth import get_user_model
+
+    from .produktionsleiter import PRODUKTIONSLEITER_GRUPPE
+
+    empfaenger = list(
+        get_user_model().objects.filter(groups__name=PRODUKTIONSLEITER_GRUPPE)
+        .exclude(email="").values_list("email", flat=True).distinct()
+    )
+    if not empfaenger:
+        logger.warning(
+            "Produktionsbericht #%s eingereicht, aber kein Mitglied der Gruppe "
+            "'Produktionsleiter' hat eine E-Mail-Adresse hinterlegt - keine Benachrichtigung "
+            "verschickt.", bericht.pk,
+        )
+        return
+
+    betreff = (
+        f"Neuer Produktionsbericht wartet auf Freigabe – {bericht.get_linie_display()}, "
+        f"{bericht.datum:%d.%m.%Y}"
+    )
+    eingereicht_von_anzeige = (
+        bericht.eingereicht_von.get_full_name() or bericht.eingereicht_von.username
+    )
+    text_body = (
+        f"{eingereicht_von_anzeige} hat einen Produktionsbericht eingereicht:\n\n"
+        f"Linie: {bericht.get_linie_display()}\n"
+        f"Datum: {bericht.datum:%d.%m.%Y}\n"
+        f"Schicht: {bericht.get_schicht_display()}\n"
+        f"Fertigprodukt: {bericht.fertigprodukt.artikelnummer} – {bericht.fertigprodukt.bezeichnung}\n"
+        f"Gutmenge: {bericht.menge_gut_stueck} Stück\n"
+        f"Ausschuss: {bericht.menge_ausschuss_stueck} Stück\n\n"
+        f"Zur Freigabe: {SITE_URL}{bericht.get_absolute_url()}\n"
+    )
+    try:
+        mail = EmailMultiAlternatives(betreff, text_body, settings.DEFAULT_FROM_EMAIL, empfaenger)
+        mail.send(fail_silently=False)
+    except Exception:
+        logger.exception(
+            "Benachrichtigungsmail für Produktionsbericht #%s konnte nicht gesendet werden.",
+            bericht.pk,
+        )

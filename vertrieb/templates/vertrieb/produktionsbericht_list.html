@@ -30,7 +30,13 @@
             <td>{{ bericht.get_schicht_display }}</td>
             <td>{{ bericht.fertigprodukt.artikelnummer }}</td>
             <td>{{ bericht.menge_gut_stueck }}</td>
-            <td>{{ bericht.bediener_1|default:"–" }}</td>
+            <td>
+                {% if bericht.personenbezug_entfernt %}
+                <span class="text-muted fst-italic" title="Personenbezug am {{ bericht.personenbezug_entfernt_am|date:'d.m.Y' }} entfernt (DSGVO)">anonymisiert</span>
+                {% else %}
+                {{ bericht.bediener_1|default:"–" }}
+                {% endif %}
+            </td>
             <td>
                 {% if bericht.status == "freigegeben" %}
                 <span class="badge text-bg-success">{{ bericht.get_status_display }}</span>
