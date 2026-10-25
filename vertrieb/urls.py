@@ -124,4 +124,8 @@ urlpatterns = [
         "produktionsberichte/<int:pk>/ablehnen/", views.produktionsbericht_ablehnen,
         name="produktionsbericht_ablehnen",
     ),
+    path(
+        "produktionsberichte/<int:pk>/pdf/", views.produktionsbericht_pdf_download,
+        name="produktionsbericht_pdf",
+    ),
 ]

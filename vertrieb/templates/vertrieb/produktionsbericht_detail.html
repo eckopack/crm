@@ -15,12 +15,13 @@
         <span class="badge text-bg-warning">{{ bericht.get_status_display }}</span>
         {% endif %}
     </div>
-    {% if ist_produktionsleiter and bericht.status == "eingereicht" %}
     <div>
+        <a href="{% url 'vertrieb:produktionsbericht_pdf' bericht.pk %}" target="_blank" class="btn btn-outline-primary">PDF / Drucken</a>
+        {% if ist_produktionsleiter and bericht.status == "eingereicht" %}
         <a href="{% url 'vertrieb:produktionsbericht_freigeben' bericht.pk %}" class="btn btn-success">Freigeben</a>
         <a href="{% url 'vertrieb:produktionsbericht_ablehnen' bericht.pk %}" class="btn btn-outline-danger">Ablehnen</a>
+        {% endif %}
     </div>
-    {% endif %}
 </div>
 
 <div class="row g-3">

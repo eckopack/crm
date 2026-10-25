@@ -2388,6 +2388,21 @@ def produktionsbericht_ablehnen(request, pk):
 
 
 @login_required
+def produktionsbericht_pdf_download(request, pk):
+    """Ausdruckbares Produktionsbericht-PDF (26.10.2026, siehe pdf.produktionsbericht_pdf_erzeugen
+    und Björns Anforderung "im gleichen Design nur mit ECKO-PACK wie GUTOM"). Dieselbe
+    Sichtbarkeits-Regel wie ProduktionsberichtListView/-DetailView: MA sehen nur das PDF
+    ihrer eigenen Berichte, der Produktionsleiter das PDF aller Berichte."""
+    bericht = get_object_or_404(Produktionsbericht, pk=pk)
+    if not ist_produktionsleiter(request.user) and bericht.eingereicht_von_id != request.user.id:
+        raise PermissionDenied("Du kannst nur das PDF deiner eigenen Produktionsberichte abrufen.")
+    pdf_bytes = pdf.produktionsbericht_pdf_erzeugen(bericht)
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'inline; filename="Produktionsbericht-{bericht.pk}.pdf"'
+    return response
+
+
+@login_required
 def artikel_daten_json(request, pk):
     """Liefert Bezeichnung/Einheit/Preis/Lagerbestand eines Artikels als JSON - genutzt
     von der Artikelauswahl in den Positionsformularen (Angebot/Packschein/Lieferschein/

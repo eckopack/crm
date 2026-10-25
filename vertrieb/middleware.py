@@ -18,6 +18,7 @@ ERLAUBTE_URL_NAMEN_FUER_PRODUKTION = {
     "vertrieb:produktionsbericht_erfassen",
     "vertrieb:produktionsbericht_list",
     "vertrieb:produktionsbericht_detail",
+    "vertrieb:produktionsbericht_pdf",
     "logout",
 }
 
