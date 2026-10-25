@@ -157,6 +157,22 @@ def interner_nachfass_cron(request):
     return HttpResponse("OK")
 
 
+@csrf_exempt
+def interner_graph_antworten_cron(request):
+    """Endpoint für den externen Render-Cron-Job, der vertrieb@ecko-pack.de per Microsoft
+    Graph auf Kundenantworten prüft (25.10.2026, "Graph-Antworten", siehe render.yaml und
+    vertrieb/graph_antworten.py). Gleiches Muster wie interner_nachfass_cron oben - bewusst
+    dasselbe Secret (NACHFASS_CRON_SECRET) wiederverwendet statt ein zweites anzulegen, da
+    beide Endpoints exakt denselben Zweck erfuellen (interner Render-Cron ruft den eigenen
+    Web-Service per HTTPS auf) und dieselbe Vertrauensstufe haben."""
+    erwartet = os.environ.get("NACHFASS_CRON_SECRET", "")
+    erhalten = request.headers.get("X-Cron-Secret", "")
+    if not erwartet or erhalten != erwartet:
+        return HttpResponseForbidden("Ungueltiges oder fehlendes Secret.")
+    call_command("graph_antworten_pruefen")
+    return HttpResponse("OK")
+
+
 # ---------------------------------------------------------------------------
 # Firma
 # ---------------------------------------------------------------------------
