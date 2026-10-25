@@ -101,6 +101,7 @@ urlpatterns = [
     path("artikel/preisliste/pdf/", views.artikelliste_pdf_download, name="artikelliste_pdf"),
 
     path("lagerwirtschaft/wareneingang/", views.wareneingang_erfassen, name="wareneingang_erfassen"),
+    path("lagerwirtschaft/bestandsuebersicht/", views.bestandsuebersicht, name="bestandsuebersicht"),
     path("lagerwirtschaft/bewegungen/", views.LagerbewegungListView.as_view(), name="lagerbewegung_list"),
     path("lagerwirtschaft/produktion/", views.produktionsbuchung_erfassen, name="produktionsbuchung_erfassen"),
     path("lagerwirtschaft/produktion/liste/", views.ProduktionsbuchungListView.as_view(), name="produktionsbuchung_list"),

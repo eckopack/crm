@@ -1,5 +1,6 @@
 import os
-from datetime import timedelta
+from datetime import datetime, timedelta
+from datetime import time as dtime
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 
@@ -22,6 +23,7 @@ from django.views.generic import CreateView, DeleteView, DetailView, ListView, U
 from . import nurture, pdf
 from .forms import (
     AktivitaetForm, AngebotAblehnenForm, AngebotForm, AngebotPositionFormSet, ArtikelForm,
+    BestandsuebersichtFilterForm,
     BonusstaffelFormSet, DealForm, FirmaForm, KontaktForm,
     PackscheinForm, PackscheinPositionFormSet, PackscheinVersandForm,
     LieferscheinForm, LieferscheinPositionFormSet, LieferscheinVersandForm,
@@ -1955,6 +1957,80 @@ def wareneingang_erfassen(request):
             initial["artikel"] = vorausgewaehlter_artikel.pk
         form = WareneingangForm(initial=initial)
     return render(request, "vertrieb/wareneingang_form.html", {"form": form})
+
+
+BESTANDSUEBERSICHT_KATEGORIEN = [
+    ("fertigware", "Fertigware"),
+    ("rohmaterial", "Rohmaterial"),
+    ("verpackungsmaterial", "Verpackungsmaterial (Kartonage)"),
+]
+
+
+@login_required
+def bestandsuebersicht(request):
+    """Bestandsentwicklung je Artikel über einen wählbaren Zeitraum (25.10.2026, auf Wunsch
+    von Björn: "Bestandsübersicht für Fertigwaren und Rohwaren nach Zeitraum auswählbar",
+    anschließende AskUserQuestion-Klärung: Bestandsentwicklung mit Anfangs-/Endbestand
+    [nicht nur Stichtags-Endbestand oder reine Bewegungsliste], zusätzlich Verpackungsmaterial/
+    Kartonage als dritte Kategorie, da es genauso über Chargen/Lagerbewegungen geführt wird
+    wie Rohmaterial - siehe MATERIALTYPEN_MIT_CHARGENBESTAND).
+
+    Rekonstruiert den Bestand historisch aus dem unveränderlichen Lagerbewegungs-Journal
+    (nicht aus Charge.bestand_aktuell, das nur den AKTUELLEN Stand kennt): Anfangsbestand =
+    Summe aller Bewegungen vor dem Zeitraum, Zugänge/Abgänge = Summe der positiven/negativen
+    Bewegungen im Zeitraum, Endbestand = Anfangsbestand + Zugänge + Abgänge. Für "bis = heute"
+    muss der Endbestand exakt mit Artikel.lagerbestand_berechnet übereinstimmen (siehe
+    verify_bestandsuebersicht.py) - das ist der eingebaute Konsistenz-Check dieser Logik.
+
+    Bewusst 3 aggregierte Abfragen über alle betroffenen Artikel statt einer Abfrage je
+    Artikel (N+1), auch wenn die Artikelzahl hier noch klein ist."""
+    form = BestandsuebersichtFilterForm(request.GET or None)
+    heute = timezone.localdate()
+    von = heute.replace(day=1)
+    bis = heute
+    if form.is_valid():
+        von = form.cleaned_data["von"] or von
+        bis = form.cleaned_data["bis"] or bis
+    if bis < von:
+        von, bis = bis, von
+
+    von_start = timezone.make_aware(datetime.combine(von, dtime.min))
+    bis_ende = timezone.make_aware(datetime.combine(bis + timedelta(days=1), dtime.min))
+    kategorie_keys = [key for key, _ in BESTANDSUEBERSICHT_KATEGORIEN]
+
+    bewegungen_basis = Lagerbewegung.objects.filter(artikel__materialtyp__in=kategorie_keys)
+    anfangsbestand_je_artikel = dict(
+        bewegungen_basis.filter(datum__lt=von_start)
+        .values_list("artikel_id").annotate(summe=Sum("menge")).values_list("artikel_id", "summe")
+    )
+    zugaenge_je_artikel = dict(
+        bewegungen_basis.filter(datum__gte=von_start, datum__lt=bis_ende, menge__gt=0)
+        .values_list("artikel_id").annotate(summe=Sum("menge")).values_list("artikel_id", "summe")
+    )
+    abgaenge_je_artikel = dict(
+        bewegungen_basis.filter(datum__gte=von_start, datum__lt=bis_ende, menge__lt=0)
+        .values_list("artikel_id").annotate(summe=Sum("menge")).values_list("artikel_id", "summe")
+    )
+
+    abschnitte = []
+    for materialtyp, label in BESTANDSUEBERSICHT_KATEGORIEN:
+        zeilen = []
+        for artikel in Artikel.objects.filter(materialtyp=materialtyp).order_by("artikelnummer"):
+            anfangsbestand = anfangsbestand_je_artikel.get(artikel.pk) or Decimal("0")
+            zugaenge = zugaenge_je_artikel.get(artikel.pk) or Decimal("0")
+            abgaenge = abgaenge_je_artikel.get(artikel.pk) or Decimal("0")
+            zeilen.append({
+                "artikel": artikel,
+                "anfangsbestand": anfangsbestand,
+                "zugaenge": zugaenge,
+                "abgaenge": abgaenge,
+                "endbestand": anfangsbestand + zugaenge + abgaenge,
+            })
+        abschnitte.append({"materialtyp": materialtyp, "label": label, "zeilen": zeilen})
+
+    return render(request, "vertrieb/bestandsuebersicht.html", {
+        "form": form, "von": von, "bis": bis, "abschnitte": abschnitte,
+    })
 
 
 class LagerbewegungListView(LoginRequiredMixin, ListView):

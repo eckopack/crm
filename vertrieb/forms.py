@@ -628,3 +628,17 @@ class ArtikelForm(BootstrapFormMixin, forms.ModelForm):
                 "- bitte über \"Wareneingang buchen\" auf der Artikel-Seite erfassen, nicht "
                 "hier von Hand eintragen."
             )
+
+
+class BestandsuebersichtFilterForm(BootstrapFormMixin, forms.Form):
+    """Zeitraum-Filter für die Bestandsübersicht (25.10.2026, auf Wunsch von Björn:
+    "Bestandsübersicht für Fertigwaren und Rohwaren nach Zeitraum auswählbar"). Reines
+    GET-Formular, kein ModelForm - "von"/"bis" sind nur Anzeige-Parameter, es wird nichts
+    gespeichert. Validiert absichtlich nicht, dass "von" vor "bis" liegt - der View tauscht
+    vertauschte Werte defensiv, statt dem Nutzer einen Formularfehler anzuzeigen."""
+    von = forms.DateField(label="Von", required=False, widget=date_input())
+    bis = forms.DateField(label="Bis", required=False, widget=date_input())
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()
