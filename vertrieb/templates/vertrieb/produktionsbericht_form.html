@@ -1,0 +1,147 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Produktionsbericht erfassen – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<h2 class="mb-1">Produktionsbericht: Trinkhalm-Produktion L1</h2>
+<p class="text-muted mb-3">
+    Bitte den Bericht für die abgeschlossene Schicht ausfüllen und einreichen. Der Bericht
+    fließt erst nach Freigabe durch den Produktionsleiter in den Lagerbestand ein.
+</p>
+
+{% for error in form.non_field_errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+
+<form method="post">
+    {% csrf_token %}
+
+    <div class="card mb-3" style="max-width: 760px;">
+        <div class="card-header fw-semibold">Schicht</div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label class="form-label" for="{{ form.fertigprodukt.id_for_label }}">{{ form.fertigprodukt.label }}</label>
+                    {{ form.fertigprodukt }}
+                    {% for error in form.fertigprodukt.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label" for="{{ form.datum.id_for_label }}">{{ form.datum.label }}</label>
+                    {{ form.datum }}
+                    {% for error in form.datum.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label" for="{{ form.schicht.id_for_label }}">{{ form.schicht.label }}</label>
+                    {{ form.schicht }}
+                    {% for error in form.schicht.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label" for="{{ form.bediener_1.id_for_label }}">{{ form.bediener_1.label }}</label>
+                    {{ form.bediener_1 }}
+                    {% for error in form.bediener_1.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label" for="{{ form.bediener_2.id_for_label }}">{{ form.bediener_2.label }}</label>
+                    {{ form.bediener_2 }}
+                    {% if form.bediener_2.help_text %}<div class="form-text">{{ form.bediener_2.help_text }}</div>{% endif %}
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label" for="{{ form.produktionszeit_von.id_for_label }}">{{ form.produktionszeit_von.label }}</label>
+                    {{ form.produktionszeit_von }}
+                    {% for error in form.produktionszeit_von.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label" for="{{ form.produktionszeit_bis.id_for_label }}">{{ form.produktionszeit_bis.label }}</label>
+                    {{ form.produktionszeit_bis }}
+                    {% for error in form.produktionszeit_bis.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3" style="max-width: 760px;">
+        <div class="card-header fw-semibold">Werkzeug &amp; Schuss</div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label" for="{{ form.werkzeug_bezeichnung.id_for_label }}">{{ form.werkzeug_bezeichnung.label }}</label>
+                    {{ form.werkzeug_bezeichnung }}
+                    {% if form.werkzeug_bezeichnung.help_text %}<div class="form-text">{{ form.werkzeug_bezeichnung.help_text }}</div>{% endif %}
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label" for="{{ form.schussanzahl.id_for_label }}">{{ form.schussanzahl.label }}</label>
+                    {{ form.schussanzahl }}
+                    {% if form.schussanzahl.help_text %}<div class="form-text">{{ form.schussanzahl.help_text }}</div>{% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3" style="max-width: 760px;">
+        <div class="card-header fw-semibold">Produzierte Menge (Stück)</div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label" for="{{ form.menge_gut_stueck.id_for_label }}">{{ form.menge_gut_stueck.label }}</label>
+                    {{ form.menge_gut_stueck }}
+                    {% if form.menge_gut_stueck.help_text %}<div class="form-text">{{ form.menge_gut_stueck.help_text }}</div>{% endif %}
+                    {% for error in form.menge_gut_stueck.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label" for="{{ form.menge_ausschuss_stueck.id_for_label }}">{{ form.menge_ausschuss_stueck.label }}</label>
+                    {{ form.menge_ausschuss_stueck }}
+                    {% for error in form.menge_ausschuss_stueck.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                </div>
+            </div>
+            <div class="mb-0">
+                <label class="form-label" for="{{ form.ausschussgrund.id_for_label }}">{{ form.ausschussgrund.label }}</label>
+                {{ form.ausschussgrund }}
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3" style="max-width: 760px;">
+        <div class="card-header fw-semibold">Rüsten &amp; Stillstand</div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label class="form-label" for="{{ form.ruestzeit_minuten.id_for_label }}">{{ form.ruestzeit_minuten.label }}</label>
+                    {{ form.ruestzeit_minuten }}
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label" for="{{ form.stillstandszeit_minuten.id_for_label }}">{{ form.stillstandszeit_minuten.label }}</label>
+                    {{ form.stillstandszeit_minuten }}
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label" for="{{ form.stromverbrauch_kwh.id_for_label }}">{{ form.stromverbrauch_kwh.label }}</label>
+                    {{ form.stromverbrauch_kwh }}
+                    {% if form.stromverbrauch_kwh.help_text %}<div class="form-text">{{ form.stromverbrauch_kwh.help_text }}</div>{% endif %}
+                </div>
+            </div>
+            <div class="mb-0">
+                <label class="form-label" for="{{ form.stillstandsgrund.id_for_label }}">{{ form.stillstandsgrund.label }}</label>
+                {{ form.stillstandsgrund }}
+                {% if form.stillstandsgrund.help_text %}<div class="form-text">{{ form.stillstandsgrund.help_text }}</div>{% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3" style="max-width: 760px;">
+        <div class="card-header fw-semibold">Sonstiges</div>
+        <div class="card-body">
+            <div class="mb-3">
+                <label class="form-label" for="{{ form.reinigung_durchgefuehrt_von.id_for_label }}">{{ form.reinigung_durchgefuehrt_von.label }}</label>
+                {{ form.reinigung_durchgefuehrt_von }}
+            </div>
+            <div class="mb-0">
+                <label class="form-label" for="{{ form.bemerkungen.id_for_label }}">{{ form.bemerkungen.label }}</label>
+                {{ form.bemerkungen }}
+                {% if form.bemerkungen.help_text %}<div class="form-text">{{ form.bemerkungen.help_text }}</div>{% endif %}
+            </div>
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-success">Bericht einreichen</button>
+    <a href="{% url 'vertrieb:produktionsbericht_list' %}" class="btn btn-outline-secondary">Abbrechen</a>
+</form>
+{% endblock %}

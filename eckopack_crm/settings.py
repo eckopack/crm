@@ -61,6 +61,10 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    # 26.10.2026, Produktionsbericht-Pilot: beschränkt Mitglieder der Gruppe "Produktion"
+    # (MA) technisch auf die Produktionsbericht-Eingabemaske - siehe vertrieb/middleware.py.
+    # Muss nach Auth-/Message-Middleware stehen (braucht request.user, kann Messages setzen).
+    "vertrieb.middleware.ProduktionszugriffMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 

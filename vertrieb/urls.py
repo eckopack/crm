@@ -109,4 +109,19 @@ urlpatterns = [
         "lagerwirtschaft/produktion/<int:pk>/", views.ProduktionsbuchungDetailView.as_view(),
         name="produktionsbuchung_detail",
     ),
+
+    path("produktionsberichte/", views.ProduktionsberichtListView.as_view(), name="produktionsbericht_list"),
+    path("produktionsberichte/neu/", views.produktionsbericht_erfassen, name="produktionsbericht_erfassen"),
+    path(
+        "produktionsberichte/<int:pk>/", views.ProduktionsberichtDetailView.as_view(),
+        name="produktionsbericht_detail",
+    ),
+    path(
+        "produktionsberichte/<int:pk>/freigeben/", views.produktionsbericht_freigeben,
+        name="produktionsbericht_freigeben",
+    ),
+    path(
+        "produktionsberichte/<int:pk>/ablehnen/", views.produktionsbericht_ablehnen,
+        name="produktionsbericht_ablehnen",
+    ),
 ]

@@ -9,6 +9,7 @@ from .models import (
     Aktivitaet, Angebot, AngebotPosition, Artikel, Bonusstaffel, Charge, Deal, Firma,
     Kontakt, MATERIALTYPEN_MIT_CHARGENBESTAND,
     Packschein, PackscheinPosition, Lieferschein, LieferscheinPosition,
+    Produktionsbericht,
     Rahmenvereinbarung, RahmenvereinbarungPosition,
     Rechnung, RechnungPosition, RechnungZahlung, Rezeptur,
 )
@@ -563,6 +564,76 @@ class ProduktionsbuchungForm(BootstrapFormMixin, forms.Form):
                     f"Charge hat nur noch {charge.bestand_aktuell} {zeile.rohmaterial.get_einheit_display()}.",
                 )
         return cleaned
+
+
+class ProduktionsberichtForm(BootstrapFormMixin, forms.ModelForm):
+    """Eingabemaske für den MA (26.10.2026, Pilot Trinkhalm-L1 - siehe Produktionsbericht-
+    Moduldoku in models.py). Bewusst ein einfaches ModelForm (anders als
+    ProduktionsbuchungForm): hier wird noch KEINE Rohmaterial-Charge gewählt, das passiert
+    erst bei der Freigabe durch den Produktionsleiter.
+
+    fertigprodukt ist in dieser ersten Version auf die LUA-SW-*-Trinkhalmartikel begrenzt
+    (Artikelnummern-Präfix, nicht warengruppe - siehe __init__: warengruppe ist für diese
+    Artikel nicht zuverlässig genug gepflegt, der Artikelnummernkreis dagegen schon, siehe
+    Migration 0032/0040 die denselben Präfix nutzen). linie ist fest auf "trinkhalm_l1"
+    vorbelegt und nicht wählbar - Besteck-Linien folgen erst im Folge-PR."""
+
+    class Meta:
+        model = Produktionsbericht
+        fields = [
+            "fertigprodukt", "datum", "schicht", "bediener_1", "bediener_2",
+            "produktionszeit_von", "produktionszeit_bis", "werkzeug_bezeichnung",
+            "schussanzahl", "menge_gut_stueck", "menge_ausschuss_stueck", "ausschussgrund",
+            "ruestzeit_minuten", "stillstandszeit_minuten", "stillstandsgrund",
+            "stromverbrauch_kwh", "reinigung_durchgefuehrt_von", "bemerkungen",
+        ]
+        widgets = {
+            "datum": date_input(),
+            "produktionszeit_von": forms.DateTimeInput(
+                attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M",
+            ),
+            "produktionszeit_bis": forms.DateTimeInput(
+                attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M",
+            ),
+            "bemerkungen": forms.Textarea(attrs={"rows": 4}),
+        }
+        labels = {"fertigprodukt": "Trinkhalm-Artikel"}
+
+    def __init__(self, *args, angemeldeter_benutzer=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["fertigprodukt"].queryset = Artikel.objects.filter(
+            materialtyp="fertigware", artikelnummer__startswith="LUA-SW",
+        ).order_by("artikelnummer")
+        self.fields["produktionszeit_von"].input_formats = ["%Y-%m-%dT%H:%M"]
+        self.fields["produktionszeit_bis"].input_formats = ["%Y-%m-%dT%H:%M"]
+        self.fields["bediener_1"].queryset = get_user_model().objects.order_by("username")
+        if angemeldeter_benutzer is not None and not self.is_bound:
+            self.fields["bediener_1"].initial = angemeldeter_benutzer.pk
+        self._bootstrapify()
+
+    def clean(self):
+        cleaned = super().clean()
+        von = cleaned.get("produktionszeit_von")
+        bis = cleaned.get("produktionszeit_bis")
+        if von and bis and bis <= von:
+            self.add_error("produktionszeit_bis", "Muss nach der Produktionszeit \"von\" liegen.")
+        return cleaned
+
+
+class ProduktionsberichtAblehnenForm(BootstrapFormMixin, forms.ModelForm):
+    """Für den Produktionsleiter: Bericht mit Begründung ablehnen, statt freizugeben (siehe
+    Moduldoku Produktionsbericht - der MA legt bei Ablehnung einen neuen Bericht an, kein
+    Edit-/Resubmit-Zustand in dieser ersten Version)."""
+
+    class Meta:
+        model = Produktionsbericht
+        fields = ["ablehnungsgrund"]
+        widgets = {"ablehnungsgrund": forms.Textarea(attrs={"rows": 3})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["ablehnungsgrund"].required = True
+        self._bootstrapify()
 
 
 class RechnungKorrekturForm(BootstrapFormMixin, forms.ModelForm):
