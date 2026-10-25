@@ -120,7 +120,7 @@
                         <li><a class="dropdown-item" href="{% url 'vertrieb:lagerbewegung_list' %}">Lagerbewegungen</a></li>
                         <li><a class="dropdown-item" href="{% url 'vertrieb:bestandsuebersicht' %}">Bestandsübersicht</a></li>
                         <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="{% url 'vertrieb:produktionsbericht_list' %}">Produktionsberichte{% if user|ist_produktionsleiter %} (Freigabe){% endif %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'vertrieb:produktionsbericht_list' %}">Produktionsberichte{% if user|ist_produktionsleiter %} (Freigabe{% with offen=user|offene_produktionsberichte %}{% if offen %}: {{ offen }}{% endif %}{% endwith %}){% endif %}</a></li>
                     </ul>
                 </li>
             </ul>

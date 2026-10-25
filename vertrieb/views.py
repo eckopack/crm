@@ -2224,6 +2224,12 @@ def produktionsbericht_erfassen(request):
             bericht.linie = "trinkhalm_l1"
             bericht.eingereicht_von = request.user
             bericht.save()
+            # 26.10.2026 (Björns Rückfrage "was fehlt noch..."): Produktionsleiter per Mail
+            # benachrichtigen, statt dass er die Liste selbst im Blick behalten muss. Läuft
+            # nach dem bereits erfolgreichen .save() und fängt Fehler selbst ab (siehe
+            # nurture.produktionsbericht_eingereicht_benachrichtigen) - ein Mailproblem darf
+            # die Einreichung für den MA nicht sichtbar scheitern lassen.
+            nurture.produktionsbericht_eingereicht_benachrichtigen(bericht)
             messages.success(
                 request,
                 f"Produktionsbericht eingereicht - wartet jetzt auf Freigabe durch den "

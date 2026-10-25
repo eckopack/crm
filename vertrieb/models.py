@@ -1871,7 +1871,15 @@ class Produktionsbericht(models.Model):
     Bestandsbuchung (siehe Moduldoku oben). Erst nach Freigabe durch den Produktionsleiter
     entsteht daraus eine echte Produktionsbuchung mit Lagerbewegungen (Feld
     produktionsbuchung unten). Wird nach dem Einreichen nicht mehr vom MA editiert -
-    bei Ablehnung legt der MA stattdessen einen neuen Bericht an (siehe Moduldoku)."""
+    bei Ablehnung legt der MA stattdessen einen neuen Bericht an (siehe Moduldoku).
+
+    DATENSCHUTZ (26.10.2026, auf Rückfrage von Björn "was fehlt noch..."): Björn hat
+    entschieden, dass es KEINEN Betriebsrat gibt, Datenschutz aber trotzdem wichtig ist,
+    und dass die Löschfrist/Anonymisierung zunächst NUR manuell ausgelöst wird (siehe
+    personenbezug_entfernt unten und admin.ProduktionsberichtAdmin.personenbezug_entfernen) -
+    kein automatischer Zeitplan, da die genaue Frist eine unternehmerische Entscheidung ist,
+    die Björn erst mit Datenschutzbeauftragtem/Anwalt absegnen lassen will, sobald mehr
+    Linien/MA das Volumen erhöhen. bediener_1 ist deshalb absichtlich nullable (siehe unten)."""
     linie = models.CharField("Linie", max_length=20, choices=PRODUKTIONSBERICHT_LINIE_CHOICES)
     fertigprodukt = models.ForeignKey(
         Artikel, verbose_name="Fertigprodukt", on_delete=models.PROTECT,
@@ -1881,9 +1889,12 @@ class Produktionsbericht(models.Model):
     schicht = models.CharField("Schicht", max_length=10, choices=PRODUKTIONSBERICHT_SCHICHT_CHOICES)
     bediener_1 = models.ForeignKey(
         settings.AUTH_USER_MODEL, verbose_name="Bediener 1", on_delete=models.PROTECT,
-        related_name="produktionsberichte_als_bediener_1",
+        related_name="produktionsberichte_als_bediener_1", null=True, blank=True,
         help_text="Standardmäßig der eingeloggte MA - kann angepasst werden, falls jemand "
-                   "den Bericht für einen Kollegen einträgt.",
+                   "den Bericht für einen Kollegen einträgt. Nullable NICHT für die normale "
+                   "Erfassung (das Formular verlangt das Feld weiterhin), sondern ausschließlich "
+                   "damit die DSGVO-Anonymisierung (siehe personenbezug_entfernt) die Bediener-"
+                   "Zuordnung tatsächlich entfernen kann statt nur zu verstecken.",
     )
     bediener_2 = models.CharField(
         "Bediener 2", max_length=150, blank=True,
@@ -1951,6 +1962,15 @@ class Produktionsbericht(models.Model):
         on_delete=models.SET_NULL, related_name="produktionsbericht",
         help_text="Wird beim Freigeben automatisch gesetzt - verknüpft den Bericht mit der "
                    "daraus erzeugten Bestandsbuchung.",
+    )
+
+    personenbezug_entfernt = models.BooleanField(
+        "Personenbezug entfernt (DSGVO)", default=False,
+        help_text="Wird ausschließlich über die Admin-Aktion 'Personenbezug entfernen' "
+                   "gesetzt (siehe admin.py) - kein automatischer Zeitplan, siehe Moduldoku.",
+    )
+    personenbezug_entfernt_am = models.DateTimeField(
+        "Personenbezug entfernt am", null=True, blank=True,
     )
 
     class Meta:
