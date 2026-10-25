@@ -596,7 +596,8 @@ class ArtikelForm(BootstrapFormMixin, forms.ModelForm):
             "artikelnummer", "bezeichnung", "bezeichnung_en", "beschreibung", "beschreibung_en",
             "geschaeftsbereich", "vertriebskanal", "warengruppe", "einheit", "verkaufspreis",
             "ust_satz", "einkaufspreis", "lagerbestand_aktuell", "mindestbestand",
-            "verpackungseinheit_stk", "lagerort", "lieferant_freitext", "status", "notizen",
+            "verpackungseinheit_stk", "gewicht_je_stueck_g", "lagerort", "lieferant_freitext",
+            "status", "notizen",
         ]
         widgets = {
             "beschreibung": forms.Textarea(attrs={"rows": 3}),
