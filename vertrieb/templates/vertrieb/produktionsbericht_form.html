@@ -1,11 +1,23 @@
 {% extends "vertrieb/base.html" %}
-{% block title %}Produktionsbericht erfassen – ECKO-PACK CRM{% endblock %}
+{% block title %}{% if korrektur_von %}Produktionsbericht korrigieren{% else %}Produktionsbericht erfassen{% endif %} – ECKO-PACK CRM{% endblock %}
 {% block content %}
+{% if korrektur_von %}
+<h2 class="mb-1">Produktionsbericht #{{ korrektur_von.pk }} korrigieren: Trinkhalm-Produktion L1</h2>
+<div class="alert alert-warning">
+    <strong>Abgelehnt{% if korrektur_von.freigegeben_von %} von {{ korrektur_von.freigegeben_von }}{% endif %}{% if korrektur_von.freigegeben_am %} am {{ korrektur_von.freigegeben_am|date:"d.m.Y H:i" }}{% endif %}:</strong>
+    {{ korrektur_von.ablehnungsgrund }}
+</div>
+<p class="text-muted mb-3">
+    Bitte die Angaben korrigieren und erneut einreichen. Der Bericht wartet danach wieder
+    auf Freigabe durch den Produktionsleiter.
+</p>
+{% else %}
 <h2 class="mb-1">Produktionsbericht: Trinkhalm-Produktion L1</h2>
 <p class="text-muted mb-3">
     Bitte den Bericht für die abgeschlossene Schicht ausfüllen und einreichen. Der Bericht
     fließt erst nach Freigabe durch den Produktionsleiter in den Lagerbestand ein.
 </p>
+{% endif %}
 
 {% for error in form.non_field_errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
 
@@ -141,7 +153,12 @@
         </div>
     </div>
 
+    {% if korrektur_von %}
+    <button type="submit" class="btn btn-success">Korrigiert erneut einreichen</button>
+    <a href="{{ korrektur_von.get_absolute_url }}" class="btn btn-outline-secondary">Abbrechen</a>
+    {% else %}
     <button type="submit" class="btn btn-success">Bericht einreichen</button>
     <a href="{% url 'vertrieb:produktionsbericht_list' %}" class="btn btn-outline-secondary">Abbrechen</a>
+    {% endif %}
 </form>
 {% endblock %}

@@ -125,6 +125,10 @@ urlpatterns = [
         name="produktionsbericht_ablehnen",
     ),
     path(
+        "produktionsberichte/<int:pk>/korrigieren/", views.produktionsbericht_korrigieren,
+        name="produktionsbericht_korrigieren",
+    ),
+    path(
         "produktionsberichte/<int:pk>/pdf/", views.produktionsbericht_pdf_download,
         name="produktionsbericht_pdf",
     ),

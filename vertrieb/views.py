@@ -2241,6 +2241,61 @@ def produktionsbericht_erfassen(request):
     return render(request, "vertrieb/produktionsbericht_form.html", {"form": form})
 
 
+@login_required
+def produktionsbericht_korrigieren(request, pk):
+    """Korrektur-Workflow (25.10.2026, Björns Rückfrage "nein, umsetzen!" zur
+    Prozesslücke "kein Korrektur-Workflow nach Ablehnung"): der ursprünglich einreichende
+    MA darf einen ABGELEHNTEN Bericht bearbeiten und erneut einreichen, statt einen
+    komplett neuen Bericht anlegen zu müssen. Bewusst eng begrenzt:
+    - nur der ursprüngliche eingereicht_von darf hierher (auch der Produktionsleiter
+      selbst nicht, falls er zufällig auch Bediener war - Korrektur ist Sache des MA,
+      der den Fehler gemacht hat, nicht der Freigabe-Instanz),
+    - nur Berichte im Status "abgelehnt" (ein bereits freigegebener oder noch zur
+      Freigabe anstehender Bericht hat hier nichts verloren),
+    - Ablehnungsgrund/freigegeben_von/freigegeben_am bleiben als Audit-Spur unverändert
+      stehen (sie werden im Detail-Template ohnehin nur noch angezeigt, solange
+      status == "abgelehnt" ist) - es gibt bewusst keine "Historie mehrerer
+      Ablehnungen", das würde den Rahmen dieser ersten Version sprengen.
+    Wiederverwendet exakt dasselbe ProduktionsberichtForm wie die Ersterfassung (inkl.
+    Plausibilitätsprüfung und Duplikatsperre - siehe forms.py, der Duplikat-Check
+    schließt die eigene PK aus, damit sich der Bericht hier nicht selbst blockiert)."""
+    bericht = get_object_or_404(Produktionsbericht, pk=pk)
+    if bericht.eingereicht_von_id != request.user.pk:
+        raise PermissionDenied(
+            "Nur der ursprünglich einreichende Mitarbeiter darf diesen Bericht korrigieren."
+        )
+    if bericht.status != "abgelehnt":
+        messages.error(
+            request,
+            "Nur abgelehnte Produktionsberichte können korrigiert werden.",
+        )
+        return redirect(bericht.get_absolute_url())
+
+    if request.method == "POST":
+        form = ProduktionsberichtForm(
+            request.POST, instance=bericht, angemeldeter_benutzer=request.user,
+        )
+        if form.is_valid():
+            korrigierter_bericht = form.save(commit=False)
+            korrigierter_bericht.linie = "trinkhalm_l1"
+            korrigierter_bericht.status = "eingereicht"
+            korrigierter_bericht.eingereicht_am = timezone.now()
+            korrigierter_bericht.save()
+            nurture.produktionsbericht_eingereicht_benachrichtigen(korrigierter_bericht)
+            messages.success(
+                request,
+                "Korrigierter Produktionsbericht eingereicht - wartet jetzt erneut auf "
+                "Freigabe durch den Produktionsleiter.",
+            )
+            return redirect(korrigierter_bericht.get_absolute_url())
+    else:
+        form = ProduktionsberichtForm(instance=bericht, angemeldeter_benutzer=request.user)
+    return render(
+        request, "vertrieb/produktionsbericht_form.html",
+        {"form": form, "korrektur_von": bericht},
+    )
+
+
 class ProduktionsberichtListView(LoginRequiredMixin, ListView):
     """MA sehen nur ihre eigenen Berichte, Produktionsleiter/Superuser alle (siehe
     .produktionsleiter.ist_produktionsleiter) - keine separate Berechtigungsklasse nötig,
@@ -2277,6 +2332,12 @@ class ProduktionsberichtDetailView(LoginRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["ist_produktionsleiter"] = ist_produktionsleiter(self.request.user)
+        # 25.10.2026 (Korrektur-Workflow): Korrigieren-Button nur für den ursprünglichen
+        # Einreicher und nur bei abgelehnten Berichten - siehe produktionsbericht_korrigieren.
+        context["kann_korrigieren"] = (
+            self.object.status == "abgelehnt"
+            and self.object.eingereicht_von_id == self.request.user.pk
+        )
         return context
 
 
@@ -2365,8 +2426,10 @@ def produktionsbericht_freigeben(request, pk):
 @login_required
 def produktionsbericht_ablehnen(request, pk):
     """Produktionsleiter-Ansicht: Bericht mit Begründung ablehnen (siehe
-    ProduktionsberichtAblehnenForm und Moduldoku - der MA legt dann einen neuen Bericht
-    an, kein Edit-/Resubmit-Zustand in dieser ersten Version)."""
+    ProduktionsberichtAblehnenForm). Der ursprüngliche Einreicher kann den abgelehnten
+    Bericht danach über produktionsbericht_korrigieren bearbeiten und erneut einreichen
+    (25.10.2026, Korrektur-Workflow) - alternativ legt er auch weiterhin einen komplett
+    neuen Bericht an, beides ist möglich."""
     if not ist_produktionsleiter(request.user):
         raise PermissionDenied("Nur der Produktionsleiter darf Produktionsberichte ablehnen.")
 
