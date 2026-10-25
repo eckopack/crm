@@ -103,6 +103,7 @@ niemals den eigentlichen Mailversand zum Scheitern bringen.
 import logging
 from datetime import timedelta
 from decimal import Decimal
+from email.utils import make_msgid
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
@@ -120,16 +121,22 @@ logger = logging.getLogger(__name__)
 
 
 def _mail_protokollieren(*, deal, mailtyp, empfaenger, betreff, erfolg, fehlermeldung="",
-                          packschein=None, lieferschein=None, rechnung=None, angebot=None):
+                          packschein=None, lieferschein=None, rechnung=None, angebot=None,
+                          message_id=""):
     """Legt einen EmailVersand-Protokolleintrag an - siehe Teil 8 oben. Best effort: ein
     Fehler HIER (z.B. DB kurz nicht erreichbar) darf den bereits erfolgten/versuchten
     Mailversand nicht nachtraeglich als Fehlschlag erscheinen lassen, deshalb eigenes
-    try/except statt den Aufrufer platzen zu lassen."""
+    try/except statt den Aufrufer platzen zu lassen.
+
+    message_id (25.10.2026, "Graph-Antworten"): nur von Aufrufern gesetzt, die eine
+    Antwort-Erkennung unterstützen (aktuell Musterbox-/Angebot-Nachfass) - siehe
+    EmailVersand.message_id-Doku in models.py."""
     try:
         EmailVersand.objects.create(
             deal=deal, mailtyp=mailtyp, empfaenger=empfaenger or "", betreff=betreff or "",
             erfolg=erfolg, fehlermeldung=fehlermeldung or "",
             packschein=packschein, lieferschein=lieferschein, rechnung=rechnung, angebot=angebot,
+            message_id=message_id or "",
         )
     except Exception:
         logger.exception(
@@ -478,9 +485,14 @@ def musterbox_nachfass_senden(deal, status):
     text_body = render_to_string("vertrieb/email/musterbox_nachfass.txt", kontext)
     html_body = render_to_string("vertrieb/email/musterbox_nachfass.html", kontext)
 
+    # 25.10.2026, "Graph-Antworten": eigene Message-ID VOR dem Versand erzeugen (nicht erst
+    # danach), damit sie im tatsächlich verschickten Header steht - Resend/SMTP würde sonst
+    # selbst eine generieren, die wir beim späteren Antwort-Abgleich nicht kennen würden.
+    msgid = make_msgid(domain="ecko-pack.de")
     try:
         mail = EmailMultiAlternatives(betreff, text_body, settings.DEFAULT_FROM_EMAIL, [empfaenger])
         mail.attach_alternative(html_body, "text/html")
+        mail.extra_headers = {"Message-ID": msgid}
         mail.send(fail_silently=False)
     except Exception as exc:
         logger.exception(
@@ -495,6 +507,7 @@ def musterbox_nachfass_senden(deal, status):
 
     _mail_protokollieren(
         deal=deal, mailtyp="musterbox_nachfass", empfaenger=empfaenger, betreff=betreff, erfolg=True,
+        message_id=msgid,
     )
     return True, None
 
@@ -619,11 +632,15 @@ def angebot_nachfass_senden(angebot, status):
     text_body = render_to_string("vertrieb/email/angebot_nachfass.txt", kontext)
     html_body = render_to_string("vertrieb/email/angebot_nachfass.html", kontext)
 
+    # 25.10.2026, "Graph-Antworten" - siehe gleichlautender Kommentar in
+    # musterbox_nachfass_senden oben.
+    msgid = make_msgid(domain="ecko-pack.de")
     try:
         angebot_pdf_bytes = pdf.angebot_pdf_erzeugen(angebot)
         mail = EmailMultiAlternatives(betreff, text_body, settings.DEFAULT_FROM_EMAIL, [empfaenger])
         mail.attach_alternative(html_body, "text/html")
         mail.attach(f"{angebot.nummer}.pdf", angebot_pdf_bytes, "application/pdf")
+        mail.extra_headers = {"Message-ID": msgid}
         mail.send(fail_silently=False)
     except Exception as exc:
         logger.exception(
@@ -638,7 +655,7 @@ def angebot_nachfass_senden(angebot, status):
 
     _mail_protokollieren(
         deal=deal, mailtyp="angebot_nachfass", empfaenger=empfaenger, betreff=betreff, erfolg=True,
-        angebot=angebot,
+        angebot=angebot, message_id=msgid,
     )
     return True, None
 
