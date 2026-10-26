@@ -34,6 +34,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import timedelta
+from datetime import timezone as dt_timezone
 
 from django.utils import timezone
 
@@ -137,7 +138,7 @@ def _referenzierte_message_ids(nachricht):
 def _postfach_nachrichten_seit(token, postfach, seit_datetime):
     """Liest alle Nachrichten im Posteingang von `postfach` seit `seit_datetime` (inkl.
     internetMessageHeaders für den Antwort-Abgleich), über alle Seiten hinweg."""
-    iso = seit_datetime.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    iso = seit_datetime.astimezone(dt_timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     filter_ = urllib.parse.quote(f"receivedDateTime ge {iso}")
     select = "subject,receivedDateTime,internetMessageHeaders"
     url = (
