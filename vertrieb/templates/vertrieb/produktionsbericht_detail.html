@@ -1,28 +1,29 @@
 {% extends "vertrieb/base.html" %}
+{% load produktion_extras %}
 {% block title %}Produktionsbericht #{{ bericht.pk }} – ECKO-PACK CRM{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-start mb-3">
     <div>
-        <h2 class="mb-1">Produktionsbericht #{{ bericht.pk }}: {{ bericht.get_linie_display }}</h2>
+        <h2 class="mb-1">Produktionsbericht #{{ bericht.pk }}: {% t_feld "linie" bericht.linie %}</h2>
         <div class="text-muted mb-1">
-            {{ bericht.datum|date:"d.m.Y" }} · {{ bericht.get_schicht_display }}
+            {{ bericht.datum|date:"d.m.Y" }} · {% t_feld "schicht" bericht.schicht %}
         </div>
         {% if bericht.status == "freigegeben" %}
-        <span class="badge text-bg-success">{{ bericht.get_status_display }}</span>
+        <span class="badge text-bg-success">{% t_feld "status" bericht.status %}</span>
         {% elif bericht.status == "abgelehnt" %}
-        <span class="badge text-bg-danger">{{ bericht.get_status_display }}</span>
+        <span class="badge text-bg-danger">{% t_feld "status" bericht.status %}</span>
         {% else %}
-        <span class="badge text-bg-warning">{{ bericht.get_status_display }}</span>
+        <span class="badge text-bg-warning">{% t_feld "status" bericht.status %}</span>
         {% endif %}
     </div>
     <div>
-        <a href="{% url 'vertrieb:produktionsbericht_pdf' bericht.pk %}" target="_blank" class="btn btn-outline-primary">PDF / Drucken</a>
+        <a href="{% url 'vertrieb:produktionsbericht_pdf' bericht.pk %}" target="_blank" class="btn btn-outline-primary">{% t "detail.pdf_button" %}</a>
         {% if ist_produktionsleiter and bericht.status == "eingereicht" %}
         <a href="{% url 'vertrieb:produktionsbericht_freigeben' bericht.pk %}" class="btn btn-success">Freigeben</a>
         <a href="{% url 'vertrieb:produktionsbericht_ablehnen' bericht.pk %}" class="btn btn-outline-danger">Ablehnen</a>
         {% endif %}
         {% if kann_korrigieren %}
-        <a href="{% url 'vertrieb:produktionsbericht_korrigieren' bericht.pk %}" class="btn btn-warning">Korrigieren und erneut einreichen</a>
+        <a href="{% url 'vertrieb:produktionsbericht_korrigieren' bericht.pk %}" class="btn btn-warning">{% t "detail.korrigieren_button" %}</a>
         {% endif %}
     </div>
 </div>
@@ -30,52 +31,52 @@
 <div class="row g-3">
     <div class="col-md-6">
         <div class="card mb-3">
-            <div class="card-header fw-semibold">Schicht</div>
+            <div class="card-header fw-semibold">{% t "detail.karte.schicht" %}</div>
             <ul class="list-group list-group-flush">
-                <li class="list-group-item"><strong>Fertigprodukt:</strong>
+                <li class="list-group-item"><strong>{% t "detail.fertigprodukt" %}</strong>
                     <a href="{{ bericht.fertigprodukt.get_absolute_url }}">{{ bericht.fertigprodukt.artikelnummer }} – {{ bericht.fertigprodukt.bezeichnung }}</a>
                 </li>
-                <li class="list-group-item"><strong>Produktionszeit:</strong> {{ bericht.produktionszeit_von|date:"d.m.Y H:i" }} – {{ bericht.produktionszeit_bis|date:"H:i" }}
+                <li class="list-group-item"><strong>{% t "detail.produktionszeit" %}</strong> {{ bericht.produktionszeit_von|date:"d.m.Y H:i" }} – {{ bericht.produktionszeit_bis|date:"H:i" }}
                     {% if bericht.produktionsdauer_anzeige %}<span class="text-muted">({{ bericht.produktionsdauer_anzeige }} h)</span>{% endif %}
                 </li>
-                <li class="list-group-item"><strong>Bediener:</strong>
+                <li class="list-group-item"><strong>{% t "detail.bediener" %}</strong>
                     {% if bericht.personenbezug_entfernt %}
                     <span class="text-muted fst-italic">anonymisiert (DSGVO, {{ bericht.personenbezug_entfernt_am|date:"d.m.Y" }})</span>
                     {% else %}
                     {{ bericht.bediener_1|default:"–" }}{% if bericht.bediener_2 %}, {{ bericht.bediener_2 }}{% endif %}
                     {% endif %}
                 </li>
-                {% if bericht.werkzeug_bezeichnung %}<li class="list-group-item"><strong>Werkzeug/Form:</strong> {{ bericht.werkzeug_bezeichnung }}</li>{% endif %}
-                {% if bericht.schussanzahl %}<li class="list-group-item"><strong>Schussanzahl:</strong> {{ bericht.schussanzahl }}</li>{% endif %}
+                {% if bericht.werkzeug_bezeichnung %}<li class="list-group-item"><strong>{% t "detail.werkzeug" %}</strong> {{ bericht.werkzeug_bezeichnung }}</li>{% endif %}
+                {% if bericht.schussanzahl %}<li class="list-group-item"><strong>{% t "detail.schussanzahl" %}</strong> {{ bericht.schussanzahl }}</li>{% endif %}
             </ul>
         </div>
 
         <div class="card mb-3">
-            <div class="card-header fw-semibold">Produzierte Menge</div>
+            <div class="card-header fw-semibold">{% t "formular.menge_karte" %}</div>
             <ul class="list-group list-group-flush">
-                <li class="list-group-item"><strong>Gutmenge:</strong> {{ bericht.menge_gut_stueck }} Stück</li>
-                <li class="list-group-item"><strong>Ausschuss:</strong> {{ bericht.menge_ausschuss_stueck }} Stück
-                    {% if bericht.ausschussgrund %}– {{ bericht.get_ausschussgrund_display }}{% endif %}
+                <li class="list-group-item"><strong>{% t "detail.gutmenge" %}</strong> {{ bericht.menge_gut_stueck }} Stück</li>
+                <li class="list-group-item"><strong>{% t "detail.ausschuss" %}</strong> {{ bericht.menge_ausschuss_stueck }} Stück
+                    {% if bericht.ausschussgrund %}– {% t_feld "ausschussgrund" bericht.ausschussgrund %}{% endif %}
                 </li>
             </ul>
         </div>
 
         {% if bericht.ruestzeit_minuten or bericht.stillstandszeit_minuten or bericht.stromverbrauch_kwh %}
         <div class="card mb-3">
-            <div class="card-header fw-semibold">Rüsten &amp; Stillstand</div>
+            <div class="card-header fw-semibold">{% t "detail.karte.ruesten" %}</div>
             <ul class="list-group list-group-flush">
-                {% if bericht.ruestzeit_minuten %}<li class="list-group-item"><strong>Rüstzeit:</strong> {{ bericht.ruestzeit_minuten }} Min.</li>{% endif %}
-                {% if bericht.stillstandszeit_minuten %}<li class="list-group-item"><strong>Stillstandszeit:</strong> {{ bericht.stillstandszeit_minuten }} Min.{% if bericht.stillstandsgrund %} – {{ bericht.stillstandsgrund }}{% endif %}</li>{% endif %}
-                {% if bericht.stromverbrauch_kwh %}<li class="list-group-item"><strong>Stromverbrauch:</strong> {{ bericht.stromverbrauch_kwh }} KWh</li>{% endif %}
+                {% if bericht.ruestzeit_minuten %}<li class="list-group-item"><strong>{% t "detail.ruestzeit" %}</strong> {{ bericht.ruestzeit_minuten }} Min.</li>{% endif %}
+                {% if bericht.stillstandszeit_minuten %}<li class="list-group-item"><strong>{% t "detail.stillstandszeit" %}</strong> {{ bericht.stillstandszeit_minuten }} Min.{% if bericht.stillstandsgrund %} – {{ bericht.stillstandsgrund }}{% endif %}</li>{% endif %}
+                {% if bericht.stromverbrauch_kwh %}<li class="list-group-item"><strong>{% t "detail.stromverbrauch" %}</strong> {{ bericht.stromverbrauch_kwh }} KWh</li>{% endif %}
             </ul>
         </div>
         {% endif %}
 
         {% if bericht.reinigung_durchgefuehrt_von or bericht.bemerkungen %}
         <div class="card">
-            <div class="card-header fw-semibold">Sonstiges</div>
+            <div class="card-header fw-semibold">{% t "detail.karte.sonstiges" %}</div>
             {% if bericht.reinigung_durchgefuehrt_von %}
-            <div class="card-body border-bottom pb-2"><strong>Reinigung durchgeführt von:</strong> {{ bericht.reinigung_durchgefuehrt_von }}</div>
+            <div class="card-body border-bottom pb-2"><strong>{% t "detail.reinigung" %}</strong> {{ bericht.reinigung_durchgefuehrt_von }}</div>
             {% endif %}
             {% if bericht.bemerkungen %}
             <div class="card-body">{{ bericht.bemerkungen|linebreaks }}</div>
@@ -86,9 +87,9 @@
 
     <div class="col-md-6">
         <div class="card mb-3">
-            <div class="card-header fw-semibold">Workflow</div>
+            <div class="card-header fw-semibold">{% t "detail.karte.workflow" %}</div>
             <ul class="list-group list-group-flush">
-                <li class="list-group-item"><strong>Eingereicht von:</strong> {{ bericht.eingereicht_von }} am {{ bericht.eingereicht_am|date:"d.m.Y H:i" }}</li>
+                <li class="list-group-item"><strong>{% t "detail.eingereicht_von" %}</strong> {{ bericht.eingereicht_von }} am {{ bericht.eingereicht_am|date:"d.m.Y H:i" }}</li>
                 {% if bericht.personenbezug_entfernt %}
                 <li class="list-group-item text-muted small">Personenbezogene Felder (Bediener, Reinigung, Bemerkungen) wurden am {{ bericht.personenbezug_entfernt_am|date:"d.m.Y" }} aus Datenschutzgründen entfernt.</li>
                 {% endif %}
@@ -103,7 +104,7 @@
                 <li class="list-group-item"><strong>Abgelehnt von:</strong> {{ bericht.freigegeben_von|default:"–" }} am {{ bericht.freigegeben_am|date:"d.m.Y H:i" }}</li>
                 <li class="list-group-item"><strong>Ablehnungsgrund:</strong> {{ bericht.ablehnungsgrund }}</li>
                 {% else %}
-                <li class="list-group-item text-muted">Wartet auf Freigabe durch den Produktionsleiter.</li>
+                <li class="list-group-item text-muted">{% t "detail.wartet_auf_freigabe" %}</li>
                 {% endif %}
             </ul>
         </div>

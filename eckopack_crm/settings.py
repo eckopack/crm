@@ -80,6 +80,9 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                # 27.10.2026, Produktionsbericht-Sprachpilot: stellt "ma_sprache" allen
+                # Templates zur Verfügung (siehe vertrieb/context_processors.py).
+                "vertrieb.context_processors.ma_sprache",
             ],
         },
     },

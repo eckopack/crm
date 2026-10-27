@@ -1,11 +1,13 @@
 from django.contrib import admin
+from django.contrib.auth import get_user_model
+from django.contrib.auth.admin import UserAdmin
 from django.utils import timezone
 
 from .models import (
     Aktivitaet, Angebot, AngebotNachfassStatus, AngebotNachfassVorlage, AngebotPosition,
-    Artikel, Charge, Deal, Firma, Kontakt, Lagerbewegung, MusterboxNachfassStatus,
-    MusterboxNachfassVorlage, Preisstaffel, Produktionsbericht, Produktionsbuchung,
-    Rechnung, RechnungZahlung, Rezeptur,
+    Artikel, Charge, Deal, Firma, Kontakt, Lagerbewegung, MitarbeiterSprache,
+    MusterboxNachfassStatus, MusterboxNachfassVorlage, Preisstaffel, Produktionsbericht,
+    Produktionsbuchung, Rechnung, RechnungZahlung, Rezeptur,
 )
 
 
@@ -328,3 +330,23 @@ class RechnungZahlungAdmin(admin.ModelAdmin):
     list_display = ("rechnung", "betrag", "datum", "notiz", "erfasst_am")
     list_filter = ("datum",)
     search_fields = ("rechnung__nummer", "rechnung__deal__firma__name")
+
+
+class MitarbeiterSpracheInline(admin.StackedInline):
+    """27.10.2026, auf Wunsch von Björn (zwei MA sprechen Tschechisch/Ukrainisch): direkt auf
+    der Benutzer-Bearbeitungsseite im Admin sichtbar/einstellbar, statt als eigene,
+    separate Admin-Liste - Björn/Bizer legen hier ohnehin schon die MA-Konten an (siehe
+    Produktionsbericht-Moduldoku in models.py), die Sprache gehört inhaltlich direkt dazu.
+    can_delete=False: ohne Eintrag gilt automatisch "de" (siehe
+    produktion_sprachen.sprache_fuer_konto), ein Löschen hier wäre nur verwirrend."""
+    model = MitarbeiterSprache
+    can_delete = False
+    verbose_name_plural = "Produktionsbericht-Oberflächensprache"
+
+
+class ECKOPackUserAdmin(UserAdmin):
+    inlines = [*UserAdmin.inlines, MitarbeiterSpracheInline]
+
+
+admin.site.unregister(get_user_model())
+admin.site.register(get_user_model(), ECKOPackUserAdmin)

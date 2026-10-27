@@ -4,30 +4,30 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h2>
-        {% if user|ist_produktionsleiter %}Produktionsberichte{% else %}Meine Produktionsberichte{% endif %}
+        {% if user|ist_produktionsleiter %}Produktionsberichte{% else %}{% t "liste.titel" %}{% endif %}
     </h2>
-    <a href="{% url 'vertrieb:produktionsbericht_erfassen' %}" class="btn btn-primary">+ Neuer Produktionsbericht</a>
+    <a href="{% url 'vertrieb:produktionsbericht_erfassen' %}" class="btn btn-primary">{% t "liste.neuer_button" %}</a>
 </div>
 
 <div class="card">
     <table class="table table-hover mb-0">
         <thead>
         <tr>
-            <th>Datum</th>
-            <th>Linie</th>
-            <th>Schicht</th>
-            <th>Fertigprodukt</th>
-            <th>Gutmenge (Stück)</th>
-            <th>Bediener</th>
-            <th>Status</th>
+            <th>{% t "liste.spalte.datum" %}</th>
+            <th>{% t "liste.spalte.linie" %}</th>
+            <th>{% t "liste.spalte.schicht" %}</th>
+            <th>{% t "liste.spalte.fertigprodukt" %}</th>
+            <th>{% t "liste.spalte.gutmenge" %}</th>
+            <th>{% t "liste.spalte.bediener" %}</th>
+            <th>{% t "liste.spalte.status" %}</th>
         </tr>
         </thead>
         <tbody>
         {% for bericht in berichte %}
         <tr>
             <td><a href="{{ bericht.get_absolute_url }}">{{ bericht.datum|date:"d.m.Y" }}</a></td>
-            <td>{{ bericht.get_linie_display }}</td>
-            <td>{{ bericht.get_schicht_display }}</td>
+            <td>{% t_feld "linie" bericht.linie %}</td>
+            <td>{% t_feld "schicht" bericht.schicht %}</td>
             <td>{{ bericht.fertigprodukt.artikelnummer }}</td>
             <td>{{ bericht.menge_gut_stueck }}</td>
             <td>
@@ -39,16 +39,16 @@
             </td>
             <td>
                 {% if bericht.status == "freigegeben" %}
-                <span class="badge text-bg-success">{{ bericht.get_status_display }}</span>
+                <span class="badge text-bg-success">{% t_feld "status" bericht.status %}</span>
                 {% elif bericht.status == "abgelehnt" %}
-                <span class="badge text-bg-danger">{{ bericht.get_status_display }}</span>
+                <span class="badge text-bg-danger">{% t_feld "status" bericht.status %}</span>
                 {% else %}
-                <span class="badge text-bg-warning">{{ bericht.get_status_display }}</span>
+                <span class="badge text-bg-warning">{% t_feld "status" bericht.status %}</span>
                 {% endif %}
             </td>
         </tr>
         {% empty %}
-        <tr><td colspan="7" class="text-muted text-center py-3">Noch kein Produktionsbericht erfasst.</td></tr>
+        <tr><td colspan="7" class="text-muted text-center py-3">{% t "liste.leer" %}</td></tr>
         {% endfor %}
         </tbody>
     </table>

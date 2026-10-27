@@ -14,6 +14,7 @@ from .models import (
     Rahmenvereinbarung, RahmenvereinbarungPosition,
     Rechnung, RechnungPosition, RechnungZahlung, Rezeptur,
 )
+from .produktion_sprachen import STANDARDSPRACHE, uebersetzen
 from .produktionsleiter import PRODUKTION_GRUPPE, PRODUKTIONSLEITER_GRUPPE
 
 
@@ -601,8 +602,9 @@ class ProduktionsberichtForm(BootstrapFormMixin, forms.ModelForm):
         }
         labels = {"fertigprodukt": "Trinkhalm-Artikel"}
 
-    def __init__(self, *args, angemeldeter_benutzer=None, **kwargs):
+    def __init__(self, *args, angemeldeter_benutzer=None, sprache=STANDARDSPRACHE, **kwargs):
         super().__init__(*args, **kwargs)
+        self._sprache = sprache
         self.fields["fertigprodukt"].queryset = Artikel.objects.filter(
             materialtyp="fertigware", artikelnummer__startswith="LUA-SW",
         ).order_by("artikelnummer")
@@ -617,6 +619,20 @@ class ProduktionsberichtForm(BootstrapFormMixin, forms.ModelForm):
         ).distinct().order_by("username")
         if angemeldeter_benutzer is not None and not self.is_bound:
             self.fields["bediener_1"].initial = angemeldeter_benutzer.pk
+        # 27.10.2026 (Björns Rückfrage zur Mehrsprachigkeit für MA): die <select>-Optionen
+        # werden von Django direkt aus den choices-Tupeln gerendert, ein Template-Tag kann sie
+        # nicht nachträglich übersetzen - deshalb hier die choices selbst ersetzen, wenn eine
+        # andere Sprache als Deutsch aktiv ist. Die gespeicherten Codes ("frueh", "grat", ...)
+        # bleiben unverändert, nur die angezeigten Label wechseln (siehe produktion_sprachen.py).
+        if sprache != STANDARDSPRACHE:
+            self.fields["schicht"].choices = [
+                (code, uebersetzen(f"schicht.{code}", sprache))
+                for code, _ in self.fields["schicht"].choices
+            ]
+            self.fields["ausschussgrund"].choices = [
+                (code, uebersetzen(f"ausschussgrund.{code}" if code else "ausschussgrund.leer", sprache))
+                for code, _ in self.fields["ausschussgrund"].choices
+            ]
         self._bootstrapify()
 
     def clean(self):
@@ -624,7 +640,7 @@ class ProduktionsberichtForm(BootstrapFormMixin, forms.ModelForm):
         von = cleaned.get("produktionszeit_von")
         bis = cleaned.get("produktionszeit_bis")
         if von and bis and bis <= von:
-            self.add_error("produktionszeit_bis", "Muss nach der Produktionszeit \"von\" liegen.")
+            self.add_error("produktionszeit_bis", uebersetzen("fehler.zeit_reihenfolge", self._sprache))
         elif von and bis:
             # 26.10.2026 (Björns Rückfrage "was fehlt noch..."): Plausibilitätsprüfung -
             # vorher konnten Rüstzeit/Stillstand beliebig über der angegebenen Produktionszeit
@@ -638,9 +654,10 @@ class ProduktionsberichtForm(BootstrapFormMixin, forms.ModelForm):
             if ruestzeit + stillstand > produktionsdauer_minuten:
                 self.add_error(
                     None,
-                    f"Rüstzeit ({ruestzeit} Min.) + Stillstandszeit ({stillstand} Min.) sind "
-                    f"zusammen länger als die angegebene Produktionszeit "
-                    f"({int(produktionsdauer_minuten)} Min.) - bitte Zeiten prüfen.",
+                    uebersetzen("fehler.plausibilitaet", self._sprache).format(
+                        ruestzeit=ruestzeit, stillstand=stillstand,
+                        dauer=int(produktionsdauer_minuten),
+                    ),
                 )
 
         # 26.10.2026 (Björns Rückfrage "was fehlt noch..."): Duplikatsperre - vorher konnte
@@ -662,12 +679,14 @@ class ProduktionsberichtForm(BootstrapFormMixin, forms.ModelForm):
             if self.instance.pk:
                 bereits_vorhanden = bereits_vorhanden.exclude(pk=self.instance.pk)
             if bereits_vorhanden.exists():
+                # schicht_anzeige kommt aus self.fields["schicht"].choices, die in __init__
+                # oben bereits für die aktive Sprache übersetzt wurden (bei "de" unverändert).
                 schicht_anzeige = dict(self.fields["schicht"].choices).get(schicht, schicht)
                 self.add_error(
                     None,
-                    f"Für den {datum:%d.%m.%Y} ({schicht_anzeige}, Trinkhalm L1) liegt bereits "
-                    f"ein Produktionsbericht vor. Bei einer Korrektur bitte den "
-                    f"Produktionsleiter informieren, statt ein zweites Mal einzureichen.",
+                    uebersetzen("fehler.duplikat", self._sprache).format(
+                        datum=datum.strftime("%d.%m.%Y"), schicht=schicht_anzeige,
+                    ),
                 )
         return cleaned
 
