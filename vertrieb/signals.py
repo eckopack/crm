@@ -24,6 +24,7 @@ sich bezieht (siehe rechnung_korrektur_gespeichert/rechnung_korrektur_geloescht)
 
 from datetime import timedelta
 
+from django.contrib.auth.signals import user_logged_in
 from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 from django.utils import timezone
@@ -32,6 +33,7 @@ from .models import (
     ANGEBOT_NACHFASS_INTERVALLE_TAGE, Aktivitaet, Angebot, AngebotNachfassStatus, Deal,
     Rechnung, RechnungZahlung,
 )
+from .produktion_sprachen import SESSION_SCHLUESSEL, sprache_fuer_konto
 
 
 @receiver(pre_save, sender=Deal)
@@ -178,3 +180,17 @@ def rechnung_korrektur_geloescht(sender, instance, **kwargs):
     except Rechnung.DoesNotExist:
         return
     _rechnung_status_neu_berechnen(original)
+
+
+@receiver(user_logged_in)
+def sprache_bei_login_aktivieren(sender, request, user, **kwargs):
+    """27.10.2026, auf Wunsch von Björn (zwei MA sprechen Tschechisch/Ukrainisch): legt die
+    für dieses Konto hinterlegte Produktionsbericht-Oberflächensprache (siehe
+    MitarbeiterSprache in models.py) bei JEDEM Login neu in der Session ab - bewusst bei
+    jedem Login neu statt nur beim ersten Mal, falls sich die hinterlegte Sprache zwischen
+    zwei Logins ändert. Ereignisbasiert statt in der Login-View selbst, damit es unabhängig
+    von der konkret genutzten Login-View (hier Djangos eingebaute auth_views.LoginView)
+    funktioniert. Muss in der SESSION stehen, nicht in einem Cookie - der Produktionsbericht
+    wird über einen gemeinsam genutzten Büro-PC erfasst, die Sprache muss also am
+    angemeldeten Konto hängen, nicht am Gerät/Browser (siehe produktion_sprachen.py)."""
+    request.session[SESSION_SCHLUESSEL] = sprache_fuer_konto(user)

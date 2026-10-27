@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 {% load static %}
 {% load produktion_extras %}
-<html lang="de">
+<html lang="{{ ma_sprache|default:'de' }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -82,8 +82,8 @@
             würde sie von allem anderen ohnehin wegleiten, siehe vertrieb/middleware.py.
             {% endcomment %}
             <ul class="navbar-nav me-auto">
-                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:produktionsbericht_erfassen' %}">Neuer Produktionsbericht</a></li>
-                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:produktionsbericht_list' %}">Meine Produktionsberichte</a></li>
+                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:produktionsbericht_erfassen' %}">{% t "nav.neuer_bericht" %}</a></li>
+                <li class="nav-item"><a class="nav-link" href="{% url 'vertrieb:produktionsbericht_list' %}">{% t "nav.meine_berichte" %}</a></li>
             </ul>
             {% else %}
             <ul class="navbar-nav me-auto">
@@ -147,7 +147,7 @@
                 <li class="nav-item">
                     <form method="post" action="{% url 'logout' %}" class="d-inline">
                         {% csrf_token %}
-                        <button type="submit" class="btn btn-sm btn-outline-secondary">Abmelden</button>
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">{% t "nav.abmelden" %}</button>
                     </form>
                 </li>
             </ul>

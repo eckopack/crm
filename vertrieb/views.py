@@ -41,6 +41,7 @@ from .models import (
     Produktionsbuchung,
     Lieferschein, Rahmenvereinbarung, Rechnung, RechnungPosition, RechnungZahlung,
 )
+from .produktion_sprachen import SESSION_SCHLUESSEL, STANDARDSPRACHE, uebersetzen
 from .produktionsleiter import ist_produktionsleiter
 from django.forms import inlineformset_factory
 
@@ -2233,8 +2234,17 @@ def produktionsbericht_erfassen(request):
     """MA-Eingabemaske (siehe ProduktionsberichtForm - bewusst ein einfaches ModelForm,
     keine Chargen-Auswahl hier). linie ist in dieser ersten Version fest "trinkhalm_l1" -
     siehe Moduldoku."""
+    # 27.10.2026 (Björns Rückfrage zur Mehrsprachigkeit für MA, die Tschechisch/Ukrainisch
+    # sprechen): die Sprache steht seit dem Login in der Session (siehe
+    # signals.sprache_bei_login_aktivieren), hier nur auslesen und an die Form reichen, die
+    # Feldbeschriftungen/Fehlermeldungen/Choice-Label entsprechend übersetzt (siehe forms.py
+    # und produktion_sprachen.py). Betrifft NUR die Darstellung - gespeichert wird wie
+    # bisher unabhängig von der Sprache.
+    sprache = request.session.get(SESSION_SCHLUESSEL, STANDARDSPRACHE)
     if request.method == "POST":
-        form = ProduktionsberichtForm(request.POST, angemeldeter_benutzer=request.user)
+        form = ProduktionsberichtForm(
+            request.POST, angemeldeter_benutzer=request.user, sprache=sprache,
+        )
         if form.is_valid():
             bericht = form.save(commit=False)
             bericht.linie = "trinkhalm_l1"
@@ -2246,14 +2256,10 @@ def produktionsbericht_erfassen(request):
             # nurture.produktionsbericht_eingereicht_benachrichtigen) - ein Mailproblem darf
             # die Einreichung für den MA nicht sichtbar scheitern lassen.
             nurture.produktionsbericht_eingereicht_benachrichtigen(bericht)
-            messages.success(
-                request,
-                f"Produktionsbericht eingereicht - wartet jetzt auf Freigabe durch den "
-                f"Produktionsleiter.",
-            )
+            messages.success(request, uebersetzen("meldung.eingereicht", sprache))
             return redirect(bericht.get_absolute_url())
     else:
-        form = ProduktionsberichtForm(angemeldeter_benutzer=request.user)
+        form = ProduktionsberichtForm(angemeldeter_benutzer=request.user, sprache=sprache)
     return render(request, "vertrieb/produktionsbericht_form.html", {"form": form})
 
 
@@ -2280,16 +2286,14 @@ def produktionsbericht_korrigieren(request, pk):
         raise PermissionDenied(
             "Nur der ursprünglich einreichende Mitarbeiter darf diesen Bericht korrigieren."
         )
+    sprache = request.session.get(SESSION_SCHLUESSEL, STANDARDSPRACHE)
     if bericht.status != "abgelehnt":
-        messages.error(
-            request,
-            "Nur abgelehnte Produktionsberichte können korrigiert werden.",
-        )
+        messages.error(request, uebersetzen("meldung.nur_abgelehnte_korrigierbar", sprache))
         return redirect(bericht.get_absolute_url())
 
     if request.method == "POST":
         form = ProduktionsberichtForm(
-            request.POST, instance=bericht, angemeldeter_benutzer=request.user,
+            request.POST, instance=bericht, angemeldeter_benutzer=request.user, sprache=sprache,
         )
         if form.is_valid():
             korrigierter_bericht = form.save(commit=False)
@@ -2298,14 +2302,12 @@ def produktionsbericht_korrigieren(request, pk):
             korrigierter_bericht.eingereicht_am = timezone.now()
             korrigierter_bericht.save()
             nurture.produktionsbericht_eingereicht_benachrichtigen(korrigierter_bericht)
-            messages.success(
-                request,
-                "Korrigierter Produktionsbericht eingereicht - wartet jetzt erneut auf "
-                "Freigabe durch den Produktionsleiter.",
-            )
+            messages.success(request, uebersetzen("meldung.korrigiert_eingereicht", sprache))
             return redirect(korrigierter_bericht.get_absolute_url())
     else:
-        form = ProduktionsberichtForm(instance=bericht, angemeldeter_benutzer=request.user)
+        form = ProduktionsberichtForm(
+            instance=bericht, angemeldeter_benutzer=request.user, sprache=sprache,
+        )
     return render(
         request, "vertrieb/produktionsbericht_form.html",
         {"form": form, "korrektur_von": bericht},

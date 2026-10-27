@@ -5,6 +5,8 @@ from django.db import models
 from django.urls import reverse
 from django.utils import timezone
 
+from .produktion_sprachen import PRODUKTION_SPRACHE_CHOICES
+
 
 GESCHAEFTSBEREICH_CHOICES = [
     ("maschinenbau", "Maschinenbau"),
@@ -2024,6 +2026,47 @@ class Produktionsbericht(models.Model):
         if gesamtminuten < 0:
             return None
         return f"{gesamtminuten // 60:02d}:{gesamtminuten % 60:02d}"
+
+
+class MitarbeiterSprache(models.Model):
+    """27.10.2026, auf Wunsch von Björn: zwei MA im Produktionsbericht-Pilot sprechen
+    Tschechisch bzw. Ukrainisch und sollen die Eingabemaske in ihrer Sprache sehen (und
+    ausfüllen können), während Freigabe/Benachrichtigung/PDF für den Produktionsleiter
+    weiterhin auf Deutsch bleiben (siehe produktion_sprachen.py für die Übersetzungstabelle
+    und die genaue Abgrenzung, was übersetzt wird und was nicht).
+
+    Ordnet dafür einem Benutzerkonto eine Oberflächensprache zu - bewusst ein eigenes
+    Modell statt eines Felds direkt am Django-User: das eingebaute User-Modell lässt sich
+    ohne eine AUTH_USER_MODEL-Umstellung (hohes Risiko so spät im Projekt, bräuchte eine
+    Datenbankmigration über alle bestehenden Benutzerkonten) nicht erweitern.
+
+    Bewusst NICHT das bestehende SPRACHE_CHOICES/Angebot.sprache-Feld oben wiederverwendet
+    (das ist de/en für Kundendokumente, ein völlig anderer Zweck) - stattdessen eigene
+    Werte (de/cs/uk) in produktion_sprachen.PRODUKTION_SPRACHE_CHOICES, um die beiden
+    Konzepte nicht zu vermischen.
+
+    Wird bei jedem Login aus der Datenbank gelesen und in der Session hinterlegt (siehe
+    signals.sprache_bei_login_aktivieren) statt z. B. in einem Cookie - wichtig, weil die
+    MA-Eingabe über einen gemeinsam genutzten Büro-PC läuft: die Sprache muss am Konto
+    hängen, nicht am Gerät/Browser, sonst sähe der nächste MA nach dem Login versehentlich
+    die Sprache des vorherigen."""
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, verbose_name="Benutzer", on_delete=models.CASCADE,
+        related_name="mitarbeitersprache",
+    )
+    oberflaechen_sprache = models.CharField(
+        "Oberflächensprache (Produktionsbericht)", max_length=5,
+        choices=PRODUKTION_SPRACHE_CHOICES, default="de",
+        help_text="Nur für die Produktionsbericht-Eingabemaske/-Navigation - siehe "
+                   "produktion_sprachen.py.",
+    )
+
+    class Meta:
+        verbose_name = "Mitarbeitersprache"
+        verbose_name_plural = "Mitarbeitersprachen"
+
+    def __str__(self):
+        return f"{self.user} ({self.oberflaechen_sprache})"
 
 
 MUSTERBOX_NACHFASS_WOCHEN = 8
