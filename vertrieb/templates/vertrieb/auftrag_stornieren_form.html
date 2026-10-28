@@ -1,0 +1,20 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}{{ auftrag.nummer }} stornieren{% endblock %}
+{% block content %}
+<h2 class="mb-3">{{ auftrag.nummer }} stornieren</h2>
+<p class="text-muted">
+    Dieser Auftrag wird storniert und kann danach keine Grundlage mehr für einen (neuen)
+    Packschein sein.
+</p>
+
+<form method="post">
+    {% csrf_token %}
+    <div class="card mb-3" style="max-width: 500px;">
+        <div class="card-body">
+            {% include "vertrieb/_form_fields.html" %}
+        </div>
+    </div>
+    <button type="submit" class="btn btn-danger">Stornieren</button>
+    <a href="{{ auftrag.get_absolute_url }}" class="btn btn-outline-secondary">Abbrechen</a>
+</form>
+{% endblock %}

@@ -7,7 +7,8 @@ from django.forms import inlineformset_factory
 from django.utils import timezone
 
 from .models import (
-    Aktivitaet, Angebot, AngebotPosition, Artikel, Bonusstaffel, Charge, Deal, Firma,
+    Aktivitaet, Angebot, AngebotPosition, Artikel, Auftrag, AuftragPosition, Bonusstaffel,
+    Charge, Deal, Firma,
     Kontakt, MATERIALTYPEN_MIT_CHARGENBESTAND,
     Packschein, PackscheinPosition, Lieferschein, LieferscheinPosition,
     Produktionsbericht,
@@ -193,6 +194,65 @@ AngebotPositionFormSet = inlineformset_factory(
 )
 
 
+class AuftragForm(BootstrapFormMixin, forms.ModelForm):
+    """Analog zu AngebotForm (siehe dort), aber ohne Status-Workflow-Felder - ein Auftrag
+    ist per Definition sofort 'bestaetigt' (siehe Auftrag-Model-Doku); der Status wird daher
+    nicht hier, sondern ausschließlich über den dedizierten Stornieren-Weg geändert
+    (AuftragStornierenForm unten)."""
+
+    class Meta:
+        model = Auftrag
+        fields = ["deal", "datum", "sprache", "ansprechpartner", "notizen"]
+        widgets = {
+            "notizen": forms.Textarea(attrs={"rows": 3}),
+            "datum": date_input(),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()
+        self.fields["ansprechpartner"].queryset = Kontakt.objects.all().select_related("firma")
+        self.fields["ansprechpartner"].required = False
+
+
+class AuftragStornierenForm(BootstrapFormMixin, forms.ModelForm):
+    """Dedizierter Weg, einen Auftrag als storniert zu markieren - analog zu
+    AngebotAblehnenForm (siehe dort), Grund hier PFLICHT."""
+
+    class Meta:
+        model = Auftrag
+        fields = ["storno_grund"]
+        widgets = {
+            "storno_grund": forms.Textarea(attrs={"rows": 3}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()
+        self.fields["storno_grund"].required = True
+        self.fields["storno_grund"].label = "Grund der Stornierung"
+
+
+class AuftragPositionForm(BootstrapFormMixin, forms.ModelForm):
+    class Meta:
+        model = AuftragPosition
+        fields = ["artikel", "position", "bezeichnung", "menge", "einheit", "einzelpreis"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()
+        self.fields["artikel"].required = False
+        self.fields["artikel"].queryset = _artikel_fuer_positionsauswahl()
+        self.fields["artikel"].widget.attrs["class"] = (
+            self.fields["artikel"].widget.attrs.get("class", "") + " artikel-auswahl"
+        )
+
+
+AuftragPositionFormSet = inlineformset_factory(
+    Auftrag, AuftragPosition, form=AuftragPositionForm, extra=1, can_delete=True
+)
+
+
 class RahmenvereinbarungForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Rahmenvereinbarung
@@ -249,7 +309,7 @@ class PackscheinForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Packschein
         fields = [
-            "deal", "angebot", "datum", "kommissionierer", "status", "notizen",
+            "deal", "angebot", "auftrag", "datum", "kommissionierer", "status", "notizen",
             "ist_musterversand", "versanddienstleister", "trackingnummer", "versendet_am",
         ]
         widgets = {
@@ -262,6 +322,7 @@ class PackscheinForm(BootstrapFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         self._bootstrapify()
         self.fields["angebot"].required = False
+        self.fields["auftrag"].required = False
         self.fields["versanddienstleister"].required = False
         self.fields["trackingnummer"].required = False
         self.fields["versendet_am"].required = False

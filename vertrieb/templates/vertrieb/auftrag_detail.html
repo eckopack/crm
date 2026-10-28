@@ -1,0 +1,114 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}{{ auftrag.nummer }} – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2>{{ auftrag.nummer }}</h2>
+        <div class="text-muted">
+            Deal: <a href="{{ auftrag.deal.get_absolute_url }}">{{ auftrag.deal.titel }}</a>
+            · Firma: <a href="{{ auftrag.deal.firma.get_absolute_url }}">{{ auftrag.deal.firma.name }}</a>
+            {% if auftrag.ansprechpartner %}
+            · Ansprechpartner (Versand): <a href="{{ auftrag.ansprechpartner.get_absolute_url }}">{{ auftrag.ansprechpartner }}</a>
+            {% else %}
+            · Ansprechpartner (Versand): <span class="text-muted">automatisch über Deal</span>
+            {% endif %}
+        </div>
+        {% if auftrag.status == "storniert" %}
+        <span class="badge text-bg-danger">{{ auftrag.get_status_display }}</span>
+        {% else %}
+        <span class="badge text-bg-success">{{ auftrag.get_status_display }}</span>
+        {% endif %}
+        <span class="badge text-bg-light border">{{ auftrag.get_sprache_display }}</span>
+        <span class="badge text-bg-info text-dark" title="Direktauftrag ohne vorheriges Angebot">Direktauftrag</span>
+    </div>
+    <div class="d-print-none">
+        {% if auftrag.status == "bestaetigt" %}
+        <a href="{% url 'vertrieb:packschein_create' %}?auftrag={{ auftrag.pk }}" class="btn btn-primary">Packschein erstellen</a>
+        {% else %}
+        <button type="button" class="btn btn-primary" disabled title="Storniert - keine Grundlage mehr für einen Packschein">Packschein erstellen</button>
+        {% endif %}
+        <form method="post" action="{% url 'vertrieb:auftrag_versand' auftrag.pk %}" class="d-inline"
+              onclick="return confirm('Auftragsbestätigung {{ auftrag.nummer }} jetzt per Mail (inkl. PDF) an den Kunden versenden?');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-primary">Jetzt versenden</button>
+        </form>
+        {% if auftrag.status == "bestaetigt" %}
+        <a href="{% url 'vertrieb:auftrag_stornieren' auftrag.pk %}" class="btn btn-outline-danger">Stornieren</a>
+        {% endif %}
+        <a href="{% url 'vertrieb:auftrag_pdf' auftrag.pk %}" target="_blank" class="btn btn-outline-primary">PDF</a>
+        <a href="{% url 'vertrieb:auftrag_update' auftrag.pk %}" class="btn btn-outline-secondary">Bearbeiten</a>
+        {% if auftrag.ist_loeschbar %}
+        <a href="{% url 'vertrieb:auftrag_delete' auftrag.pk %}" class="btn btn-outline-danger">Löschen</a>
+        {% else %}
+        <button type="button" class="btn btn-outline-danger" disabled title="Hat bereits einen Packschein - sollte nicht mehr gelöscht werden">Löschen</button>
+        {% endif %}
+    </div>
+</div>
+{% if auftrag.versandmail_gesendet_am %}
+<div class="text-muted small mb-3">
+    Auftragsbestätigung per Mail an Kunde gesendet am {{ auftrag.versandmail_gesendet_am|date:"d.m.Y H:i" }}.
+</div>
+{% endif %}
+{% if auftrag.status == "storniert" and auftrag.storno_grund %}
+<div class="alert alert-danger">
+    <strong>Stornierungsgrund:</strong> {{ auftrag.storno_grund }}
+</div>
+{% endif %}
+
+{% if auftrag.packscheine.exists %}
+<div class="card mb-3">
+    <div class="card-header fw-semibold">Packscheine zu diesem Auftrag</div>
+    <ul class="list-group list-group-flush">
+        {% for packschein in auftrag.packscheine.all %}
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+            <a href="{{ packschein.get_absolute_url }}">{{ packschein.nummer|default:"(Entwurf)" }}</a>
+            <span class="badge text-bg-light border">{{ packschein.get_status_display }}</span>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<div class="card mb-3" style="max-width:300px;">
+    <ul class="list-group list-group-flush">
+        <li class="list-group-item"><strong>Datum:</strong> {{ auftrag.datum|date:"d.m.Y" }}</li>
+    </ul>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header fw-semibold">Positionen</div>
+    <table class="table mb-0">
+        <thead>
+        <tr><th>Pos.</th><th>Artikel-Nr.</th><th>Bezeichnung</th><th>Menge</th><th>Einheit</th><th>Einzelpreis</th><th>Gesamt</th></tr>
+        </thead>
+        <tbody>
+        {% for p in auftrag.positionen.all %}
+        <tr>
+            <td>{{ p.position }}</td>
+            <td>{{ p.artikel.artikelnummer|default:"–" }}</td>
+            <td>{{ p.bezeichnung }}</td>
+            <td>{{ p.menge }}</td>
+            <td>{{ p.get_einheit_display }}</td>
+            <td>{{ p.einzelpreis|floatformat:-5 }} €</td>
+            <td>{{ p.gesamtpreis|floatformat:2 }} €</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-muted text-center py-3">Keine Positionen erfasst.</td></tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+        <tr class="fw-bold">
+            <td colspan="6" class="text-end">Gesamtsumme (netto)</td>
+            <td>{{ auftrag.gesamtsumme|floatformat:2 }} €</td>
+        </tr>
+        </tfoot>
+    </table>
+</div>
+
+{% if auftrag.notizen %}
+<div class="card">
+    <div class="card-header fw-semibold">Notizen/Konditionen</div>
+    <div class="card-body">{{ auftrag.notizen|linebreaks }}</div>
+</div>
+{% endif %}
+{% endblock %}

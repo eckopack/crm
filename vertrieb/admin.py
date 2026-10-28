@@ -5,7 +5,8 @@ from django.utils import timezone
 
 from .models import (
     Aktivitaet, Angebot, AngebotNachfassStatus, AngebotNachfassVorlage, AngebotPosition,
-    Artikel, Charge, Deal, Firma, Kontakt, Lagerbewegung, MitarbeiterSprache,
+    Artikel, Auftrag, AuftragPosition, Charge, Deal, Firma, Kontakt, Lagerbewegung,
+    MitarbeiterSprache,
     MusterboxNachfassStatus, MusterboxNachfassVorlage, Preisstaffel, Produktionsbericht,
     Produktionsbuchung, Rechnung, RechnungZahlung, Rezeptur,
 )
@@ -69,6 +70,19 @@ class AngebotAdmin(admin.ModelAdmin):
     list_filter = ("status", "sprache")
     search_fields = ("nummer",)
     inlines = [AngebotPositionInline]
+
+
+class AuftragPositionInline(admin.TabularInline):
+    model = AuftragPosition
+    extra = 1
+
+
+@admin.register(Auftrag)
+class AuftragAdmin(admin.ModelAdmin):
+    list_display = ("nummer", "deal", "datum", "status", "sprache", "gesamtsumme")
+    list_filter = ("status", "sprache")
+    search_fields = ("nummer",)
+    inlines = [AuftragPositionInline]
 
 
 class PreisstaffelInline(admin.TabularInline):

@@ -23,6 +23,7 @@ from django.views.generic import CreateView, DeleteView, DetailView, ListView, U
 from . import nurture, pdf
 from .forms import (
     AktivitaetForm, AngebotAblehnenForm, AngebotForm, AngebotPositionFormSet, ArtikelForm,
+    AuftragForm, AuftragPositionFormSet, AuftragStornierenForm,
     BestandsuebersichtFilterForm,
     BonusstaffelFormSet, DealForm, FirmaForm, KontaktForm,
     PackscheinForm, PackscheinPositionFormSet, PackscheinVersandForm,
@@ -36,6 +37,7 @@ from .models import (
     ANGEBOT_NACHFASS_SCHRITTE, DEAL_PHASE_CHOICES, GRAMM_JE_STUECK_BESTECK,
     GRAMM_JE_STUECK_TRINKHALM, MUSTERKARTON_ARTIKEL,
     PHASE_STANDARD_WAHRSCHEINLICHKEIT, Aktivitaet, Angebot, AngebotNachfassStatus, Artikel,
+    Auftrag,
     Charge, Deal, EmailVersand, Firma, Kontakt, Lagerbewegung, MATERIALTYPEN_MIT_CHARGENBESTAND,
     MusterboxNachfassStatus, Packschein, PackscheinPosition, Produktionsbericht,
     Produktionsbuchung,
@@ -855,6 +857,134 @@ def angebot_ablehnen(request, pk):
 
 
 # ---------------------------------------------------------------------------
+# Auftrag (Direktauftrag ohne vorheriges Angebot, 28.10.2026, auf Wunsch von Björn:
+# "bitte erstelle die möglichkeit sofort einen auftrag zu erstellen (ohne angebot vorweg)").
+# Bewusst ein eigenes Dokument statt nur einer gelockerten Packschein-Sperre (siehe
+# Modell-Doku bei Auftrag) - spiegelt Angebot strukturell, aber OHNE den
+# entwurf/versendet/angenommen-Workflow: ein Auftrag ist per Definition sofort
+# "bestaetigt", einzige weitere Transition ist "storniert".
+# ---------------------------------------------------------------------------
+
+class AuftragListView(LoginRequiredMixin, ListView):
+    model = Auftrag
+    template_name = "vertrieb/auftrag_list.html"
+    context_object_name = "auftraege"
+    paginate_by = 25
+
+    def get_queryset(self):
+        return Auftrag.objects.all().select_related("deal", "deal__firma")
+
+
+class AuftragDetailView(LoginRequiredMixin, DetailView):
+    model = Auftrag
+    template_name = "vertrieb/auftrag_detail.html"
+    context_object_name = "auftrag"
+
+
+@login_required
+def auftrag_erstellen(request):
+    if request.method == "POST":
+        form = AuftragForm(request.POST)
+        if form.is_valid():
+            auftrag = form.save()
+            formset = AuftragPositionFormSet(request.POST, instance=auftrag)
+            if formset.is_valid():
+                formset.save()
+                return redirect(auftrag.get_absolute_url())
+        else:
+            formset = AuftragPositionFormSet(request.POST)
+    else:
+        initial = {"datum": timezone.now().date()}
+        deal_id = request.GET.get("deal")
+        if deal_id:
+            initial["deal"] = deal_id
+        form = AuftragForm(initial=initial)
+        formset = AuftragPositionFormSet()
+    return render(request, "vertrieb/auftrag_form.html", {"form": form, "formset": formset})
+
+
+@login_required
+def auftrag_bearbeiten(request, pk):
+    auftrag = get_object_or_404(Auftrag, pk=pk)
+    if request.method == "POST":
+        form = AuftragForm(request.POST, instance=auftrag)
+        formset = AuftragPositionFormSet(request.POST, instance=auftrag)
+        if form.is_valid() and formset.is_valid():
+            form.save()
+            formset.save()
+            return redirect(auftrag.get_absolute_url())
+    else:
+        form = AuftragForm(instance=auftrag)
+        formset = AuftragPositionFormSet(instance=auftrag)
+    return render(request, "vertrieb/auftrag_form.html", {"form": form, "formset": formset, "auftrag": auftrag})
+
+
+class AuftragDeleteView(LoginRequiredMixin, DeleteView):
+    """Analog zu AngebotDeleteView (siehe dort) - nur löschbar, solange noch kein Packschein
+    aus dem Auftrag entstanden ist (siehe Auftrag.ist_loeschbar)."""
+    model = Auftrag
+    template_name = "vertrieb/confirm_delete.html"
+    success_url = reverse_lazy("vertrieb:auftrag_list")
+
+    def form_valid(self, form):
+        auftrag = self.get_object()
+        if not auftrag.ist_loeschbar:
+            messages.warning(
+                self.request,
+                f"Auftrag {auftrag.nummer} hat bereits mindestens einen Packschein und sollte "
+                f"nicht mehr gelöscht werden.",
+            )
+            return redirect(auftrag.get_absolute_url())
+        return super().form_valid(form)
+
+
+@login_required
+def auftrag_pdf_download(request, pk):
+    auftrag = get_object_or_404(Auftrag, pk=pk)
+    pdf_bytes = pdf.auftrag_pdf_erzeugen(auftrag)
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'inline; filename="{auftrag.nummer}.pdf"'
+    return response
+
+
+@login_required
+def auftrag_versand_senden_view(request, pk):
+    """Verschickt eine Auftragsbestätigung manuell per Mail inkl. PDF-Anhang an den Kunden,
+    analog zu angebot_versand_senden_view - anders als dort aber OHNE Statuswechsel und ohne
+    Nachfasskette (siehe nurture.auftrag_versand_senden), weil ein Auftrag per Definition
+    bereits "bestaetigt" ist."""
+    auftrag = get_object_or_404(Auftrag, pk=pk)
+    if request.method == "POST":
+        erfolg, fehler = nurture.auftrag_versand_senden(auftrag)
+        if erfolg:
+            messages.success(request, f"Auftragsbestätigung {auftrag.nummer} wurde per Mail an den Kunden versendet.")
+        else:
+            messages.warning(
+                request,
+                f"Auftragsbestätigung {auftrag.nummer} konnte NICHT per Mail versendet werden ({fehler}).",
+            )
+    return redirect(auftrag.get_absolute_url())
+
+
+@login_required
+def auftrag_stornieren(request, pk):
+    auftrag = get_object_or_404(Auftrag, pk=pk)
+    if auftrag.status != "bestaetigt":
+        messages.warning(request, f"Auftrag {auftrag.nummer} ist bereits storniert.")
+        return redirect(auftrag.get_absolute_url())
+    if request.method == "POST":
+        form = AuftragStornierenForm(request.POST, instance=auftrag)
+        if form.is_valid():
+            auftrag.status = "storniert"
+            form.save()
+            messages.success(request, f"Auftrag {auftrag.nummer} wurde als storniert erfasst.")
+            return redirect(auftrag.get_absolute_url())
+    else:
+        form = AuftragStornierenForm(instance=auftrag)
+    return render(request, "vertrieb/auftrag_stornieren_form.html", {"form": form, "auftrag": auftrag})
+
+
+# ---------------------------------------------------------------------------
 # Rahmenvereinbarung (Jahresmengen-Vertrag für Großkunden, 21.10.2026 - siehe
 # Model-Doku: friert pro Artikel einen Preis für die ganze Jahresmenge ein,
 # unabhängig von der Größe der einzelnen Teillieferung/Charge; Bonusstaffel
@@ -979,6 +1109,11 @@ def packschein_erstellen(request):
     if angebot_id:
         angebot_quelle = get_object_or_404(Angebot, pk=angebot_id)
 
+    auftrag_quelle = None
+    auftrag_id = request.GET.get("auftrag")
+    if auftrag_id:
+        auftrag_quelle = get_object_or_404(Auftrag, pk=auftrag_id)
+
     if request.method == "POST":
         form = PackscheinForm(request.POST)
         if form.is_valid():
@@ -994,7 +1129,11 @@ def packschein_erstellen(request):
             # nicht in PackscheinForm.clean() oder bei packschein_bearbeiten - damit bereits
             # bestehende (vor dieser Regel angelegte) Packscheine beim Bearbeiten nicht
             # nachtraeglich blockiert werden.
+            # 28.10.2026, auf Wunsch von Björn (Direktauftrag ohne Angebot): ein Auftrag kennt
+            # von Natur aus keinen "Entwurf"-Zustand (siehe Auftrag-Model-Doku) - die einzige
+            # Sperre dort ist ein bereits "storniert"er Auftrag.
             gewaehltes_angebot = form.cleaned_data.get("angebot")
+            gewaehlter_auftrag = form.cleaned_data.get("auftrag")
             ist_musterversand = form.cleaned_data.get("ist_musterversand")
             if gewaehltes_angebot and not ist_musterversand and gewaehltes_angebot.status == "entwurf":
                 form.add_error(
@@ -1002,6 +1141,13 @@ def packschein_erstellen(request):
                     f"Angebot {gewaehltes_angebot.nummer} wurde noch nicht an den Kunden "
                     f"versendet (Status \"Entwurf\"). Ein Packschein kann erst erstellt werden, "
                     f"wenn das Angebot tatsächlich beim Kunden ist und zum Auftrag geworden ist.",
+                )
+                formset = PackscheinPositionFormSet(request.POST)
+            elif gewaehlter_auftrag and gewaehlter_auftrag.status == "storniert":
+                form.add_error(
+                    "auftrag",
+                    f"Auftrag {gewaehlter_auftrag.nummer} wurde storniert. Ein Packschein kann "
+                    f"daraus nicht mehr erstellt werden.",
                 )
                 formset = PackscheinPositionFormSet(request.POST)
             else:
@@ -1017,6 +1163,7 @@ def packschein_erstellen(request):
                     return redirect(packschein.get_absolute_url())
                 return render(request, "vertrieb/packschein_form.html", {
                     "form": form, "formset": formset, "angebot_quelle": angebot_quelle,
+                    "auftrag_quelle": auftrag_quelle,
                 })
         else:
             formset = PackscheinPositionFormSet(request.POST)
@@ -1025,17 +1172,25 @@ def packschein_erstellen(request):
         deal_id = request.GET.get("deal")
         if angebot_quelle:
             initial = {"deal": angebot_quelle.deal_id, "angebot": angebot_quelle.pk}
+        elif auftrag_quelle:
+            initial = {"deal": auftrag_quelle.deal_id, "auftrag": auftrag_quelle.pk}
         elif deal_id:
             initial = {"deal": deal_id}
         form = PackscheinForm(initial=initial)
 
+        quelle_positionen = None
         if angebot_quelle and angebot_quelle.positionen.exists():
+            quelle_positionen = angebot_quelle.positionen.all()
+        elif auftrag_quelle and auftrag_quelle.positionen.exists():
+            quelle_positionen = auftrag_quelle.positionen.all()
+
+        if quelle_positionen is not None:
             positionen_initial = [
                 {
                     "artikel": p.artikel_id, "position": p.position, "bezeichnung": p.bezeichnung,
                     "menge": p.menge, "einheit": p.einheit,
                 }
-                for p in angebot_quelle.positionen.all()
+                for p in quelle_positionen
             ]
             FormSetVorbefuellt = inlineformset_factory(
                 Packschein, Packschein.positionen.rel.related_model,
@@ -1046,6 +1201,7 @@ def packschein_erstellen(request):
             formset = PackscheinPositionFormSet()
     return render(request, "vertrieb/packschein_form.html", {
         "form": form, "formset": formset, "angebot_quelle": angebot_quelle,
+        "auftrag_quelle": auftrag_quelle,
     })
 
 

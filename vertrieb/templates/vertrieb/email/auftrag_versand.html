@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="{% if sprache == "en" %}en{% else %}de{% endif %}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% if sprache == "en" %}Your order confirmation from ECKO-PACK{% else %}Ihre Auftragsbestätigung von ECKO-PACK{% endif %}</title>
+</head>
+<body style="margin:0; padding:0; background-color:#f5f6f8; font-family:Arial, Helvetica, sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f6f8; padding:24px 0;">
+  <tr>
+    <td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px; width:100%; background-color:#ffffff; border-radius:8px; overflow:hidden;">
+
+        <tr>
+          <td style="background-color:#ffffff; padding:24px 32px; border-bottom:1px solid #e5e5e5;">
+            <img src="{{ logo_url }}" alt="ECKO-PACK" height="32" style="display:block; height:32px; width:auto;">
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:32px;">
+            <p style="margin:0 0 16px 0; font-size:16px; color:#3c3c3b;">
+              {% if sprache == "en" %}Hello{% else %}Guten Tag{% endif %}{% if ansprechpartner %} {{ ansprechpartner.vorname }} {{ ansprechpartner.nachname }}{% endif %},
+            </p>
+            <div>
+              {% if sprache == "en" %}
+              <p style="margin:0 0 16px 0; font-size:16px; color:#3c3c3b; line-height:1.5;">thank you for your order. Please find attached our order confirmation {{ auftrag.nummer }} for {{ deal.titel }}.</p>
+
+              <p style="margin:0; font-size:16px; color:#3c3c3b; line-height:1.5;">If you have any questions about this order, please don't hesitate to reach out.</p>
+              {% else %}
+              <p style="margin:0 0 16px 0; font-size:16px; color:#3c3c3b; line-height:1.5;">vielen Dank für Ihren Auftrag. Anbei erhalten Sie unsere Auftragsbestätigung {{ auftrag.nummer }} zu {{ deal.titel }}.</p>
+
+              <p style="margin:0; font-size:16px; color:#3c3c3b; line-height:1.5;">Bei Fragen zu diesem Auftrag sprechen Sie uns gerne jederzeit an.</p>
+              {% endif %}
+            </div>
+            <p style="margin:24px 0 0 0; font-size:14px; color:#3c3c3b; line-height:1.6;">
+              Mit freundlichen Grüßen<br>
+              Best regards<br>
+              <br>
+              Björn Gallenkamp<br>
+              Geschäftsführer / CEO<br>
+              Telefon: +49 4331 1348 0<br>
+              Mobil: +49 171 977 77 21<br>
+              Fax: +49 4331 1348 999<br>
+              E-Mail: <a href="mailto:b.gallenkamp@ecko-pack.de" style="color:#3c3c3b;">b.gallenkamp@ecko-pack.de</a><br>
+              Web: <a href="https://www.ecko-pack.de" style="color:#3c3c3b;">https://www.ecko-pack.de</a><br>
+              <br>
+              ECKO-PACK GmbH<br>
+              Wasbeker Straße 324<br>
+              D-24537 Neumünster
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

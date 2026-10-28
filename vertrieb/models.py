@@ -87,6 +87,15 @@ ANGEBOT_STATUS_CHOICES = [
     ("abgelaufen", "Abgelaufen"),
 ]
 
+# 28.10.2026, auf Wunsch von Björn ("die Möglichkeit, sofort einen Auftrag zu erstellen, ohne
+# Angebot vorweg") - siehe Auftrag-Moduldoku weiter unten. Bewusst nur zwei Zustände, kein
+# Entwurf/Versand-Workflow wie bei Angebot: ein Auftrag entsteht per Definition erst, wenn die
+# Bestellung bereits feststeht.
+AUFTRAG_STATUS_CHOICES = [
+    ("bestaetigt", "Bestätigt"),
+    ("storniert", "Storniert"),
+]
+
 # Nach oben verschoben (18.10.2026), damit sowohl Angebot (unten) als auch Packschein
 # (weiter unten im File) SPRACHE_CHOICES referenzieren können - vorher stand die
 # Konstante erst zwischen beiden Klassen und war für Angebot schlicht noch nicht
@@ -548,6 +557,116 @@ class AngebotPosition(models.Model):
         return self.menge * self.einzelpreis
 
 
+class Auftrag(models.Model):
+    """Direktauftrag OHNE vorangehendes Angebot (28.10.2026, auf Wunsch von Björn: "die
+    Möglichkeit, sofort einen Auftrag zu erstellen, ohne Angebot vorweg").
+
+    Deckt den Fall ab, dass ein Kunde direkt bestellt (z.B. telefonisch, bestehende
+    Stammkundenkonditionen, dringender Nachschub), ohne dass vorher ein Angebot verschickt
+    und vom Kunden angenommen wurde. Bewusst ein eigenständiges Dokument statt nur die
+    Angebots-Pflicht vor dem Packschein zu lockern (siehe packschein_erstellen-Gate in
+    views.py): so bleibt das System konsistent zum bestehenden Muster - jede Stufe hat ihr
+    eigenes Dokument mit eigenem Nummernkreis und eigenem PDF - und es gibt weiterhin eine
+    dem Kunden gegenüber dokumentierte Auftragsbestätigung, nicht nur ein internes
+    Lager-Packdokument als einzigen Beleg.
+
+    Anders als Angebot KEIN Entwurf-/Versand-/Annahme-Workflow: ein Auftrag entsteht per
+    Definition erst in dem Moment, in dem die Bestellung bereits feststeht ("sofort"),
+    deshalb direkt status="bestaetigt" (siehe save()). Einzige weitere Zustandsänderung ist
+    "storniert" (views.auftrag_stornieren, analog zu Angebot.ablehnungsgrund/
+    angebot_ablehnen) - ein stornierter Auftrag darf keine Grundlage mehr für einen NEUEN
+    Packschein sein (siehe packschein_erstellen-Gate).
+
+    Packschein.auftrag (siehe dort) ist das Pendant zu Packschein.angebot - beide FKs sind
+    optional und schließen sich im Formular nicht gegenseitig aus, in der Praxis wird aber
+    genau eine der beiden Quellen gesetzt sein (Packschein aus Angebot ODER aus Auftrag).
+    Downstream (Lieferschein/Rechnung) ändert sich dadurch NICHTS - die bestehenden Gates
+    dort prüfen ausschließlich den Packschein-Status, nicht wie dieser zustande kam."""
+    nummer = models.CharField("Auftragsnummer", max_length=30, unique=True, blank=True)
+    deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.PROTECT, related_name="auftraege")
+    datum = models.DateField("Datum", default=timezone.localdate)
+    status = models.CharField("Status", max_length=20, choices=AUFTRAG_STATUS_CHOICES, default="bestaetigt")
+    # Wie Angebot.ansprechpartner (siehe dort) - Empfänger der Auftragsbestätigungs-Mail,
+    # unabhängig vom im Deal hinterlegten Kontakt. Leer lassen greift wie bei Angebot
+    # automatisch auf deal.kontakt zurück (siehe nurture._auftrag_empfaenger_email).
+    ansprechpartner = models.ForeignKey(
+        "Kontakt", verbose_name="Ansprechpartner (Versand)", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="auftraege_als_ansprechpartner",
+        help_text="Leer lassen übernimmt automatisch den Kontakt aus dem Deal.",
+    )
+    sprache = models.CharField(
+        "Sprache", max_length=2, choices=SPRACHE_CHOICES, default="de",
+        help_text="Bestimmt die Sprache des Auftragsbestätigungs-PDFs.",
+    )
+    notizen = models.TextField("Notizen/Konditionen", blank=True)
+    erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
+    # Analog zu Angebot.versandmail_gesendet_am - wird von nurture.auftrag_versand_senden
+    # gesetzt, wenn die Auftragsbestätigung (PDF-Anhang) per Mail an den Kunden verschickt
+    # wurde. Anders als beim Angebot löst der Versand hier KEINEN Statuswechsel aus (der
+    # Auftrag ist ja schon "bestaetigt") und startet keine Nachfasskette - der Kunde hat
+    # bereits bestellt, es gibt nichts nachzufassen.
+    versandmail_gesendet_am = models.DateTimeField("Versand-Mail gesendet am", null=True, blank=True)
+    storno_grund = models.CharField("Grund (bei Stornierung)", max_length=300, blank=True)
+
+    class Meta:
+        verbose_name = "Auftrag"
+        verbose_name_plural = "Aufträge"
+        ordering = ["-datum", "-nummer"]
+
+    def __str__(self):
+        return self.nummer or f"Auftrag (wird angelegt) – {self.deal}"
+
+    def get_absolute_url(self):
+        return reverse("vertrieb:auftrag_detail", args=[self.pk])
+
+    def save(self, *args, **kwargs):
+        if not self.nummer:
+            jahr = (self.datum or timezone.now().date()).year
+            letzter = Auftrag.objects.filter(nummer__startswith=f"AUF-{jahr}-").order_by("-nummer").first()
+            if letzter and letzter.nummer.split("-")[-1].isdigit():
+                naechste = int(letzter.nummer.split("-")[-1]) + 1
+            else:
+                naechste = 1
+            self.nummer = f"AUF-{jahr}-{naechste:04d}"
+        super().save(*args, **kwargs)
+
+    @property
+    def gesamtsumme(self):
+        return sum((p.gesamtpreis for p in self.positionen.all()), start=0)
+
+    # ist_loeschbar (analog zu Angebot.ist_loeschbar, siehe dort): löschbar nur solange noch
+    # kein Packschein daraus entstanden ist - ab dann ist der Auftrag die dokumentierte
+    # Grundlage einer laufenden Lieferung und darf nicht spurlos verschwinden.
+    @property
+    def ist_loeschbar(self):
+        return not self.packscheine.exists()
+
+
+class AuftragPosition(models.Model):
+    auftrag = models.ForeignKey(Auftrag, on_delete=models.CASCADE, related_name="positionen")
+    artikel = models.ForeignKey(
+        "Artikel", verbose_name="Artikel", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="auftragpositionen",
+    )
+    position = models.PositiveIntegerField("Pos.", default=1)
+    bezeichnung = models.CharField("Bezeichnung", max_length=300)
+    menge = models.DecimalField("Menge", max_digits=10, decimal_places=2, default=1)
+    einheit = models.CharField("Einheit", max_length=10, choices=EINHEIT_CHOICES, default="stk")
+    einzelpreis = models.DecimalField("Einzelpreis (EUR, netto)", max_digits=14, decimal_places=5, default=0)
+
+    class Meta:
+        verbose_name = "Auftragsposition"
+        verbose_name_plural = "Auftragspositionen"
+        ordering = ["position"]
+
+    def __str__(self):
+        return self.bezeichnung
+
+    @property
+    def gesamtpreis(self):
+        return self.menge * self.einzelpreis
+
+
 # Gemeinsame Quelle fuer Musterkarton-Artikelnummern + zweisprachige Anzeigetexte -
 # bewusst hier in models.py statt in views.py oder nurture.py, weil beide Module davon
 # importieren muessen (views.py importiert nurture.py, umgekehrt ginge es wegen des
@@ -581,6 +700,10 @@ class Packschein(models.Model):
     deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.PROTECT, related_name="packscheine")
     angebot = models.ForeignKey(
         Angebot, verbose_name="Angebot", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="packscheine"
+    )
+    auftrag = models.ForeignKey(
+        Auftrag, verbose_name="Auftrag", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="packscheine"
     )
     datum = models.DateField("Kommissionierdatum", default=timezone.localdate)
@@ -1233,6 +1356,7 @@ MAILTYP_CHOICES = [
     ("artikelliste", "Artikelliste (Preisliste)"),
     ("angebot_nachfass", "Angebot-Nachfassmail"),
     ("angebot_versand", "Angebot-Versandmail"),
+    ("auftrag_versand", "Auftragsbestätigung-Versandmail"),
 ]
 
 
@@ -1274,6 +1398,10 @@ class EmailVersand(models.Model):
     )
     angebot = models.ForeignKey(
         Angebot, verbose_name="Angebot", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="email_versaende",
+    )
+    auftrag = models.ForeignKey(
+        Auftrag, verbose_name="Auftrag", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="email_versaende",
     )
 

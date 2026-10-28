@@ -1,0 +1,22 @@
+{% if sprache == "en" %}Hello{% else %}Guten Tag{% endif %}{% if ansprechpartner %} {{ ansprechpartner.vorname }} {{ ansprechpartner.nachname }}{% endif %},
+
+{% if sprache == "en" %}thank you for your order. Please find attached our order confirmation {{ auftrag.nummer }} for {{ deal.titel }}.
+
+If you have any questions about this order, please don't hesitate to reach out.{% else %}vielen Dank für Ihren Auftrag. Anbei erhalten Sie unsere Auftragsbestätigung {{ auftrag.nummer }} zu {{ deal.titel }}.
+
+Bei Fragen zu diesem Auftrag sprechen Sie uns gerne jederzeit an.{% endif %}
+
+Mit freundlichen Grüßen
+Best regards
+
+Björn Gallenkamp
+Geschäftsführer / CEO
+Telefon:  +49 4331 1348 0
+Mobil:    +49 171 977 77 21
+Fax:      +49 4331 1348 999
+E-Mail:   b.gallenkamp@ecko-pack.de
+Web:      https://www.ecko-pack.de
+
+ECKO-PACK GmbH
+Wasbeker Straße 324
+D-24537 Neumünster
