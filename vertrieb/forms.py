@@ -132,6 +132,7 @@ class AngebotForm(BootstrapFormMixin, forms.ModelForm):
         fields = [
             "deal", "rahmenvereinbarung", "datum", "gueltig_bis", "status", "sprache",
             "ansprechpartner", "ablehnungsgrund", "notizen",
+            "frachtkosten", "verpackungskosten",
         ]
         widgets = {
             "notizen": forms.Textarea(attrs={"rows": 3}),
@@ -149,6 +150,8 @@ class AngebotForm(BootstrapFormMixin, forms.ModelForm):
         # zeigt die Firma ohnehin mit an, sodass die Auswahl eindeutig bleibt.
         self.fields["ansprechpartner"].queryset = Kontakt.objects.all().select_related("firma")
         self.fields["ansprechpartner"].required = False
+        self.fields["frachtkosten"].required = False
+        self.fields["verpackungskosten"].required = False
         # ablehnungsgrund bewusst NICHT required hier (siehe Model-Doku bei
         # Angebot.ablehnungsgrund) - nur auf dem dedizierten "Angebot ablehnen"-Weg
         # (AngebotAblehnenForm unten) ist das Feld Pflicht.
@@ -202,7 +205,10 @@ class AuftragForm(BootstrapFormMixin, forms.ModelForm):
 
     class Meta:
         model = Auftrag
-        fields = ["deal", "datum", "sprache", "ansprechpartner", "notizen"]
+        fields = [
+            "deal", "datum", "sprache", "ansprechpartner", "notizen",
+            "frachtkosten", "verpackungskosten",
+        ]
         widgets = {
             "notizen": forms.Textarea(attrs={"rows": 3}),
             "datum": date_input(),
@@ -213,6 +219,8 @@ class AuftragForm(BootstrapFormMixin, forms.ModelForm):
         self._bootstrapify()
         self.fields["ansprechpartner"].queryset = Kontakt.objects.all().select_related("firma")
         self.fields["ansprechpartner"].required = False
+        self.fields["frachtkosten"].required = False
+        self.fields["verpackungskosten"].required = False
 
 
 class AuftragStornierenForm(BootstrapFormMixin, forms.ModelForm):
@@ -799,7 +807,9 @@ class ArtikelForm(BootstrapFormMixin, forms.ModelForm):
             "artikelnummer", "bezeichnung", "bezeichnung_en", "beschreibung", "beschreibung_en",
             "geschaeftsbereich", "vertriebskanal", "warengruppe", "einheit", "verkaufspreis",
             "ust_satz", "einkaufspreis", "lagerbestand_aktuell", "mindestbestand",
-            "verpackungseinheit_stk", "gewicht_je_stueck_g", "lagerort", "lieferant_freitext",
+            "verpackungseinheit_stk", "gewicht_je_stueck_g",
+            "einheiten_je_palette", "frachtkosten_je_palette", "verpackungskosten_je_palette",
+            "lagerort", "lieferant_freitext",
             "status", "notizen",
         ]
         widgets = {

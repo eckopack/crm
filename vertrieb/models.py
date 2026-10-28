@@ -1,3 +1,4 @@
+import math
 from decimal import Decimal
 
 from django.conf import settings
@@ -444,6 +445,30 @@ class Aktivitaet(models.Model):
         return (not self.erledigt) and self.datum < timezone.now()
 
 
+def _fracht_verpackung_pro_position(position):
+    """Berechnet Paletten/Fracht/Verpackung für EINE Position (AngebotPosition oder
+    AuftragPosition) aus den am verknüpften Artikel hinterlegten Palettenangaben
+    (28.10.2026, auf Wunsch von Björn: "wie viele Einheiten sind auf einer Palette").
+    Rundet die Palettenanzahl IMMER auf volle Paletten auf (math.ceil) - man kann keine
+    halbe Palette verschicken, eine angefangene zählt als volle.
+
+    Gibt (paletten: int, fracht: Decimal, verpackung: Decimal, vollstaendig: bool) zurück.
+    vollstaendig ist False, wenn die Position keinen Artikel hat oder der Artikel nicht ALLE
+    drei Palettenangaben (einheiten_je_palette, frachtkosten_je_palette,
+    verpackungskosten_je_palette) trägt - der Beitrag dieser Position ist dann 0 und muss
+    ggf. manuell nachgetragen werden (siehe Angebot/Auftrag.fracht_verpackung_neu_berechnen
+    sowie den Fusshinweis in pdf.py)."""
+    artikel = position.artikel
+    if not artikel or not artikel.einheiten_je_palette:
+        return 0, Decimal("0"), Decimal("0"), False
+    if artikel.frachtkosten_je_palette is None or artikel.verpackungskosten_je_palette is None:
+        return 0, Decimal("0"), Decimal("0"), False
+    paletten = math.ceil(position.menge / artikel.einheiten_je_palette)
+    fracht = paletten * artikel.frachtkosten_je_palette
+    verpackung = paletten * artikel.verpackungskosten_je_palette
+    return paletten, fracht, verpackung, True
+
+
 class Angebot(models.Model):
     nummer = models.CharField("Angebotsnummer", max_length=30, unique=True, blank=True)
     deal = models.ForeignKey(Deal, verbose_name="Deal", on_delete=models.PROTECT, related_name="angebote")
@@ -489,6 +514,19 @@ class Angebot(models.Model):
     # Status-Wechsel ueber das normale Bearbeiten-Formular (AngebotForm) bleibt wie bei Deal
     # lose/optional, um bestehende Angebote nicht nachtraeglich zu blockieren.
     ablehnungsgrund = models.CharField("Grund (bei Ablehnung)", max_length=300, blank=True)
+    # frachtkosten/verpackungskosten (28.10.2026, auf Wunsch von Björn): per Button "Neu
+    # berechnen" (views.angebot_fracht_berechnen) aus den Positionen vorgeschlagen (siehe
+    # fracht_verpackung_neu_berechnen), danach wie jedes andere Feld frei überschreibbar -
+    # bewusst KEINE automatische Neuberechnung bei jedem Speichern, damit eine manuelle
+    # Korrektur nicht versehentlich wieder überschrieben wird.
+    frachtkosten = models.DecimalField(
+        "Frachtkosten (EUR, netto)", max_digits=10, decimal_places=2,
+        null=True, blank=True, default=0,
+    )
+    verpackungskosten = models.DecimalField(
+        "Verpackungskosten (EUR, netto)", max_digits=10, decimal_places=2,
+        null=True, blank=True, default=0,
+    )
 
     class Meta:
         verbose_name = "Angebot"
@@ -515,6 +553,49 @@ class Angebot(models.Model):
     @property
     def gesamtsumme(self):
         return sum((p.gesamtpreis for p in self.positionen.all()), start=0)
+
+    @property
+    def gesamtbetrag(self):
+        """Gesamtsumme (reine Positionssumme, siehe gesamtsumme) zzgl. Fracht-/
+        Verpackungskosten - der tatsächliche Endbetrag (netto, zzgl. USt.), der im PDF als
+        Gesamtsumme erscheint, sobald Fracht/Verpackung gesetzt sind (siehe
+        pdf.angebot_pdf_erzeugen)."""
+        return self.gesamtsumme + (self.frachtkosten or 0) + (self.verpackungskosten or 0)
+
+    def fracht_verpackung_neu_berechnen(self):
+        """Berechnet frachtkosten/verpackungskosten aus den aktuellen Positionen neu (siehe
+        _fracht_verpackung_pro_position) und setzt sie auf diesem Objekt - speichert selbst
+        NICHT, der Aufrufer (views.angebot_fracht_berechnen) ruft danach .save() auf. Gibt
+        (paletten_gesamt: int, vollstaendig: bool) zurück - vollstaendig ist False, wenn
+        mindestens eine Position keinen Artikel mit vollständigen Palettenangaben hat (deren
+        Beitrag ist dann 0 und muss ggf. manuell nachgetragen werden)."""
+        positionen = list(self.positionen.all())
+        paletten_gesamt = 0
+        fracht_summe = Decimal("0")
+        verpackung_summe = Decimal("0")
+        vollstaendig = bool(positionen)
+        for p in positionen:
+            paletten, fracht, verpackung, ok = _fracht_verpackung_pro_position(p)
+            paletten_gesamt += paletten
+            fracht_summe += fracht
+            verpackung_summe += verpackung
+            if not ok:
+                vollstaendig = False
+        self.frachtkosten = fracht_summe
+        self.verpackungskosten = verpackung_summe
+        return paletten_gesamt, vollstaendig
+
+    @property
+    def fracht_verpackung_vollstaendig(self):
+        """Ob JEDE aktuelle Position vollständige Palettenangaben hat (siehe
+        _fracht_verpackung_pro_position) - entscheidet im PDF (pdf.py), ob der
+        Ex-Works-Fusshinweis den Zusatz für Positionen ohne Palettendaten braucht. Wird live
+        aus den aktuellen Positionen berechnet, unabhängig vom zuletzt per "Neu berechnen"
+        gespeicherten Stand der Felder."""
+        positionen = list(self.positionen.all())
+        if not positionen:
+            return False
+        return all(_fracht_verpackung_pro_position(p)[3] for p in positionen)
 
     # ist_loeschbar (24.10.2026, auf Wunsch von Björn, Nachzieher zum Rechnung-Fix): anders
     # als Rechnung.ist_bearbeitbar gibt es hier KEINE Bearbeitungs-Sperre - ein Angebot bleibt
@@ -607,6 +688,16 @@ class Auftrag(models.Model):
     # bereits bestellt, es gibt nichts nachzufassen.
     versandmail_gesendet_am = models.DateTimeField("Versand-Mail gesendet am", null=True, blank=True)
     storno_grund = models.CharField("Grund (bei Stornierung)", max_length=300, blank=True)
+    # frachtkosten/verpackungskosten: analog zu Angebot.frachtkosten/verpackungskosten (siehe
+    # dort) - per Button "Neu berechnen" vorgeschlagen, danach frei überschreibbar.
+    frachtkosten = models.DecimalField(
+        "Frachtkosten (EUR, netto)", max_digits=10, decimal_places=2,
+        null=True, blank=True, default=0,
+    )
+    verpackungskosten = models.DecimalField(
+        "Verpackungskosten (EUR, netto)", max_digits=10, decimal_places=2,
+        null=True, blank=True, default=0,
+    )
 
     class Meta:
         verbose_name = "Auftrag"
@@ -633,6 +724,37 @@ class Auftrag(models.Model):
     @property
     def gesamtsumme(self):
         return sum((p.gesamtpreis for p in self.positionen.all()), start=0)
+
+    @property
+    def gesamtbetrag(self):
+        """Analog zu Angebot.gesamtbetrag (siehe dort)."""
+        return self.gesamtsumme + (self.frachtkosten or 0) + (self.verpackungskosten or 0)
+
+    def fracht_verpackung_neu_berechnen(self):
+        """Analog zu Angebot.fracht_verpackung_neu_berechnen (siehe dort)."""
+        positionen = list(self.positionen.all())
+        paletten_gesamt = 0
+        fracht_summe = Decimal("0")
+        verpackung_summe = Decimal("0")
+        vollstaendig = bool(positionen)
+        for p in positionen:
+            paletten, fracht, verpackung, ok = _fracht_verpackung_pro_position(p)
+            paletten_gesamt += paletten
+            fracht_summe += fracht
+            verpackung_summe += verpackung
+            if not ok:
+                vollstaendig = False
+        self.frachtkosten = fracht_summe
+        self.verpackungskosten = verpackung_summe
+        return paletten_gesamt, vollstaendig
+
+    @property
+    def fracht_verpackung_vollstaendig(self):
+        """Analog zu Angebot.fracht_verpackung_vollstaendig (siehe dort)."""
+        positionen = list(self.positionen.all())
+        if not positionen:
+            return False
+        return all(_fracht_verpackung_pro_position(p)[3] for p in positionen)
 
     # ist_loeschbar (analog zu Angebot.ist_loeschbar, siehe dort): löschbar nur solange noch
     # kein Packschein daraus entstanden ist - ab dann ist der Auftrag die dokumentierte
@@ -1590,6 +1712,27 @@ class Artikel(models.Model):
                    "Grundlage für die Rezeptur-Materialverbrauchsberechnung dieses "
                    "Fertigprodukts und ersetzt dafür den pauschalen Kategorie-Durchschnitt "
                    "(z. B. GRAMM_JE_STUECK_TRINKHALM). Leer = es gilt weiterhin der Pauschalwert.",
+    )
+    # einheiten_je_palette/frachtkosten_je_palette/verpackungskosten_je_palette (28.10.2026,
+    # auf Wunsch von Björn: "wie viele Einheiten sind auf einer Palette" als Grundlage für
+    # eine Fracht-/Verpackungskosten-Vorkalkulation in Angebot/Auftrag, siehe
+    # _fracht_verpackung_pro_position unten sowie Angebot/Auftrag.fracht_verpackung_neu_
+    # berechnen). Alle drei bewusst optional (null=True) - ein Artikel ohne diese Angaben
+    # traegt einfach nichts zur automatischen Berechnung bei und muss dann ggf. manuell
+    # nachgetragen werden (siehe pdf.py-Fusshinweis-Logik fuer den "unvollstaendig"-Fall).
+    einheiten_je_palette = models.PositiveIntegerField(
+        "Einheiten je Palette", null=True, blank=True,
+        help_text="Grundlage für die automatische Fracht-/Verpackungskosten-Berechnung in "
+                   "Angebot/Auftrag, z. B. 2000 Stück je Palette. Leer = dieser Artikel trägt "
+                   "nichts zur automatischen Berechnung bei.",
+    )
+    frachtkosten_je_palette = models.DecimalField(
+        "Frachtkosten je Palette (EUR, netto)", max_digits=10, decimal_places=2,
+        null=True, blank=True, help_text="Siehe Einheiten je Palette.",
+    )
+    verpackungskosten_je_palette = models.DecimalField(
+        "Verpackungskosten je Palette (EUR, netto)", max_digits=10, decimal_places=2,
+        null=True, blank=True, help_text="Siehe Einheiten je Palette.",
     )
     lagerort = models.CharField("Lagerort", max_length=100, blank=True)
     lieferant_freitext = models.CharField(

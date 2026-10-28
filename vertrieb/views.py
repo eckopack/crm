@@ -856,6 +856,44 @@ def angebot_ablehnen(request, pk):
     return render(request, "vertrieb/angebot_ablehnen_form.html", {"form": form, "angebot": angebot})
 
 
+@login_required
+def angebot_fracht_berechnen(request, pk):
+    """Berechnet Frachtkosten/Verpackungskosten aus den aktuellen Positionen neu (siehe
+    Angebot.fracht_verpackung_neu_berechnen) und speichert sie (28.10.2026, auf Wunsch von
+    Björn: "wie viele sind auf einer Palette" als Grundlage für eine Fracht-/
+    Verpackungskosten-Vorkalkulation). Bewusst ein expliziter Klick (Button auf der
+    Detailseite) statt automatischer Neuberechnung bei jedem Speichern, damit eine manuelle
+    Korrektur durch Björn nicht versehentlich wieder überschrieben wird. Nur POST, kein
+    eigenes Formular nötig."""
+    angebot = get_object_or_404(Angebot, pk=pk)
+    if request.method == "POST":
+        paletten, vollstaendig = angebot.fracht_verpackung_neu_berechnen()
+        angebot.save(update_fields=["frachtkosten", "verpackungskosten"])
+        if paletten == 0:
+            messages.warning(
+                request,
+                f"Angebot {angebot.nummer}: Keine Position hat hinterlegte Palettendaten "
+                f"(Einheiten je Palette am Artikel) - Fracht/Verpackung wurden auf 0,00 EUR "
+                f"gesetzt und müssen ggf. manuell eingetragen werden.",
+            )
+        elif not vollstaendig:
+            messages.warning(
+                request,
+                f"Angebot {angebot.nummer}: {paletten} Paletten aus den Positionen MIT "
+                f"hinterlegten Palettendaten ermittelt (Fracht {angebot.frachtkosten} EUR, "
+                f"Verpackung {angebot.verpackungskosten} EUR). Mindestens eine Position hat "
+                f"KEINE Palettendaten und wurde dabei NICHT berücksichtigt - bitte ggf. "
+                f"manuell ergänzen.",
+            )
+        else:
+            messages.success(
+                request,
+                f"Angebot {angebot.nummer}: {paletten} Paletten ermittelt - Fracht "
+                f"{angebot.frachtkosten} EUR, Verpackung {angebot.verpackungskosten} EUR.",
+            )
+    return redirect(angebot.get_absolute_url())
+
+
 # ---------------------------------------------------------------------------
 # Auftrag (Direktauftrag ohne vorheriges Angebot, 28.10.2026, auf Wunsch von Björn:
 # "bitte erstelle die möglichkeit sofort einen auftrag zu erstellen (ohne angebot vorweg)").
@@ -982,6 +1020,38 @@ def auftrag_stornieren(request, pk):
     else:
         form = AuftragStornierenForm(instance=auftrag)
     return render(request, "vertrieb/auftrag_stornieren_form.html", {"form": form, "auftrag": auftrag})
+
+
+@login_required
+def auftrag_fracht_berechnen(request, pk):
+    """Analog zu angebot_fracht_berechnen (siehe dort) für Auftrag."""
+    auftrag = get_object_or_404(Auftrag, pk=pk)
+    if request.method == "POST":
+        paletten, vollstaendig = auftrag.fracht_verpackung_neu_berechnen()
+        auftrag.save(update_fields=["frachtkosten", "verpackungskosten"])
+        if paletten == 0:
+            messages.warning(
+                request,
+                f"Auftrag {auftrag.nummer}: Keine Position hat hinterlegte Palettendaten "
+                f"(Einheiten je Palette am Artikel) - Fracht/Verpackung wurden auf 0,00 EUR "
+                f"gesetzt und müssen ggf. manuell eingetragen werden.",
+            )
+        elif not vollstaendig:
+            messages.warning(
+                request,
+                f"Auftrag {auftrag.nummer}: {paletten} Paletten aus den Positionen MIT "
+                f"hinterlegten Palettendaten ermittelt (Fracht {auftrag.frachtkosten} EUR, "
+                f"Verpackung {auftrag.verpackungskosten} EUR). Mindestens eine Position hat "
+                f"KEINE Palettendaten und wurde dabei NICHT berücksichtigt - bitte ggf. "
+                f"manuell ergänzen.",
+            )
+        else:
+            messages.success(
+                request,
+                f"Auftrag {auftrag.nummer}: {paletten} Paletten ermittelt - Fracht "
+                f"{auftrag.frachtkosten} EUR, Verpackung {auftrag.verpackungskosten} EUR.",
+            )
+    return redirect(auftrag.get_absolute_url())
 
 
 # ---------------------------------------------------------------------------
