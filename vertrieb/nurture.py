@@ -122,7 +122,7 @@ logger = logging.getLogger(__name__)
 
 def _mail_protokollieren(*, deal, mailtyp, empfaenger, betreff, erfolg, fehlermeldung="",
                           packschein=None, lieferschein=None, rechnung=None, angebot=None,
-                          message_id=""):
+                          auftrag=None, message_id=""):
     """Legt einen EmailVersand-Protokolleintrag an - siehe Teil 8 oben. Best effort: ein
     Fehler HIER (z.B. DB kurz nicht erreichbar) darf den bereits erfolgten/versuchten
     Mailversand nicht nachtraeglich als Fehlschlag erscheinen lassen, deshalb eigenes
@@ -136,7 +136,7 @@ def _mail_protokollieren(*, deal, mailtyp, empfaenger, betreff, erfolg, fehlerme
             deal=deal, mailtyp=mailtyp, empfaenger=empfaenger or "", betreff=betreff or "",
             erfolg=erfolg, fehlermeldung=fehlermeldung or "",
             packschein=packschein, lieferschein=lieferschein, rechnung=rechnung, angebot=angebot,
-            message_id=message_id or "",
+            auftrag=auftrag, message_id=message_id or "",
         )
     except Exception:
         logger.exception(
@@ -193,6 +193,19 @@ def _angebot_empfaenger_email(angebot):
     if ansprechpartner and ansprechpartner.email:
         return ansprechpartner.email
     return _empfaenger_email(angebot.deal)
+
+
+def _auftrag_ansprechpartner(auftrag):
+    """Analog zu _angebot_ansprechpartner (siehe dort) fuer Auftrag."""
+    return auftrag.ansprechpartner or auftrag.deal.kontakt
+
+
+def _auftrag_empfaenger_email(auftrag):
+    """Analog zu _angebot_empfaenger_email (siehe dort) fuer Auftrag."""
+    ansprechpartner = auftrag.ansprechpartner
+    if ansprechpartner and ansprechpartner.email:
+        return ansprechpartner.email
+    return _empfaenger_email(auftrag.deal)
 
 
 def musterversand_abgeschlossen(packschein):
@@ -747,6 +760,80 @@ def angebot_versand_senden(angebot):
     _mail_protokollieren(
         deal=deal, mailtyp="angebot_versand", empfaenger=empfaenger, betreff=betreff, erfolg=True,
         angebot=angebot,
+    )
+    return True, None
+
+
+def auftrag_versand_senden(auftrag):
+    """Verschickt die Auftragsbestätigung (PDF-Anhang) an den Kunden - analog zu
+    angebot_versand_senden (siehe dort), aber fuer einen Direktauftrag OHNE vorheriges
+    Angebot (28.10.2026, auf Wunsch von Björn: "bitte erstelle die möglichkeit sofort einen
+    auftrag zu erstellen (ohne angebot vorweg)").
+
+    Anders als beim Angebot-Versand: KEIN Statuswechsel (ein Auftrag ist bereits bei
+    Erstellung "bestaetigt", siehe Auftrag-Model-Doku) und KEINE Nachfasskette - ein
+    Direktauftrag ist per Definition bereits final entschieden, ein Nachfassen ergibt hier
+    keinen Sinn. Nur versandmail_gesendet_am wird bei Erfolg gesetzt.
+
+    Bewusst OHNE den LUAMO-Markeneinfuehrungsabsatz, den angebot_versand.html/.txt
+    enthaelt (siehe dort): eine Auftragsbestätigung ist nicht zwingend der erste
+    Kundenkontakt mit der Marke, anders als ein Angebot.
+
+    Gibt (erfolg: bool, fehlermeldung: str|None) zurueck."""
+    deal = auftrag.deal
+    empfaenger = _auftrag_empfaenger_email(auftrag)
+
+    if not empfaenger:
+        meldung = "keine E-Mail-Adresse für Firma/Ansprechpartner hinterlegt"
+        logger.warning(
+            "Kein Empfaenger (E-Mail) fuer Auftrag-Versandmail gefunden (Auftrag %s, Deal %s)",
+            auftrag.nummer, deal.pk,
+        )
+        _mail_protokollieren(
+            deal=deal, mailtyp="auftrag_versand", empfaenger="", betreff="",
+            erfolg=False, fehlermeldung=meldung, auftrag=auftrag,
+        )
+        return False, meldung
+
+    sprache = auftrag.sprache
+    if sprache == "en":
+        betreff = f"Your order confirmation from ECKO-PACK ({auftrag.nummer})"
+    else:
+        betreff = f"Ihre Auftragsbestätigung von ECKO-PACK ({auftrag.nummer})"
+
+    kontext = {
+        "auftrag": auftrag,
+        "deal": deal,
+        "firma": deal.firma,
+        "ansprechpartner": _auftrag_ansprechpartner(auftrag),
+        "sprache": sprache,
+        "site_url": SITE_URL,
+        "logo_url": f"{SITE_URL}/static/img/eckopack-logo.png",
+    }
+    text_body = render_to_string("vertrieb/email/auftrag_versand.txt", kontext)
+    html_body = render_to_string("vertrieb/email/auftrag_versand.html", kontext)
+
+    try:
+        auftrag_pdf_bytes = pdf.auftrag_pdf_erzeugen(auftrag)
+        mail = EmailMultiAlternatives(betreff, text_body, settings.DEFAULT_FROM_EMAIL, [empfaenger])
+        mail.attach_alternative(html_body, "text/html")
+        mail.attach(f"{auftrag.nummer}.pdf", auftrag_pdf_bytes, "application/pdf")
+        mail.send(fail_silently=False)
+    except Exception as exc:
+        logger.exception(
+            "Auftrag-Versandmail (inkl. PDF) konnte nicht gesendet werden (Auftrag %s)", auftrag.nummer,
+        )
+        _mail_protokollieren(
+            deal=deal, mailtyp="auftrag_versand", empfaenger=empfaenger, betreff=betreff,
+            erfolg=False, fehlermeldung=str(exc), auftrag=auftrag,
+        )
+        return False, str(exc)
+
+    auftrag.versandmail_gesendet_am = timezone.now()
+    auftrag.save(update_fields=["versandmail_gesendet_am"])
+    _mail_protokollieren(
+        deal=deal, mailtyp="auftrag_versand", empfaenger=empfaenger, betreff=betreff, erfolg=True,
+        auftrag=auftrag,
     )
     return True, None
 

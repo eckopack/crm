@@ -8,6 +8,7 @@
             Deal: <a href="{{ packschein.deal.get_absolute_url }}">{{ packschein.deal.titel }}</a>
             · Firma: <a href="{{ packschein.deal.firma.get_absolute_url }}">{{ packschein.deal.firma.name }}</a>
             {% if packschein.angebot %}· Angebot: <a href="{{ packschein.angebot.get_absolute_url }}">{{ packschein.angebot.nummer }}</a>{% endif %}
+            {% if packschein.auftrag %}· Auftrag: <a href="{{ packschein.auftrag.get_absolute_url }}">{{ packschein.auftrag.nummer }}</a>{% endif %}
         </div>
         <span class="badge text-bg-light border">{{ packschein.get_status_display }}</span>
         {% if packschein.vollstaendig_gepackt %}

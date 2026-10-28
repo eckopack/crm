@@ -727,6 +727,57 @@ def angebot_pdf_erzeugen(angebot):
     )
 
 
+def auftrag_pdf_erzeugen(auftrag):
+    """Analog zu angebot_pdf_erzeugen (siehe dort) fuer einen Direktauftrag ohne
+    vorheriges Angebot (28.10.2026, auf Wunsch von Björn). Gleiche Spalten-/Summenlogik,
+    nur Titel/Bezeichnung passend zur Auftragsbestätigung statt zum Angebot - kein
+    "Gültig bis" (ein Auftrag kennt keine Angebotsgültigkeit, er ist bereits final)."""
+    sprache = auftrag.sprache
+    deal = auftrag.deal
+    firma = deal.firma
+    empfaenger_zeilen = _empfaenger_zeilen(firma, deal.kontakt, sprache)
+    if sprache == "en":
+        titel = "ORDER CONFIRMATION"
+        meta_zeilen = [
+            ("Order No.", auftrag.nummer),
+            ("Date", _datum(auftrag.datum, sprache)),
+        ]
+        spalten = [
+            ("No.", 32, "l"), ("Art. No.", 65, "l"), ("Description", 122.5, "l"), ("Qty", 55, "r"),
+            ("Unit", 55, "r"), ("Unit Price", 70, "r"), ("Total", 68, "r"),
+        ]
+        summen_label = "Total (net, plus applicable VAT)"
+        notizen_titel = "Terms" if auftrag.notizen else None
+    else:
+        titel = "AUFTRAGSBESTÄTIGUNG"
+        meta_zeilen = [
+            ("Auftragsnummer", auftrag.nummer),
+            ("Datum", _datum(auftrag.datum)),
+        ]
+        spalten = [
+            ("Pos.", 32, "l"), ("Artikel-Nr.", 65, "l"), ("Bezeichnung", 122.5, "l"), ("Menge", 55, "r"),
+            ("Einheit", 55, "r"), ("Einzelpreis", 70, "r"), ("Gesamt", 68, "r"),
+        ]
+        summen_label = "Gesamtsumme (netto, zzgl. gesetzl. USt.)"
+        notizen_titel = "Konditionen" if auftrag.notizen else None
+
+    fusshinweis = _FUSSHINWEIS_EXWORKS_EN if sprache == "en" else _FUSSHINWEIS_EXWORKS_DE
+
+    zeilen = []
+    for p in auftrag.positionen.all():
+        einheit_text = _EINHEIT_LABEL_EN.get(p.einheit, p.get_einheit_display()) if sprache == "en" else p.get_einheit_display()
+        artikelnummer = p.artikel.artikelnummer if p.artikel_id else "–"
+        zeilen.append([p.position, artikelnummer, p.bezeichnung, _menge(p.menge, sprache), einheit_text,
+                        _eur_praezise(p.einzelpreis, sprache), _eur(p.gesamtpreis, sprache)])
+    summenzeilen = [(summen_label, _eur(auftrag.gesamtsumme, sprache))]
+    return _dokument_pdf_bytes(
+        titel=titel, nummer=auftrag.nummer, empfaenger_zeilen=empfaenger_zeilen,
+        meta_zeilen=meta_zeilen, spalten=spalten, zeilen=zeilen, summenzeilen=summenzeilen,
+        notizen_titel=notizen_titel, notizen_text=auftrag.notizen,
+        fusshinweis=fusshinweis, sprache=sprache,
+    )
+
+
 def lieferschein_pdf_erzeugen(lieferschein):
     """sprache=lieferschein.sprache (18.10.2026, wie Angebot.sprache): übersetzt Briefpapier,
     Überschriften/Spaltenköpfe, Zahlen-/Datumsformat und den Fußhinweis. Die Vorbefüllung des

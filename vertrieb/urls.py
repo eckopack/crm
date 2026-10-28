@@ -53,6 +53,15 @@ urlpatterns = [
     path("angebote/<int:pk>/versenden/", views.angebot_versand_senden_view, name="angebot_versand"),
     path("angebote/<int:pk>/ablehnen/", views.angebot_ablehnen, name="angebot_ablehnen"),
 
+    path("auftraege/", views.AuftragListView.as_view(), name="auftrag_list"),
+    path("auftraege/neu/", views.auftrag_erstellen, name="auftrag_create"),
+    path("auftraege/<int:pk>/", views.AuftragDetailView.as_view(), name="auftrag_detail"),
+    path("auftraege/<int:pk>/bearbeiten/", views.auftrag_bearbeiten, name="auftrag_update"),
+    path("auftraege/<int:pk>/loeschen/", views.AuftragDeleteView.as_view(), name="auftrag_delete"),
+    path("auftraege/<int:pk>/pdf/", views.auftrag_pdf_download, name="auftrag_pdf"),
+    path("auftraege/<int:pk>/versenden/", views.auftrag_versand_senden_view, name="auftrag_versand"),
+    path("auftraege/<int:pk>/stornieren/", views.auftrag_stornieren, name="auftrag_stornieren"),
+
     path("rahmenvereinbarungen/", views.RahmenvereinbarungListView.as_view(), name="rahmenvereinbarung_list"),
     path("rahmenvereinbarungen/neu/", views.rahmenvereinbarung_erstellen, name="rahmenvereinbarung_create"),
     path("rahmenvereinbarungen/<int:pk>/", views.RahmenvereinbarungDetailView.as_view(), name="rahmenvereinbarung_detail"),

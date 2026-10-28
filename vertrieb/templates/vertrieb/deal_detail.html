@@ -123,6 +123,22 @@
         </div>
         <div class="card mb-3">
             <div class="card-header d-flex justify-content-between">
+                <span class="fw-semibold">Aufträge <span class="small text-muted">(ohne Angebot)</span></span>
+                <a href="{% url 'vertrieb:auftrag_create' %}?deal={{ deal.pk }}" class="btn btn-sm btn-outline-primary">+ Auftrag</a>
+            </div>
+            <ul class="list-group list-group-flush">
+                {% for a in deal.auftraege.all %}
+                <li class="list-group-item d-flex justify-content-between">
+                    <a href="{{ a.get_absolute_url }}">{{ a.nummer }}</a>
+                    <span>{{ a.get_status_display }} · {{ a.gesamtsumme|floatformat:2 }} €</span>
+                </li>
+                {% empty %}
+                <li class="list-group-item text-muted">Noch keine Aufträge erstellt.</li>
+                {% endfor %}
+            </ul>
+        </div>
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between">
                 <span class="fw-semibold">Aktivitäten</span>
                 <a href="{% url 'vertrieb:aktivitaet_create' %}?deal={{ deal.pk }}" class="btn btn-sm btn-outline-primary">+ Aktivität</a>
             </div>
