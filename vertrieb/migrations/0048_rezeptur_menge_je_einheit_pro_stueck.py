@@ -32,13 +32,41 @@
 # andernfalls bricht die Migration hart ab, statt eine ggf. seitdem von Hand geänderte
 # Rezeptur-Zeile stillschweigend zu überschreiben (siehe Migration 0032/0040, dieselbe
 # Vorsicht: lieber ein fehlgeschlagener Deploy als eine unbemerkt falsche Materialmenge).
+#
+# NACHTRAG 30.10.2026 (erster Deploy-Versuch ist mit genau diesem Sicherheitscheck
+# gescheitert und hat den App-Start blockiert, bis Render automatisch auf den vorherigen
+# Stand zurückgefallen ist - kein Datenschaden, aber kurzzeitig nicht ausgerollt): LUA-
+# MUSTER-STROH(-EN) hatten in der Live-DB tatsächlich KEIN verpackungseinheit_stk gesetzt,
+# obwohl Migration 0032 es dort einmalig auf 50 gesetzt hatte ("Z. B. 500 bei einem 500er-
+# Schlauchbeutel... LUA-MUSTER-STROH(-EN) haben verpackungseinheit_stk NICHT gesetzt...").
+# Vermutung [Wahrscheinlich]: der bei jedem Deploy laufende Befehl import_artikelstamm
+# überschreibt Artikel-Felder aus der Excel-Stammdatei, die für dieses Feld bei diesen
+# beiden Mustervarianten keinen Wert trägt, und setzt es dadurch bei jedem Neustart
+# stillschweigend wieder auf leer zurück - eine eigene, von dieser Migration unabhängige
+# Baustelle (siehe PR-Beschreibung), die hier NICHT mitbehoben wird. Diese Migration setzt
+# das Feld deshalb direkt vor der eigentlichen Korrektur erneut auf den aus Migration 0032
+# bekannten Wert (50 Stück, siehe Artikel-Bezeichnung "50 Stück"/"50 pcs"), statt erneut
+# hart abzubrechen - ein für diese beiden Artikel bereits einmal korrekt gesetzter und seit
+# dem erstmaligen Produktiv-Einsatz nur durch den Import wieder verlorener Wert ist kein
+# Fall für "bitte manuell prüfen", sondern eine bekannte, dokumentierte Korrektur.
 from decimal import Decimal
 
 from django.db import migrations
 
+MUSTERKARTON_VERPACKUNGSEINHEIT_NACHTRAG = {
+    "LUA-MUSTER-STROH": 50,
+    "LUA-MUSTER-STROH-EN": 50,
+}
+
 
 def vorwaerts(apps, schema_editor):
+    Artikel = apps.get_model("vertrieb", "Artikel")
     Rezeptur = apps.get_model("vertrieb", "Rezeptur")
+
+    for nr, stk in MUSTERKARTON_VERPACKUNGSEINHEIT_NACHTRAG.items():
+        Artikel.objects.filter(
+            artikelnummer=nr, verpackungseinheit_stk__isnull=True,
+        ).update(verpackungseinheit_stk=stk)
 
     ohne_verpackungseinheit = []
     abweichend = []
