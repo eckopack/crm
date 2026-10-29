@@ -104,12 +104,54 @@
         {% endfor %}
         </tbody>
         <tfoot>
+        {% if angebot.frachtkosten or angebot.verpackungskosten %}
+        <tr>
+            <td colspan="6" class="text-end">Zwischensumme Positionen (netto)</td>
+            <td>{{ angebot.gesamtsumme|floatformat:2 }} €</td>
+        </tr>
+        {% if angebot.frachtkosten %}
+        <tr>
+            <td colspan="6" class="text-end">Fracht (netto)</td>
+            <td>{{ angebot.frachtkosten|floatformat:2 }} €</td>
+        </tr>
+        {% endif %}
+        {% if angebot.verpackungskosten %}
+        <tr>
+            <td colspan="6" class="text-end">Verpackung (netto)</td>
+            <td>{{ angebot.verpackungskosten|floatformat:2 }} €</td>
+        </tr>
+        {% endif %}
+        <tr class="fw-bold">
+            <td colspan="6" class="text-end">Gesamtbetrag (netto)</td>
+            <td>{{ angebot.gesamtbetrag|floatformat:2 }} €</td>
+        </tr>
+        {% else %}
         <tr class="fw-bold">
             <td colspan="6" class="text-end">Gesamtsumme (netto)</td>
             <td>{{ angebot.gesamtsumme|floatformat:2 }} €</td>
         </tr>
+        {% endif %}
         </tfoot>
     </table>
+</div>
+
+<div class="card mb-3" style="max-width:420px;">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span class="fw-semibold">Fracht &amp; Verpackung</span>
+        <form method="post" action="{% url 'vertrieb:angebot_fracht_berechnen' angebot.pk %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-outline-secondary">Neu berechnen</button>
+        </form>
+    </div>
+    <ul class="list-group list-group-flush">
+        <li class="list-group-item"><strong>Frachtkosten:</strong> {{ angebot.frachtkosten|floatformat:2 }} €</li>
+        <li class="list-group-item"><strong>Verpackungskosten:</strong> {{ angebot.verpackungskosten|floatformat:2 }} €</li>
+    </ul>
+    <div class="card-body small text-muted">
+        "Neu berechnen" ermittelt die Werte aus den Positionen (Menge ÷ Einheiten je Palette
+        am Artikel, aufgerundet, × Kostensatz je Palette) und überschreibt die Felder hier -
+        danach frei über "Bearbeiten" anpassbar.
+    </div>
 </div>
 
 {% if angebot.notizen %}

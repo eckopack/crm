@@ -508,6 +508,66 @@ def _summentabelle(zeilen, fett_letzte=True):
 _FUSSHINWEIS_EXWORKS_DE = "Alle Preise verstehen sich Ex-Works (ab Lager), zuzüglich Verpackung und Fracht."
 _FUSSHINWEIS_EXWORKS_EN = "All prices are Ex Works (ex warehouse), plus packaging and freight."
 
+# Fracht-/Verpackungskosten-Varianten des Fußhinweises (28.10.2026, auf Wunsch von Björn:
+# Fracht/Verpackung werden jetzt, wo möglich, als eigene Summenzeile ausgewiesen statt nur
+# pauschal im obigen Fußhinweis erwähnt zu werden - siehe angebot_pdf_erzeugen/
+# auftrag_pdf_erzeugen sowie Angebot/Auftrag.fracht_verpackung_vollstaendig). Verwendet NUR
+# dort, NICHT in artikelliste_pdf_erzeugen (reine Preisliste ohne konkrete Bestellmenge, da
+# bleibt der ursprüngliche Pauschal-Hinweis oben unverändert). Sind für ALLE Positionen
+# Palettendaten hinterlegt, entfällt der "zuzüglich"-Zusatz (steht ja explizit oben in der
+# Summe); ist das nur für EINEN TEIL der Positionen der Fall, bleibt der Zusatz für die
+# übrigen Positionen bestehen, damit kein falscher Eindruck "keine weitere Fracht" entsteht.
+_FUSSHINWEIS_EXWORKS_OHNE_ZUSATZ_DE = "Alle Preise verstehen sich Ex-Works (ab Lager)."
+_FUSSHINWEIS_EXWORKS_OHNE_ZUSATZ_EN = "All prices are Ex Works (ex warehouse)."
+_FUSSHINWEIS_EXWORKS_TEILWEISE_DE = (
+    "Alle Preise verstehen sich Ex-Works (ab Lager). Fracht und Verpackung sind für die "
+    "oben kalkulierten Positionen bereits berücksichtigt; für weitere Positionen ohne "
+    "hinterlegte Palettenangaben zuzüglich."
+)
+_FUSSHINWEIS_EXWORKS_TEILWEISE_EN = (
+    "All prices are Ex Works (ex warehouse). Freight and packaging are already included "
+    "for the positions calculated above; for any further positions without stored pallet "
+    "data, plus freight and packaging."
+)
+
+
+def _fracht_verpackung_zeilen(dokument, sprache, summen_label):
+    """Baut die Summenzeilen und den passenden Ex-Works-Fusshinweis für ein Angebot/Auftrag -
+    gemeinsam genutzt von angebot_pdf_erzeugen und auftrag_pdf_erzeugen. Sind weder
+    Frachtkosten noch Verpackungskosten gesetzt (0/None), bleibt alles wie bisher (nur die
+    Gesamtsumme-Zeile, Standard-Fusshinweis). Sonst kommt vor der Gesamtsumme eine
+    Zwischensumme der reinen Positionen sowie je eine Zeile für Fracht/Verpackung dazu, und
+    die Gesamtsumme wird zu Angebot/Auftrag.gesamtbetrag (inkl. Fracht/Verpackung). Welcher
+    Fusshinweis-Text verwendet wird, hängt von fracht_verpackung_vollstaendig ab (siehe
+    Angebot/Auftrag-Model-Doku) - gibt (summenzeilen: list[tuple], fusshinweis: str) zurück."""
+    fracht = dokument.frachtkosten or 0
+    verpackung = dokument.verpackungskosten or 0
+    if not fracht and not verpackung:
+        fusshinweis = _FUSSHINWEIS_EXWORKS_EN if sprache == "en" else _FUSSHINWEIS_EXWORKS_DE
+        return [(summen_label, _eur(dokument.gesamtsumme, sprache))], fusshinweis
+
+    if sprache == "en":
+        zwischensumme_label, fracht_label, verpackung_label = (
+            "Subtotal (net)", "Freight (net)", "Packaging (net)",
+        )
+    else:
+        zwischensumme_label, fracht_label, verpackung_label = (
+            "Zwischensumme Positionen (netto)", "Fracht (netto)", "Verpackung (netto)",
+        )
+
+    summenzeilen = [(zwischensumme_label, _eur(dokument.gesamtsumme, sprache))]
+    if fracht:
+        summenzeilen.append((fracht_label, _eur(fracht, sprache)))
+    if verpackung:
+        summenzeilen.append((verpackung_label, _eur(verpackung, sprache)))
+    summenzeilen.append((summen_label, _eur(dokument.gesamtbetrag, sprache)))
+
+    if dokument.fracht_verpackung_vollstaendig:
+        fusshinweis = _FUSSHINWEIS_EXWORKS_OHNE_ZUSATZ_EN if sprache == "en" else _FUSSHINWEIS_EXWORKS_OHNE_ZUSATZ_DE
+    else:
+        fusshinweis = _FUSSHINWEIS_EXWORKS_TEILWEISE_EN if sprache == "en" else _FUSSHINWEIS_EXWORKS_TEILWEISE_DE
+    return summenzeilen, fusshinweis
+
 
 def _dokument_pdf_bytes(*, titel, nummer, empfaenger_zeilen, meta_zeilen, spalten, zeilen,
                          summenzeilen=None, notizen_titel=None, notizen_text=None, fusshinweis=None,
@@ -710,15 +770,13 @@ def angebot_pdf_erzeugen(angebot):
         summen_label = "Gesamtsumme (netto, zzgl. gesetzl. USt.)"
         notizen_titel = "Konditionen" if angebot.notizen else None
 
-    fusshinweis = _FUSSHINWEIS_EXWORKS_EN if sprache == "en" else _FUSSHINWEIS_EXWORKS_DE
-
     zeilen = []
     for p in angebot.positionen.all():
         einheit_text = _EINHEIT_LABEL_EN.get(p.einheit, p.get_einheit_display()) if sprache == "en" else p.get_einheit_display()
         artikelnummer = p.artikel.artikelnummer if p.artikel_id else "–"
         zeilen.append([p.position, artikelnummer, p.bezeichnung, _menge(p.menge, sprache), einheit_text,
                         _eur_praezise(p.einzelpreis, sprache), _eur(p.gesamtpreis, sprache)])
-    summenzeilen = [(summen_label, _eur(angebot.gesamtsumme, sprache))]
+    summenzeilen, fusshinweis = _fracht_verpackung_zeilen(angebot, sprache, summen_label)
     return _dokument_pdf_bytes(
         titel=titel, nummer=angebot.nummer, empfaenger_zeilen=empfaenger_zeilen,
         meta_zeilen=meta_zeilen, spalten=spalten, zeilen=zeilen, summenzeilen=summenzeilen,
@@ -761,15 +819,13 @@ def auftrag_pdf_erzeugen(auftrag):
         summen_label = "Gesamtsumme (netto, zzgl. gesetzl. USt.)"
         notizen_titel = "Konditionen" if auftrag.notizen else None
 
-    fusshinweis = _FUSSHINWEIS_EXWORKS_EN if sprache == "en" else _FUSSHINWEIS_EXWORKS_DE
-
     zeilen = []
     for p in auftrag.positionen.all():
         einheit_text = _EINHEIT_LABEL_EN.get(p.einheit, p.get_einheit_display()) if sprache == "en" else p.get_einheit_display()
         artikelnummer = p.artikel.artikelnummer if p.artikel_id else "–"
         zeilen.append([p.position, artikelnummer, p.bezeichnung, _menge(p.menge, sprache), einheit_text,
                         _eur_praezise(p.einzelpreis, sprache), _eur(p.gesamtpreis, sprache)])
-    summenzeilen = [(summen_label, _eur(auftrag.gesamtsumme, sprache))]
+    summenzeilen, fusshinweis = _fracht_verpackung_zeilen(auftrag, sprache, summen_label)
     return _dokument_pdf_bytes(
         titel=titel, nummer=auftrag.nummer, empfaenger_zeilen=empfaenger_zeilen,
         meta_zeilen=meta_zeilen, spalten=spalten, zeilen=zeilen, summenzeilen=summenzeilen,
