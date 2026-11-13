@@ -154,6 +154,36 @@
 # Artikelnummern vorfindet und update_or_create() die bestehenden Zeilen trifft statt
 # Duplikate mit der alten "-150"-Nummer anzulegen (siehe import_artikelstamm.py-
 # Docstring: Abgleich erfolgt über das Feld Artikelnummer).
+#
+# NACHTRAG 13.11.2026: Trotz der Vorab-Umbenennung sind beim Deploy dieser Änderung
+# kurzzeitig 8 Duplikate mit der alten "-150"-Artikelnummer live angelegt worden
+# (pks 39-46, falscher Default-Materialtyp, da dieses Importskript "materialtyp"
+# gar nicht setzt). Ursache: ein zweiter, offenbar bereits vor dem PR-Merge
+# gequeuter/ausgelöster Render-Deploy auf dem ALTEN main-Stand (noch mit der alten
+# Masterdatei "20261020...", die ja "-150" enthält) lief ca. 1 Minute vor dem
+# eigentlichen Merge-Deploy und fand die bereits umbenannten Artikel nicht mehr -
+# get_or_create() hat sie unter der alten Nummer neu angelegt, statt sie (weil nicht
+# mehr vorhanden) einfach zu ignorieren. Die 8 Duplikate wurden anschließend live im
+# Admin gelöscht (mit Björn abgestimmt, keine Lagerbestände/Verknüpfungen betroffen).
+# Lehre: Bei künftigen Artikelnummer-Umbenennungen im CRM vor einem PR-Merge prüfen,
+# ob in Render noch ein älterer Deploy in der Warteschlange hängt bzw. keinen
+# manuellen Redeploy eines alten Commits auslösen, solange eine Umbenennung nur
+# live (noch nicht im Master-Excel) vorgenommen wurde.
+#
+# ARTIKELSTAMM-IMPORT, STAND 13.11.2026b (zweite Änderung desselben Tages, auf
+# Wunsch von Björn: die B2B-Preisstaffeln ("Mindestmenge X (Stk)"-Spalten) der 4
+# deutschen Großbesteck-Artikel LUA-GB-GABEL/LOEFFEL/MESSER/MIX-090/-120 waren noch
+# auf den alten 150er-Karton zugeschnitten - alle Mengen-Schwellen (150, 1.050,
+# 3.000, 10.050, 50.100, 100.050, 200.100, 300.000 Stück) sind exakte Vielfache von
+# 150 (= 1/7/20/67/334/667/1334/2000 Kartons). Reine Mengenkalkulation: Kartonanzahl
+# je Rabattstufe bleibt gleich, nur mit neuer Kartongröße multipliziert (Faktor 0,6
+# bei 90er-Karton: 90/630/1.800/6.030/30.060/60.030/120.060/180.000; Faktor 0,8 bei
+# 120er-Karton/Messer: 120/840/2.400/8.040/40.080/80.040/160.080/240.000). Die
+# Preise je Stufe (0,0995 bis 0,139 €/Stk) sind UNVERÄNDERT. Betrifft nur die 4
+# DE/Standard-Artikel, nicht die Amazon/EN-Varianten (die haben keine Preisstaffel,
+# nur einen Flatrate-Verkaufspreis). Wurde vorab live im CRM nachgezogen, diese
+# Datei zieht die Masterdatei nach, damit der nächste Deploy dieselben Werte
+# vorfindet statt sie zu überschreiben.
 
 services:
   - type: web
