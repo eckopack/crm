@@ -135,6 +135,25 @@
 # Start erneut aus der hier verlinkten Excel-Datei importiert (siehe Kommentar oben,
 # 14.10.2026) - Bezeichnungsänderungen MÜSSEN also immer hier in der Mastertabelle
 # gemacht werden, nie nur live im CRM.
+#
+# ARTIKELSTAMM-IMPORT, STAND 13.11.2026 (auf Wunsch von Björn: GUTOM hat die
+# Kartongrößen für Großbesteck geändert - "Gabeln (sortenrein): 90 Stück, Löffel
+# (sortenrein): 90 Stück, Messer (sortenrein): 120 Stück, Mixkarton: 90 Stück (je 30
+# Gabeln, Löffel und Messer)", vorher einheitlich 150 Stück/Karton bei allen vieren).
+# Neue Masterdatei data/20261113_LUAMO_Masterartikelstamm.xlsx (weiterhin 36 Zeilen)
+# ändert bei den 8 betroffenen Zeilen (LUA-GB-GABEL/LOEFFEL/MESSER/MIX-150 ×DE/EN):
+# "Verpackung Stk" 150 -> 90 (Gabel/Löffel/Mix) bzw. 120 (Messer), Artikelnummer
+# "-150"/"-150-EN" -> "-090"/"-090-EN" bzw. "-120"/"-120-EN" (Björn hat dieses
+# Namensschema im Chat ausdrücklich bestätigt), Bezeichnung/Bezeichnung (Englisch)
+# entsprechend von "150er-Karton"/"Box of 150" auf "90er-Karton"/"Box of 90" bzw.
+# "120er-Karton"/"Box of 120". Einkaufspreis/Verkaufspreis (DE und Amazon/EN) sind
+# UNVERÄNDERT gelassen - Björns Preis-/Mengenstaffel-Entscheidungen dazu stehen noch
+# aus (siehe Chat), diese Datei deckt ausschließlich die bestätigte Kartongrößen-
+# und Namensänderung ab. Die Artikelnummer-Umbenennung wurde VORAB bereits live im
+# CRM nachgezogen (gleiche Werte wie hier), damit der nächste Deploy dieselben
+# Artikelnummern vorfindet und update_or_create() die bestehenden Zeilen trifft statt
+# Duplikate mit der alten "-150"-Nummer anzulegen (siehe import_artikelstamm.py-
+# Docstring: Abgleich erfolgt über das Feld Artikelnummer).
 
 services:
   - type: web
@@ -151,7 +170,7 @@ services:
     startCommand: >
       python manage.py migrate &&
       python manage.py beispieldaten &&
-      python manage.py import_artikelstamm data/20261020_LUAMO_Masterartikelstamm.xlsx &&
+      python manage.py import_artikelstamm data/20261113_LUAMO_Masterartikelstamm.xlsx &&
       gunicorn eckopack_crm.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: DJANGO_SECRET_KEY
