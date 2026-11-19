@@ -175,6 +175,19 @@ STORAGES = {
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
 
+# Uploaded files (Eingangsrechnung.rechnung_datei) - 19.11.2026, auf Wunsch von Björn
+# (Eingangsrechnungen-Modul). Gleiches Muster wie oben bei DJANGO_SQLITE_PATH: liegt auf
+# Render auf der persistenten Disk (siehe render.yaml, Mount-Pfad /var/data), sonst
+# landen hochgeladene PDFs im normalen Projektordner und sind nach jedem Deploy/Neustart
+# weg, weil nur /var/data den Neustart übersteht. Bewusst NEU über os.environ statt über
+# die oben im DATABASES-Block gesetzte Variable _sqlite_path gelesen: die existiert nur im
+# SQLite-Zweig (else-Branch) - im (aktuell ungenutzten) Postgres-Zweig gäbe es sie gar
+# nicht, das hätte einen NameError provoziert. Lokal/Dev ohne gesetzte Variable landet es
+# wie gehabt im Projektordner.
+_media_sqlite_path = os.environ.get("DJANGO_SQLITE_PATH")
+MEDIA_URL = "media/"
+MEDIA_ROOT = (Path(_media_sqlite_path).parent / "media") if _media_sqlite_path else BASE_DIR / "media"
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Login/Logout

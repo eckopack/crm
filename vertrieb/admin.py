@@ -1,12 +1,14 @@
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin
+from django.urls import reverse
 from django.utils import timezone
+from django.utils.html import format_html
 
 from .models import (
     Aktivitaet, Angebot, AngebotNachfassStatus, AngebotNachfassVorlage, AngebotPosition,
-    Artikel, Auftrag, AuftragPosition, Charge, Deal, Firma, Kontakt, Lagerbewegung,
-    MitarbeiterSprache,
+    Artikel, Auftrag, AuftragPosition, Charge, Deal, Eingangsrechnung, Firma, Kontakt,
+    Lagerbewegung, MitarbeiterSprache,
     MusterboxNachfassStatus, MusterboxNachfassVorlage, Preisstaffel, Produktionsbericht,
     Produktionsbuchung, Rechnung, RechnungZahlung, Rezeptur,
 )
@@ -332,6 +334,40 @@ class ProduktionsberichtAdmin(admin.ModelAdmin):
         if uebersprungen:
             meldung += f" {uebersprungen} war(en) bereits anonymisiert und wurde(n) übersprungen."
         self.message_user(request, meldung)
+
+
+@admin.register(Eingangsrechnung)
+class EingangsrechnungAdmin(admin.ModelAdmin):
+    """19.11.2026, auf Wunsch von Björn (Eingangsrechnungen-Modul): bewusst einfacher
+    gehalten als die übrigen Admin-Klassen hier - solange es keine eigene Oberfläche
+    (views.py) gibt, ist der Admin die einzige Erfassungsmaske. list_display zeigt die
+    für die Fälligkeits-/Skonto-Überwachung wichtigsten Spalten zuerst."""
+
+    list_display = (
+        "rechnungsnummer", "lieferant", "rechnungsdatum", "faelligkeitsdatum",
+        "betrag_brutto", "status", "ist_ueberfaellig_anzeige", "kostenstelle", "sachkonto",
+    )
+    list_filter = ("status", "quelle", "typ", "kostenstelle")
+    search_fields = ("rechnungsnummer", "lieferant__name", "bestellnummer", "buchungstext")
+    date_hierarchy = "rechnungsdatum"
+    readonly_fields = ("quelle", "email_message_id", "erstellt_am", "aktualisiert_am", "datei_link")
+    autocomplete_fields = ("lieferant",)
+
+    @admin.display(boolean=True, description="Überfällig")
+    def ist_ueberfaellig_anzeige(self, obj):
+        return obj.ist_ueberfaellig
+
+    @admin.display(description="Datei (geschützter Link)")
+    def datei_link(self, obj):
+        # 19.11.2026: bewusst ein eigener Link statt des Django-Standard-Links auf
+        # rechnung_datei.url (MEDIA_URL) - siehe views.eingangsrechnung_datei_download.
+        # Der Standard-Link wäre ohnehin tot (kein urlpattern serviert MEDIA_URL direkt),
+        # da Lieferantenrechnungen oft Bankdaten enthalten und nicht unauthentifiziert
+        # abrufbar sein sollen.
+        if not obj.pk or not obj.rechnung_datei:
+            return "–"
+        url = reverse("vertrieb:eingangsrechnung_datei", args=[obj.pk])
+        return format_html('<a href="{}" target="_blank">Datei öffnen</a>', url)
 
 
 @admin.register(RechnungZahlung)

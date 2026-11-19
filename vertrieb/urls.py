@@ -147,4 +147,9 @@ urlpatterns = [
         "produktionsberichte/<int:pk>/pdf/", views.produktionsbericht_pdf_download,
         name="produktionsbericht_pdf",
     ),
+
+    path(
+        "eingangsrechnungen/<int:pk>/datei/", views.eingangsrechnung_datei_download,
+        name="eingangsrechnung_datei",
+    ),
 ]
