@@ -1470,6 +1470,274 @@ class RechnungPosition(models.Model):
         return self.nettobetrag + self.steuerbetrag
 
 
+# ---------------------------------------------------------------------------
+# Eingangsrechnungen (Lieferanten-/Purchase-Rechnungen) - 19.11.2026, auf Wunsch von
+# Björn: strukturierte Ablage, Daten-Erfassung, Faelligkeits-/Skonto-Ueberwachung und
+# Vorbereitung fuer den Steuerberater, als eigenstaendiges CRM-Modul statt in Microsoft
+# Business Central (das laeuft nur fuer GUTOM, separate Firma/Mandant, Eileen Paetzel).
+# Bewusst ein eigenes Modell statt Erweiterung von Rechnung oben: Rechnung bildet die
+# Ausgangsrechnungskette ab (Deal->Angebot->Auftrag->Packschein->Lieferschein->Rechnung),
+# Eingangsrechnung hat keinen Bezug zu dieser Kette, sondern zu Firma (Status "Lieferant").
+#
+# Kontenrahmen: SKR03, bestaetigt von Eileen Paetzel (Steuerberatung GUTOM/ECKO-PACK) am
+# 19.11.2026. SACHKONTO_CHOICES unten entspricht woertlich dem von ihr geschickten
+# Kontenplan Ecko-Pack 2026 (Stand 19.11.2026, "nur bebuchte Konten") - inkl. eines
+# offensichtlichen Tippfehlers aus diesem Export (1210 "Reifeisen" statt "Raiffeisen"),
+# bewusst NICHT korrigiert, damit die Liste wortgleich mit dem bleibt, was im Kanzlei-
+# Rechnungswesen-System steht. Konto 957 aus dem Export ohne Bezeichnung wurde
+# ausgelassen. Die Liste enthaelt auch Konten, die fuer Eingangsrechnungen nie in Frage
+# kommen (Kapital, Erloese, Saldovortraege) - bewusst nicht vorgefiltert, damit keine
+# eigentlich passende Auswahl durch eine geratene Vorfilterung verloren geht.
+SACHKONTO_CHOICES = [
+    ("20", "20 - Gew. Schutzrechte, entgeltl. erworben"),
+    ("210", "210 - Maschinen"),
+    ("320", "320 - Pkw"),
+    ("640", "640 - Banking Cirkle S.A. B222.310"),
+    ("641", "641 - iwoca Darlehn"),
+    ("651", "651 - Darl. 4374088"),
+    ("767", "767 - Verb.ggü.typ.stillen Gesellsch.(g.5J)"),
+    ("800", "800 - Gezeichnetes Kapital"),
+    ("820", "820 - Ausstehende Einlage nicht eingefordert"),
+    ("868", "868 - Verlustvortrag vor Verwendung"),
+    ("970", "970 - Sonstige Rückstellungen"),
+    ("977", "977 - Rückstellungen für Abschluss u. Prüfung"),
+    ("980", "980 - Aktive Rechnungsabgrenzung"),
+    ("1200", "1200 - HypoVereinsbank 20541912"),
+    ("1210", "1210 - Volks- und Reifeisen Bank xxx4374088"),
+    ("1360", "1360 - Geldtransit"),
+    ("1362", "1362 - Sammelkonto neue Produktline Marktrausch"),
+    ("1400", "1400 - Forderungen aus L+L"),
+    ("1500", "1500 - Sonstige Vermögensgegenstände"),
+    ("1518", "1518 - Geleistete Anzahlungen 19% Vorsteuer"),
+    ("1539", "1539 - Umsatzsteuerforderungen frühere Jahre"),
+    ("1548", "1548 - Vorst. in Folgeperiode/-jahr abziehbar"),
+    ("1571", "1571 - Abziehbare Vorsteuer 7%"),
+    ("1574", "1574 - Abziehbare Vorsteuer aus EU-Erwerb 19%"),
+    ("1576", "1576 - Abziehbare Vorsteuer 19%"),
+    ("1590", "1590 - Durchlaufende Posten"),
+    ("1600", "1600 - Verbindlichkeiten aus Lieferungen+Leist."),
+    ("1701", "1701 - Zahlungsplan GUTOM"),
+    ("1702", "1702 - Sonstige Verbindlichkeiten (1-5 J)"),
+    ("1703", "1703 - Sonstige Verbindlichkeiten (g. 5 J)"),
+    ("1705", "1705 - Darlehen (sonstige VB)"),
+    ("1707", "1707 - Darlehen CU"),
+    ("1740", "1740 - Verbindlichkeiten aus Lohn und Gehalt"),
+    ("1742", "1742 - Verbindlichkeiten soziale Sicherheit"),
+    ("1774", "1774 - Umsatzsteuer aus EU-Erwerb 19%"),
+    ("1776", "1776 - Umsatzsteuer 19%"),
+    ("1780", "1780 - Umsatzsteuer-Vorauszahlungen"),
+    ("1790", "1790 - Umsatzsteuerverbindlichkeiten Vorjahr"),
+    ("1792", "1792 - Sonstige Verrechnung"),
+    ("2100", "2100 - Zinsen und ähnliche Aufwendungen"),
+    ("2110", "2110 - Zinsaufwendungen f.kfr.Verbindlichkeit."),
+    ("2120", "2120 - Zinsaufwendungen f.lfr.Verbindlichkeit."),
+    ("2650", "2650 - Sonstige Zinsen und ähnliche Erträge"),
+    ("2742", "2742 - Versich.entschädigung, Schadenersatz"),
+    ("3400", "3400 - Wareneingang 19% Vorsteuer"),
+    ("3425", "3425 - EU-Erwerb 19% Vorst./USt"),
+    ("3800", "3800 - Bezugsnebenkosten"),
+    ("3960", "3960 - Bestandsveränderung RHB-Stoffe/Waren"),
+    ("3980", "3980 - Bestand Waren"),
+    ("4200", "4200 - Messekosten"),
+    ("4360", "4360 - Versicherungen"),
+    ("4380", "4380 - Beiträge"),
+    ("4390", "4390 - Sonstige Abgaben"),
+    ("4396", "4396 - Abzugsf. Verspätungszuschlag/Zwangsgeld"),
+    ("4397", "4397 - Nicht abzf. Verspät.zuschlag/Zwangsgeld"),
+    ("4520", "4520 - Fahrzeug-Versicherungen"),
+    ("4540", "4540 - Fahrzeug-Reparaturen"),
+    ("4575", "4575 - Mietleasing Elektrofahrzeuge/Fahrräder"),
+    ("4600", "4600 - Werbekosten"),
+    ("4650", "4650 - Bewirtungskosten"),
+    ("4730", "4730 - Ausgangsfrachten"),
+    ("4806", "4806 - Wartungskosten für Hard- und Software"),
+    ("4830", "4830 - Abschreibungen auf Sachanlagen"),
+    ("4950", "4950 - Rechts- und Beratungskosten"),
+    ("4957", "4957 - Abschluss- und Prüfungskosten"),
+    ("4964", "4964 - Aufwendungen für Lizenzen, Konzessionen"),
+    ("4970", "4970 - Nebenkosten des Geldverkehrs"),
+    ("4980", "4980 - Sonstiger Betriebsbedarf"),
+    ("8400", "8400 - Erlöse 19% USt"),
+    ("8736", "8736 - Gewährte Skonti 19% USt"),
+    ("9000", "9000 - Saldenvorträge Sachkonten"),
+    ("9008", "9008 - Saldenvorträge Debitoren"),
+    ("9009", "9009 - Saldenvorträge Kreditoren"),
+]
+
+# Kostenstellen: 19.11.2026, auf Wunsch von Björn. ECKO-PACK nutzt laut Eileen Paetzel
+# AKTUELL GAR KEINE Kostenstellen in DATEV - das hier ist ein im Chat mit Björn
+# entworfener DRAFT, an GUTOMs Struktur angelehnt (Eileens Vorschlag), aber auf
+# ECKO-PACKs Geschaeftsbereiche zugeschnitten. Nur 11200 (CU) und 11300 (BG) kommen
+# woertlich von Eileen/GUTOM; alle anderen Codes/Nummern sind von Claude vorgeschlagene
+# Platzhalter nach demselben Nummernschema, NICHT von Eileen bestaetigt - vor dem ersten
+# echten DATEV-Abgleich unbedingt mit ihr verifizieren.
+KOSTENSTELLE_CHOICES = [
+    ("12400", "12400 - Verwaltung allgemein"),
+    ("61100", "61100 - Produktion/Fertigung"),
+    ("61200", "61200 - Einlagerung Rohmaterial/Lager"),
+    ("81000", "81000 - Maschinen"),
+    ("82000", "82000 - Ersatzteile"),
+    ("83000", "83000 - Service"),
+    ("84000", "84000 - Miete/Immobilien"),
+    ("85000", "85000 - Fremdleistung"),
+    ("86000", "86000 - Zubehör/Verbrauchsmaterial"),
+    ("87000", "87000 - Werkzeuge"),
+    ("88000", "88000 - Vertrieb/Verpackungslösungen"),
+    ("62000", "62000 - Marketing Marktrausch"),
+    ("62100", "62100 - Comprisetec (Fertigung/Projekt)"),
+    ("11200", "11200 - CU (Carmen Ungnade-Täuberecht, GF)"),
+    ("11300", "11300 - BG (Björn Gallenkamp, GF / Beratung Gallenkamp GmbH)"),
+    ("11400", "11400 - CB (Cigdem Bizer, GUTOM, Tätigkeit für ECKO-PACK)"),
+    ("11500", "11500 - MK (Marcus Klockenkämper, externer Berater)"),
+    ("40001", "40001 - PKW NMS-EP 200"),
+]
+
+EINGANGSRECHNUNG_STATUS_CHOICES = [
+    ("zu_pruefen", "Zu prüfen"),
+    ("gebucht", "Gebucht"),
+    ("bezahlt", "Bezahlt"),
+    ("storniert", "Storniert"),
+]
+
+EINGANGSRECHNUNG_TYP_CHOICES = [
+    ("rechnung", "Rechnung"),
+    ("gutschrift", "Gutschrift"),
+]
+
+EINGANGSRECHNUNG_QUELLE_CHOICES = [
+    ("manuell", "Manuell erfasst"),
+    ("email_import", "Automatisch aus E-Mail-Postfach"),
+]
+
+
+def eingangsrechnung_upload_pfad(instance, filename):
+    jahr = (instance.rechnungsdatum or timezone.now().date()).year
+    return f"eingangsrechnungen/{jahr}/{filename}"
+
+
+class Eingangsrechnung(models.Model):
+    """Eingangsrechnungen (Lieferanten-/Purchase-Rechnungen) - Gegenstueck zu Rechnung
+    oben, aber ohne jeden Bezug zur Verkaufskette (Deal/Angebot/Auftrag/...). 19.11.2026,
+    auf Wunsch von Björn.
+
+    Sachkonto/Kostenstelle werden bewusst NICHT automatisch vorbelegt, auch nicht bei
+    augenscheinlich eindeutigen Faellen - siehe Chat-Diskussion 19.11.2026: eine falsch
+    geratene Buchung faellt sonst erst Monate spaeter beim Steuerberater auf. Jede
+    Zuordnung bleibt eine manuelle Entscheidung, beide Felder starten leer.
+    """
+
+    lieferant = models.ForeignKey(
+        Firma, verbose_name="Lieferant", on_delete=models.PROTECT, related_name="eingangsrechnungen",
+        help_text="Muss als Firma mit Status \"Lieferant\" angelegt sein.",
+    )
+    rechnungsnummer = models.CharField("Rechnungsnummer", max_length=50)
+    typ = models.CharField(
+        "Rechnung/Gutschrift", max_length=12, choices=EINGANGSRECHNUNG_TYP_CHOICES, default="rechnung"
+    )
+    rechnungsdatum = models.DateField("Rechnungsdatum")
+    faelligkeitsdatum = models.DateField("Fälligkeitsdatum", null=True, blank=True)
+    eingangsdatum = models.DateField("Eingangsdatum (bei uns)", default=timezone.localdate)
+    bestellnummer = models.CharField("Bestellnummer/Auftragsnummer", max_length=100, blank=True)
+    einkaeufer = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="Einkäufer", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="eingangsrechnungen_als_einkaeufer",
+    )
+    kostenstelle = models.CharField(
+        "Kostenstelle", max_length=10, choices=KOSTENSTELLE_CHOICES, blank=True,
+        help_text="ECKO-PACK nutzte bisher keine Kostenstellen - Liste ist ein Draft, siehe Kommentar oben.",
+    )
+    sachkonto = models.CharField(
+        "Sachkonto (SKR03)", max_length=10, choices=SACHKONTO_CHOICES, blank=True,
+        help_text="Bewusst ohne Vorbelegung - manuell zuordnen, im Zweifel mit dem Steuerberater abstimmen.",
+    )
+    betrag_netto = models.DecimalField("Betrag netto (EUR)", max_digits=12, decimal_places=2)
+    frachtkosten = models.DecimalField("Frachtkosten (EUR)", max_digits=12, decimal_places=2, default=0, blank=True)
+    steuersatz = models.DecimalField(
+        "Vorherrschender USt-Satz (%)", max_digits=4, decimal_places=2, choices=STEUERSATZ_CHOICES,
+        null=True, blank=True,
+        help_text="Nur bei einheitlichem Steuersatz befüllen - bei gemischten Sätzen auf einer "
+                   "Rechnung (z. B. 7% + 19%) leer lassen und nur den MwSt.-Betrag unten eintragen.",
+    )
+    mwst_betrag = models.DecimalField("MwSt.-Betrag (EUR)", max_digits=12, decimal_places=2, default=0)
+    betrag_brutto = models.DecimalField(
+        "Betrag brutto (EUR)", max_digits=12, decimal_places=2,
+        help_text="So wie auf der Rechnung ausgewiesen, NICHT aus netto+MwSt. errechnet "
+                   "(Rundungen/Skonti auf der Originalrechnung sollen nicht überschrieben werden).",
+    )
+    skonto_prozent = models.DecimalField("Skonto (%)", max_digits=4, decimal_places=2, null=True, blank=True)
+    skonto_tage = models.PositiveSmallIntegerField("Skonto-Frist (Tage)", null=True, blank=True)
+    zahlungsbedingungen = models.CharField("Zahlungsbedingungen (Freitext)", max_length=200, blank=True)
+    buchungstext = models.CharField("Buchungstext", max_length=300, blank=True)
+    status = models.CharField(
+        "Status", max_length=20, choices=EINGANGSRECHNUNG_STATUS_CHOICES, default="zu_pruefen"
+    )
+    rechnung_datei = models.FileField(
+        "Rechnung (PDF)", upload_to=eingangsrechnung_upload_pfad, blank=True,
+        help_text="Original-PDF für die GoBD-Archivierung - unverändert, wie von Lieferant/E-Mail erhalten.",
+    )
+    quelle = models.CharField("Quelle", max_length=20, choices=EINGANGSRECHNUNG_QUELLE_CHOICES, default="manuell")
+    email_message_id = models.CharField(
+        "E-Mail Message-ID", max_length=100, blank=True, db_index=True,
+        help_text="Nur bei automatischem E-Mail-Import gesetzt, zur Rückverfolgung. Eine Mail kann "
+                   "mehrere Eingangsrechnungen enthalten, Feld ist deshalb NICHT unique.",
+    )
+    geprueft_von = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="Geprüft von", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
+    geprueft_am = models.DateTimeField("Geprüft am", null=True, blank=True)
+    notizen = models.TextField("Notizen", blank=True)
+    erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
+    aktualisiert_am = models.DateTimeField("Aktualisiert am", auto_now=True)
+
+    class Meta:
+        verbose_name = "Eingangsrechnung"
+        verbose_name_plural = "Eingangsrechnungen"
+        ordering = ["-rechnungsdatum", "-erstellt_am"]
+        # Schuetzt gegen doppelte Erfassung derselben Lieferantenrechnung, z. B. falls der
+        # kuenftige automatische E-Mail-Import dieselbe Mail zweimal verarbeitet.
+        constraints = [
+            models.UniqueConstraint(
+                fields=["lieferant", "rechnungsnummer"], name="eingangsrechnung_unique_lieferant_nummer",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.rechnungsnummer} – {self.lieferant.name}"
+
+    @property
+    def ist_ueberfaellig(self):
+        return (
+            self.status in ("zu_pruefen", "gebucht")
+            and self.faelligkeitsdatum is not None
+            and self.faelligkeitsdatum < timezone.localdate()
+        )
+
+    @property
+    def tage_ueberfaellig(self):
+        if not self.ist_ueberfaellig:
+            return 0
+        return (timezone.localdate() - self.faelligkeitsdatum).days
+
+    @property
+    def skonto_frist(self):
+        if self.skonto_tage is None:
+            return None
+        from datetime import timedelta
+        return self.rechnungsdatum + timedelta(days=self.skonto_tage)
+
+    @property
+    def skonto_noch_moeglich(self):
+        frist = self.skonto_frist
+        return frist is not None and timezone.localdate() <= frist
+
+    @property
+    def skonto_betrag(self):
+        if self.skonto_prozent is None:
+            return Decimal("0")
+        return (self.betrag_netto * self.skonto_prozent / Decimal("100")).quantize(Decimal("0.01"))
+
+
 MAILTYP_CHOICES = [
     ("musterversand_bestaetigung", "Musterversand-Bestätigung"),
     ("lieferschein_bestaetigung", "Lieferschein-Versandbestätigung"),

@@ -13,7 +13,7 @@ from django.core.paginator import Paginator
 from django.core.validators import validate_email
 from django.db import models, transaction
 from django.db.models import Sum
-from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.utils import timezone
@@ -38,7 +38,8 @@ from .models import (
     GRAMM_JE_STUECK_TRINKHALM, MUSTERKARTON_ARTIKEL,
     PHASE_STANDARD_WAHRSCHEINLICHKEIT, Aktivitaet, Angebot, AngebotNachfassStatus, Artikel,
     Auftrag,
-    Charge, Deal, EmailVersand, Firma, Kontakt, Lagerbewegung, MATERIALTYPEN_MIT_CHARGENBESTAND,
+    Charge, Deal, Eingangsrechnung, EmailVersand, Firma, Kontakt, Lagerbewegung,
+    MATERIALTYPEN_MIT_CHARGENBESTAND,
     MusterboxNachfassStatus, Packschein, PackscheinPosition, Produktionsbericht,
     Produktionsbuchung,
     Lieferschein, Rahmenvereinbarung, Rechnung, RechnungPosition, RechnungZahlung,
@@ -2713,6 +2714,22 @@ def produktionsbericht_pdf_download(request, pk):
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
     response["Content-Disposition"] = f'inline; filename="Produktionsbericht-{bericht.pk}.pdf"'
     return response
+
+
+@login_required
+def eingangsrechnung_datei_download(request, pk):
+    """Liefert das Original-PDF einer Eingangsrechnung aus - absichtlich über eine eigene,
+    login-geschützte View statt direkt über MEDIA_URL (19.11.2026, auf Wunsch von Björn,
+    Eingangsrechnungen-Modul): Lieferantenrechnungen enthalten oft Bankdaten und andere
+    sensible Angaben, ein unauthentifizierter Dateipfad wäre für jeden mit der URL
+    abrufbar, auch ohne CRM-Login."""
+    eingangsrechnung = get_object_or_404(Eingangsrechnung, pk=pk)
+    if not eingangsrechnung.rechnung_datei:
+        raise Http404("Zu dieser Eingangsrechnung ist keine Datei hinterlegt.")
+    return FileResponse(
+        eingangsrechnung.rechnung_datei.open("rb"),
+        filename=os.path.basename(eingangsrechnung.rechnung_datei.name),
+    )
 
 
 @login_required
