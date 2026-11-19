@@ -1571,6 +1571,17 @@ SACHKONTO_CHOICES = [
 # woertlich von Eileen/GUTOM; alle anderen Codes/Nummern sind von Claude vorgeschlagene
 # Platzhalter nach demselben Nummernschema, NICHT von Eileen bestaetigt - vor dem ersten
 # echten DATEV-Abgleich unbedingt mit ihr verifizieren.
+#
+# Korrektur 19.11.2026 (Nachtrag, selbes Gespraech mit Bjoern): 11300 war urspruenglich als
+# "BG / Beratung Gallenkamp GmbH" in einer Kostenstelle zusammengefasst. Das war fachlich
+# falsch und bewusst korrigiert: Bjoern ist NICHT Gesellschafter der Beratung Gallenkamp
+# GmbH (100% Martje Gallenkamp) und erhaelt aktuell keine GF-Verguetung - 11300 bildet also
+# ausschliesslich seine eigene GF-Taetigkeit ab (analog zu 11200/CU), unabhaengig davon, ob
+# dafuer schon ein Gehalt fliesst. Rechnungen der Beratung Gallenkamp GmbH sind ein eigener,
+# fremder Geschaeftsvorfall (vgl. Fremdleistung 85000) und bekommen deshalb eine eigene
+# Kostenstelle 11600 - siehe auch die offene steuerliche Abgrenzungsfrage (vGA-Risiko, da
+# Bjoern 50% Gesellschafter von ECKO-PACK ist und Martje ihm nahesteht), die vor der ersten
+# Buchung unter 11600 mit Eileen/Steuerberater geklaert werden muss.
 KOSTENSTELLE_CHOICES = [
     ("12400", "12400 - Verwaltung allgemein"),
     ("61100", "61100 - Produktion/Fertigung"),
@@ -1586,9 +1597,10 @@ KOSTENSTELLE_CHOICES = [
     ("62000", "62000 - Marketing Marktrausch"),
     ("62100", "62100 - Comprisetec (Fertigung/Projekt)"),
     ("11200", "11200 - CU (Carmen Ungnade-Täuberecht, GF)"),
-    ("11300", "11300 - BG (Björn Gallenkamp, GF / Beratung Gallenkamp GmbH)"),
+    ("11300", "11300 - BG (Björn Gallenkamp, GF)"),
     ("11400", "11400 - CB (Cigdem Bizer, GUTOM, Tätigkeit für ECKO-PACK)"),
     ("11500", "11500 - MK (Marcus Klockenkämper, externer Berater)"),
+    ("11600", "11600 - Fremdleistung Beratung Gallenkamp GmbH"),
     ("40001", "40001 - PKW NMS-EP 200"),
 ]
 
