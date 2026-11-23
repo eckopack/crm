@@ -235,6 +235,16 @@ services:
         sync: false
       - key: GRAPH_CLIENT_SECRET
         sync: false
+      # EINGANGSRECHNUNGEN-IMPORT (23.11.2026, neu): PDF-Felderkennung per Anthropic-API,
+      # siehe vertrieb/graph_eingangsrechnungen.py. Von Björn/Andrej selbst in Render
+      # eingetragen (nicht von Claude) - ein Key von console.anthropic.com.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # Optional - ohne gesetzten Wert greift der Code-Default (siehe STANDARD_MODELL in
+      # graph_eingangsrechnungen.py). Nur setzen, falls ein anderes Modell als der Default
+      # verwendet werden soll, ohne dafür einen Deploy zu brauchen.
+      - key: ANTHROPIC_INVOICE_MODEL
+        sync: false
 
   # Anstoss der Nachfass-Pruefung (siehe Kommentar "NACHFASS-CRON" oben). Braucht keine
   # Disk und keinen DB-Zugriff, nur ausgehende HTTPS-Verbindungen zum eigenen Web-Service.
@@ -282,6 +292,32 @@ services:
     startCommand: >
       curl -fsS -X POST -H "X-Cron-Secret: $NACHFASS_CRON_SECRET"
       "https://eckopack-crm.onrender.com/interna/graph-antworten-cron/"
+    envVars:
+      - key: NACHFASS_CRON_SECRET
+        sync: false
+
+  # EINGANGSRECHNUNGEN-IMPORT-CRON (23.11.2026, neu, auf Wunsch von Björn): prüft
+  # rechnung@ecko-pack.de per Microsoft Graph auf neue Lieferantenrechnungen und legt sie
+  # automatisch als Eingangsrechnung an (siehe vertrieb/graph_eingangsrechnungen.py).
+  # Gleiches Muster wie die beiden Cron-Jobs oben (kein DB-/Disk-Zugriff nötig, ruft nur den
+  # eigenen Web-Service per HTTPS an) - bewusst dasselbe NACHFASS_CRON_SECRET wiederverwendet.
+  #
+  # TAKT: einmal täglich (Björn, 23.11.2026, Testphase) - Uhrzeit noch nicht exakt
+  # abgestimmt, 6 Uhr UTC als unauffälliger Zeitpunkt vor dem Nachfass-Cron (7 Uhr) gewählt;
+  # bei Bedarf hier einfach anpassen.
+  #
+  # KOSTEN-HINWEIS: dritter separater Render-"Cron Job"-Service (plan: starter) - bitte vor
+  # dem ersten echten Deploy im Render-Dashboard den zusätzlichen monatlichen Preis
+  # bestätigen, gleiche Prüfung wie bei den ersten beiden Cron-Jobs.
+  - type: cron
+    name: eckopack-crm-eingangsrechnungen-import
+    runtime: python
+    plan: starter
+    schedule: "0 6 * * *"
+    buildCommand: "true"
+    startCommand: >
+      curl -fsS -X POST -H "X-Cron-Secret: $NACHFASS_CRON_SECRET"
+      "https://eckopack-crm.onrender.com/interna/eingangsrechnungen-cron/"
     envVars:
       - key: NACHFASS_CRON_SECRET
         sync: false

@@ -13,6 +13,10 @@ urlpatterns = [
         "interna/graph-antworten-cron/", views.interner_graph_antworten_cron,
         name="interner_graph_antworten_cron",
     ),
+    path(
+        "interna/eingangsrechnungen-cron/", views.interner_eingangsrechnungen_cron,
+        name="interner_eingangsrechnungen_cron",
+    ),
 
     path("firmen/", views.FirmaListView.as_view(), name="firma_list"),
     path("firmen/neu/", views.FirmaCreateView.as_view(), name="firma_create"),
