@@ -4,5 +4,8 @@ whitenoise==6.8.2
 openpyxl==3.1.5
 reportlab==5.0.0
 Pillow==12.3.0
+# E-Rechnung (ZUGFeRD/Factur-X), 24.11.2026, siehe vertrieb/e_rechnung.py:
+drafthorse==2025.2.0
+pikepdf==10.16.0
 # Für Produktivbetrieb mit PostgreSQL (echter VPS, Phase 2) zusätzlich installieren:
 # psycopg[binary]==3.2.*
