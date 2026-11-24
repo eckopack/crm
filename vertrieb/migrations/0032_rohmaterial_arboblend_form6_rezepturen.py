@@ -58,8 +58,20 @@ def vorwaerts(apps, schema_editor):
     Artikel = apps.get_model("vertrieb", "Artikel")
     Rezeptur = apps.get_model("vertrieb", "Rezeptur")
 
-    tecnaro = Firma.objects.get(name="TECNARO GmbH")
-    traceless = Firma.objects.get(name="traceless materials GmbH")
+    # 24.11.2026 (bei der Arbeit an Aufgabe #43 entdeckt, siehe PR-Beschreibung/Chat): beide
+    # Firma-Zeilen wurden am 24.10.2026 offenbar direkt in der Datenbank angelegt (z.B. per
+    # Admin), NICHT per Migration - in der bestehenden Render-DB sind sie also da, aber jede
+    # FRISCHE Datenbank (Test-DB, eine künftige Neuanlage der Render-DB, z.B. im
+    # Katastrophenfall) bricht hier mit Firma.DoesNotExist ab, weil keine frühere Migration
+    # diese Zeilen je angelegt hat. Firma.objects.get(...) deshalb zu get_or_create(...)
+    # gemacht - idempotent, ändert an der bestehenden Render-DB nichts (die Zeilen existieren
+    # dort ja schon), macht die Migration aber von einer leeren DB aus lauffähig.
+    tecnaro, _ = Firma.objects.get_or_create(
+        name="TECNARO GmbH", defaults={"status": "lieferant"},
+    )
+    traceless, _ = Firma.objects.get_or_create(
+        name="traceless materials GmbH", defaults={"status": "lieferant"},
+    )
 
     arboblend, _ = Artikel.objects.update_or_create(
         artikelnummer="ROH-TEC-5953M",
@@ -113,10 +125,27 @@ def vorwaerts(apps, schema_editor):
         ).update(verpackungseinheit_stk=50)
 
     fehlende_verpackungseinheit = []
+    fehlende_artikel = []
 
     def rezeptur_anlegen(artikelnummern, rohmaterial, gramm_je_stueck):
         for nr in artikelnummern:
-            fertigprodukt = Artikel.objects.get(artikelnummer=nr)
+            # 24.11.2026 (bei Aufgabe #43 entdeckt): diese Artikel kommen aus dem Excel-
+            # Artikelstamm-Import (import_artikelstamm), der laut render.yaml beim Deploy
+            # NACH "migrate" läuft - auf einer frischen Datenbank (Test-DB, eine künftige
+            # Neuanlage der Render-DB) existieren sie zum Zeitpunkt DIESER Migration also
+            # noch gar nicht. Bisher war das kein Problem, weil die bestehende Render-DB den
+            # Artikelstamm schon vor dem allerersten Lauf dieser (einmaligen) Migration
+            # enthielt - ein echter Neuaufbau der DB würde aber genau hier mit
+            # Artikel.DoesNotExist abbrechen. Statt abzubrechen: überspringen und sammeln
+            # (ACHTUNG, Björn: auf einer wirklich neuen DB bedeutet das, dass Rezeptur/
+            # materialtyp für diese Artikel NICHT automatisch nachgezogen werden, sobald
+            # import_artikelstamm sie später anlegt, weil diese Migration dann schon
+            # gelaufen ist und nicht erneut läuft - müsste in dem Fall einmalig manuell
+            # nachgezogen werden, siehe Chat/PR-Beschreibung 24.11.2026).
+            fertigprodukt = Artikel.objects.filter(artikelnummer=nr).first()
+            if fertigprodukt is None:
+                fehlende_artikel.append(nr)
+                continue
             if not fertigprodukt.verpackungseinheit_stk:
                 fehlende_verpackungseinheit.append(nr)
                 continue

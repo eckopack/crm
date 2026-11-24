@@ -73,7 +73,14 @@ def vorwaerts(apps, schema_editor):
             menge_je_einheit=neue_menge_je_einheit
         )
 
-    if fehlend:
+    # 24.11.2026 (bei Aufgabe #43 entdeckt, siehe Migration 0032 ausführlicher dokumentiert):
+    # fehlen ALLE 16 Trinkhalm-Artikel, ist das keine Tippfehler-/Katalogabweichung, sondern
+    # eine Datenbank, auf der der Excel-Artikelstamm-Import (läuft laut render.yaml NACH
+    # "migrate") noch gar nicht gelaufen ist (Test-DB, künftige Neuanlage der Render-DB) -
+    # dann NICHT hart abbrechen. Fehlt nur EIN TEIL der 16 (Katalog wurde importiert, aber
+    # einzelne SKUs weichen ab), bleibt der harte Abbruch bestehen - das ist der eigentliche
+    # Zweck dieser Prüfung und soll weiterhin greifen.
+    if fehlend and len(fehlend) < len(STROH_ARTIKELNUMMER_ZU_LAENGE):
         raise RuntimeError(
             "Migration 0040: folgende Trinkhalm-Artikel wurden nicht gefunden, "
             "gewicht_je_stueck_g NICHT gesetzt: " + ", ".join(fehlend)

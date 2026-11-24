@@ -193,9 +193,24 @@ def _postfach_rechnungen_seit(token, postfach, seit_datetime):
     return nachrichten
 
 
-def _pdf_anhaenge(token, postfach, message_id):
-    """Liefert alle PDF-Dateianhaenge (Name + Base64-Inhalt) einer Nachricht. Nicht-Datei-
-    anhaenge (z.B. eingebettete Outlook-Items) und Nicht-PDF-Anhaenge werden ignoriert."""
+def _rechnungs_anhaenge(token, postfach, message_id):
+    """Liefert alle Datei-Anhaenge einer Nachricht, die als Rechnungsbeleg in Frage kommen -
+    mit einem "art"-Feld ("pdf" oder "xml") pro Eintrag. Nicht-Datei-Anhaenge (z.B.
+    eingebettete Outlook-Items) und alles andere (Lieferschein-JPG, Signaturbild usw.)
+    werden weiter ignoriert.
+
+    Bis 24.11.2026 wurden hier NUR PDFs akzeptiert - das hiess, eine reine XRechnung-XML
+    (kein PDF, keine visuelle Repraesentation; seit 1.1.2025 ein gesetzlich gueltiges
+    Rechnungsformat, § 14 Abs. 1 S. 3 UStG) wurde von dieser Funktion lautlos verworfen:
+    nicht geloggt, in keinem der Zaehler in rechnungen_importieren() sichtbar - ein
+    Lieferant haette uns so eine formal gueltige E-Rechnung schicken koennen, ohne dass sie
+    irgendwo auftaucht. Das verletzt die seit 1.1.2025 bestehende Annahme-Pflicht fuer
+    E-Rechnungen (Aufgabe #43). Deshalb werden XML-Anhaenge jetzt erkannt und mit
+    "art": "xml" zurueckgegeben - der Aufrufer loggt sie sichtbar, erzeugt aber bewusst
+    KEINE automatische Eingangsrechnung daraus (Björns Entscheidung zu Aufgabe #43,
+    "Stufe 1": nur annehmen/sichtbar machen koennen, kein automatisches Auslesen/Buchen der
+    XML-Daten - die Anthropic-Felderkennung unten ist ausserdem ohnehin PDF-spezifisch,
+    document-Content-Block, kein XML-Support)."""
     # Kein $select hier: Graph lehnt "contentBytes" im $select auf der polymorphen
     # attachments-Collection ab ("Could not find a property named 'contentBytes' on
     # type 'microsoft.graph.attachment'") - contentBytes existiert nur auf der
@@ -211,11 +226,21 @@ def _pdf_anhaenge(token, postfach, message_id):
     ergebnis = []
     for anhang in antwort.get("value", []):
         ist_datei = anhang.get("@odata.type") == "#microsoft.graph.fileAttachment"
+        if not ist_datei or not anhang.get("contentBytes"):
+            continue
         content_type = (anhang.get("contentType") or "").lower()
-        name = anhang.get("name") or "anhang.pdf"
-        if ist_datei and ("pdf" in content_type or name.lower().endswith(".pdf")):
-            if anhang.get("contentBytes"):
-                ergebnis.append({"name": name, "contentBytes": anhang["contentBytes"]})
+        name = anhang.get("name") or ""
+        if "pdf" in content_type or name.lower().endswith(".pdf"):
+            art = "pdf"
+        elif "xml" in content_type or name.lower().endswith(".xml"):
+            art = "xml"
+        else:
+            continue
+        ergebnis.append({
+            "name": name or f"anhang.{art}",
+            "contentBytes": anhang["contentBytes"],
+            "art": art,
+        })
     return ergebnis
 
 
@@ -396,17 +421,28 @@ def _eingangsrechnung_anlegen(extraktion, anhang, message_id, absender_email):
 def rechnungen_importieren():
     """Hauptfunktion, vom Management-Command eingangsrechnungen_importieren aufgerufen.
 
-    Gibt (geprueft, importiert, uebersprungen, fehlgeschlagen) zurueck. Wirft GraphFehler bei
-    technischen Problemen beim Postfach-Zugriff selbst (Token, Netzwerk) - der Aufrufer
-    bricht dann den ganzen Lauf ab, analog zu graph_antworten.antworten_pruefen(). Fehler bei
-    einzelnen Nachrichten/Anhaengen (kaputtes PDF, Anthropic-Fehler, fehlende Pflichtfelder)
-    werden dagegen pro Anhang abgefangen, damit ein einzelner kaputter Beleg nicht den
-    gesamten Lauf verhindert."""
+    Gibt (geprueft, importiert, uebersprungen, fehlgeschlagen, xml_gefunden) zurueck. Wirft
+    GraphFehler bei technischen Problemen beim Postfach-Zugriff selbst (Token, Netzwerk) -
+    der Aufrufer bricht dann den ganzen Lauf ab, analog zu graph_antworten.antworten_pruefen().
+    Fehler bei einzelnen Nachrichten/Anhaengen (kaputtes PDF, Anthropic-Fehler, fehlende
+    Pflichtfelder) werden dagegen pro Anhang abgefangen, damit ein einzelner kaputter Beleg
+    nicht den gesamten Lauf verhindert.
+
+    xml_gefunden zaehlt reine XRechnung-XML-Anhaenge (kein PDF, siehe _rechnungs_anhaenge).
+    Die werden bewusst NICHT automatisch zu einer Eingangsrechnung - nur sichtbar geloggt
+    (Absender/Betreff/Anhangname), damit die Buchhaltung die Original-Mail findet und die
+    Rechnung manuell erfasst. Der manuelle Upload (Eingangsrechnung.rechnung_datei) akzeptiert
+    jede Dateiendung, auch .xml - keine Code-Aenderung dort noetig (siehe Aufgabe #43,
+    bereits geprueft). Einschraenkung: da fuer XML-Anhaenge keine Eingangsrechnung angelegt
+    wird, greift die Dubletten-Pruefung oben (email_message_id) fuer diese Mail nicht - sie
+    wird bei jedem taeglichen Lauf erneut als xml_gefunden geloggt, bis jemand sie manuell
+    erfasst. Das ist gewollt (eine wiederholte Erinnerung ist besser als eine, die nach dem
+    ersten Lauf verschwindet), aber Björn sollte das wissen."""
     token = _access_token()
     seit = timezone.now() - timedelta(days=LOOKBACK_TAGE)
     nachrichten = _postfach_rechnungen_seit(token, RECHNUNG_POSTFACH, seit)
 
-    geprueft = importiert = uebersprungen = fehlgeschlagen = 0
+    geprueft = importiert = uebersprungen = fehlgeschlagen = xml_gefunden = 0
     for nachricht in nachrichten:
         message_id = nachricht.get("id")
         if not message_id or Eingangsrechnung.objects.filter(email_message_id=message_id).exists():
@@ -414,9 +450,10 @@ def rechnungen_importieren():
         geprueft += 1
         absender = ((nachricht.get("from") or {}).get("emailAddress")) or {}
         absender_email = absender.get("address", "")
+        betreff = nachricht.get("subject") or "(ohne Betreff)"
 
         try:
-            anhaenge = _pdf_anhaenge(token, RECHNUNG_POSTFACH, message_id)
+            anhaenge = _rechnungs_anhaenge(token, RECHNUNG_POSTFACH, message_id)
         except GraphFehler as exc:
             logger.error("Eingangsrechnungen-Import: Anhaenge von Nachricht %s nicht lesbar: %s",
                          message_id, exc)
@@ -428,6 +465,21 @@ def rechnungen_importieren():
             continue
 
         for anhang in anhaenge:
+            if anhang["art"] == "xml":
+                # Bewusst keine Anthropic-Erkennung (die ist PDF-only, s. Doku oben) und
+                # bewusst keine automatische Eingangsrechnung (Stufe 1 von Aufgabe #43) -
+                # stattdessen deutlich sichtbar im Log, damit die XRechnung nicht einfach
+                # verschwindet.
+                logger.warning(
+                    "Eingangsrechnungen-Import: XRechnung-XML-Anhang '%s' in Nachricht %s "
+                    "(Betreff \"%s\", Absender %s) gefunden - wird NICHT automatisch "
+                    "erkannt (nur PDF-Felderkennung implementiert), bitte Original-Mail "
+                    "suchen und die Rechnung manuell als Eingangsrechnung erfassen.",
+                    anhang["name"], message_id, betreff, absender_email,
+                )
+                xml_gefunden += 1
+                continue
+
             try:
                 extraktion = _anthropic_erkennung(anhang["contentBytes"])
             except ExtraktionsFehler as exc:
@@ -452,4 +504,4 @@ def rechnungen_importieren():
                              "angelegt werden: %s", anhang["name"], message_id, exc)
                 fehlgeschlagen += 1
 
-    return geprueft, importiert, uebersprungen, fehlgeschlagen
+    return geprueft, importiert, uebersprungen, fehlgeschlagen, xml_gefunden

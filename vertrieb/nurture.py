@@ -112,7 +112,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 
-from . import pdf
+from . import e_rechnung, pdf
 from .models import (
     Aktivitaet, AngebotNachfassVorlage, Artikel, EmailVersand, MUSTERKARTON_ARTIKEL,
     MusterboxNachfassStatus, MusterboxNachfassVorlage, Rechnung, RechnungPosition,
@@ -981,14 +981,21 @@ def rechnung_versand_senden(rechnung):
     html_body = render_to_string("vertrieb/email/rechnung_bestaetigung.html", kontext)
 
     try:
-        rechnung_pdf_bytes = pdf.rechnung_pdf_erzeugen(rechnung)
+        # 24.11.2026, auf Wunsch von Björn (E-Rechnungspflicht ab 2027/2028, siehe
+        # PR-Beschreibung): statt des reinen reportlab-PDFs wird hier das ZUGFeRD/Factur-X-
+        # Hybrid verschickt (gleiches sichtbares Layout, zusaetzlich eingebettete,
+        # maschinenlesbare EN-16931-XML). Wirft e_rechnung bei fehlenden/nicht zuordenbaren
+        # Stammdaten (Land, Einheit) oder einer PDF/A-Verletzung eine Exception - das landet
+        # bewusst im bestehenden except-Block unten, die Rechnung wird dann NICHT versendet,
+        # statt eine nicht-konforme Datei rauszuschicken.
+        rechnung_pdf_bytes = e_rechnung.rechnung_zugferd_pdf_erzeugen(rechnung)
         mail = EmailMultiAlternatives(betreff, text_body, settings.DEFAULT_FROM_EMAIL, [empfaenger])
         mail.attach_alternative(html_body, "text/html")
         mail.attach(f"{rechnung.nummer}.pdf", rechnung_pdf_bytes, "application/pdf")
         mail.send(fail_silently=False)
     except Exception as exc:
         logger.exception(
-            "Rechnungs-Mail (inkl. PDF) konnte nicht gesendet werden (Rechnung %s)", rechnung.nummer,
+            "Rechnungs-Mail (inkl. ZUGFeRD-PDF) konnte nicht gesendet werden (Rechnung %s)", rechnung.nummer,
         )
         _mail_protokollieren(
             deal=deal, mailtyp="rechnung_bestaetigung", empfaenger=empfaenger, betreff=betreff,
