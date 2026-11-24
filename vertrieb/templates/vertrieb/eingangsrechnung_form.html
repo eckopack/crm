@@ -12,10 +12,25 @@
     {% if "unsicher" in eingangsrechnung.notizen %}
     <span class="badge text-bg-warning">KI-Erkennung unsicher – bitte besonders sorgfältig gegenprüfen</span>
     {% endif %}
+    {% if eingangsrechnung.status == "wartet_auf_genehmigung" %}
+    <span class="badge text-bg-primary">Wartet auf Genehmigung{% if eingangsrechnung.einkaeufer %} von {{ eingangsrechnung.einkaeufer.get_full_name|default:eingangsrechnung.einkaeufer.username }}{% endif %}</span>
+    {% endif %}
     {% if eingangsrechnung.rechnung_datei %}
     <a href="{% url 'vertrieb:eingangsrechnung_datei' eingangsrechnung.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary ms-2">Original-PDF öffnen</a>
     {% endif %}
 </div>
+
+{% if eingangsrechnung.status == "wartet_auf_genehmigung" %}
+<div class="alert alert-primary" style="max-width: 700px;">
+    Diese Rechnung liegt aktuell beim Einkäufer zur Genehmigung. Änderungen hier und ein
+    erneutes „Buchen und abschließen“ senden die Genehmigungsanfrage erneut.
+</div>
+{% elif eingangsrechnung.genehmigt_von and eingangsrechnung.status == "zu_pruefen" %}
+<div class="alert alert-warning" style="max-width: 700px;">
+    Von {{ eingangsrechnung.genehmigt_von.get_full_name|default:eingangsrechnung.genehmigt_von.username }}
+    am {{ eingangsrechnung.genehmigt_am|date:"d.m.Y H:i" }} Uhr abgelehnt – Begründung siehe Notizen unten.
+</div>
+{% endif %}
 
 <form method="post">
     {% csrf_token %}
@@ -25,7 +40,9 @@
         </div>
     </div>
     <button type="submit" name="aktion" value="speichern" class="btn btn-outline-secondary">Speichern</button>
-    <button type="submit" name="aktion" value="buchen" class="btn btn-success">Buchen und abschließen</button>
+    <button type="submit" name="aktion" value="buchen" class="btn btn-success">
+        {% if eingangsrechnung.einkaeufer %}Zur Genehmigung senden{% else %}Buchen und abschließen{% endif %}
+    </button>
     <a href="{% url 'vertrieb:eingangsrechnung_list' %}" class="btn btn-link">Zurück zur Liste</a>
 </form>
 {% endblock %}

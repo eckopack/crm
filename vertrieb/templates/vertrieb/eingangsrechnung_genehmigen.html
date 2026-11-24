@@ -1,0 +1,33 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Genehmigung {{ eingangsrechnung.rechnungsnummer }}{% endblock %}
+{% block content %}
+<h2 class="mb-3">Genehmigung: Eingangsrechnung {{ eingangsrechnung.rechnungsnummer }}</h2>
+
+<div class="card mb-3" style="max-width: 600px;">
+    <div class="card-body">
+        <dl class="row mb-0">
+            <dt class="col-sm-4">Lieferant</dt><dd class="col-sm-8">{{ eingangsrechnung.lieferant.name }}</dd>
+            <dt class="col-sm-4">Rechnungsdatum</dt><dd class="col-sm-8">{{ eingangsrechnung.rechnungsdatum|date:"d.m.Y" }}</dd>
+            <dt class="col-sm-4">Fällig am</dt><dd class="col-sm-8">{{ eingangsrechnung.faelligkeitsdatum|date:"d.m.Y"|default:"–" }}</dd>
+            <dt class="col-sm-4">Bestellnummer</dt><dd class="col-sm-8">{{ eingangsrechnung.bestellnummer|default:"–" }}</dd>
+            <dt class="col-sm-4">Betrag netto</dt><dd class="col-sm-8">{{ eingangsrechnung.betrag_netto|floatformat:2 }} €</dd>
+            <dt class="col-sm-4">Betrag brutto</dt><dd class="col-sm-8">{{ eingangsrechnung.betrag_brutto|floatformat:2 }} €</dd>
+            <dt class="col-sm-4">Kostenstelle</dt><dd class="col-sm-8">{{ eingangsrechnung.get_kostenstelle_display|default:"–" }}</dd>
+            <dt class="col-sm-4">Sachkonto</dt><dd class="col-sm-8">{{ eingangsrechnung.get_sachkonto_display|default:"–" }}</dd>
+            <dt class="col-sm-4">Buchungstext</dt><dd class="col-sm-8">{{ eingangsrechnung.buchungstext|default:"–" }}</dd>
+            <dt class="col-sm-4">Notizen</dt><dd class="col-sm-8" style="white-space: pre-line;">{{ eingangsrechnung.notizen|default:"–" }}</dd>
+        </dl>
+    </div>
+</div>
+
+{% if eingangsrechnung.rechnung_datei %}
+<a href="{% url 'vertrieb:eingangsrechnung_datei' eingangsrechnung.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary mb-3">Original-PDF öffnen</a>
+{% endif %}
+
+<form method="post" class="d-inline">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-success">Genehmigen</button>
+</form>
+<a href="{% url 'vertrieb:eingangsrechnung_genehmigung_ablehnen' eingangsrechnung.pk %}" class="btn btn-outline-danger">Ablehnen</a>
+<a href="{% url 'vertrieb:eingangsrechnung_genehmigen_list' %}" class="btn btn-link">Zurück zur Liste</a>
+{% endblock %}

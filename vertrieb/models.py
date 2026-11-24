@@ -1611,6 +1611,7 @@ KOSTENSTELLE_CHOICES = [
 
 EINGANGSRECHNUNG_STATUS_CHOICES = [
     ("zu_pruefen", "Zu prüfen"),
+    ("wartet_auf_genehmigung", "Wartet auf Genehmigung"),
     ("gebucht", "Gebucht"),
     ("bezahlt", "Bezahlt"),
     ("storniert", "Storniert"),
@@ -1686,7 +1687,9 @@ class Eingangsrechnung(models.Model):
     zahlungsbedingungen = models.CharField("Zahlungsbedingungen (Freitext)", max_length=200, blank=True)
     buchungstext = models.CharField("Buchungstext", max_length=300, blank=True)
     status = models.CharField(
-        "Status", max_length=20, choices=EINGANGSRECHNUNG_STATUS_CHOICES, default="zu_pruefen"
+        # max_length=30, nicht 20: "wartet_auf_genehmigung" (22 Zeichen, seit 24.11.2026
+        # Genehmigungs-Workflow) ist der laengste Choice-Wert.
+        "Status", max_length=30, choices=EINGANGSRECHNUNG_STATUS_CHOICES, default="zu_pruefen"
     )
     rechnung_datei = models.FileField(
         "Rechnung (PDF)", upload_to=eingangsrechnung_upload_pfad, blank=True,
@@ -1703,6 +1706,22 @@ class Eingangsrechnung(models.Model):
         on_delete=models.SET_NULL, related_name="+",
     )
     geprueft_am = models.DateTimeField("Geprüft am", null=True, blank=True)
+    # 24.11.2026, Genehmigungs-Workflow (auf Wunsch von Björn, nach Rückfrage zu Eileens
+    # BC-Screenshot "Genehmigungsschritt"): wenn die Buchhaltung eine Rechnung mit
+    # Bestellbezug (Einkäufer gesetzt) kontiert, geht sie NICHT direkt auf "gebucht",
+    # sondern zunächst auf "wartet_auf_genehmigung" an genau den Einkäufer, der die
+    # Bestellung ausgelöst hat (siehe views.eingangsrechnung_bearbeiten/
+    # eingangsrechnung_genehmigen/eingangsrechnung_genehmigung_ablehnen). Bewusst EIN
+    # Feldpaar für beide Ausgänge (genehmigt/abgelehnt), analog zu Produktionsbericht.
+    # freigegeben_von/-_am oben - status unterscheidet, welcher Fall vorliegt. Anders als
+    # bei Produktionsbericht gibt es hier KEIN separates Ablehnungsgrund-Feld: Björn wollte
+    # den Ablehnungskommentar bewusst im ohnehin vorhandenen Notizen-Feld (Rückfrage
+    # 24.11.2026, AskUserQuestion "Bei Ablehnung" -> "Zurück an Buchhaltung mit Kommentar").
+    genehmigt_von = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="Genehmigt/abgelehnt von", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
+    genehmigt_am = models.DateTimeField("Genehmigt/abgelehnt am", null=True, blank=True)
     notizen = models.TextField("Notizen", blank=True)
     erstellt_am = models.DateTimeField("Erstellt am", auto_now_add=True)
     aktualisiert_am = models.DateTimeField("Aktualisiert am", auto_now=True)
@@ -1756,6 +1775,15 @@ class Eingangsrechnung(models.Model):
         if self.skonto_prozent is None:
             return Decimal("0")
         return (self.betrag_netto * self.skonto_prozent / Decimal("100")).quantize(Decimal("0.01"))
+
+    @property
+    def benoetigt_genehmigung(self):
+        """Geltungsbereich des Genehmigungsschritts (24.11.2026, Björns Antwort auf
+        AskUserQuestion "Geltungsbereich" -> "Nur mit Bestellbezug"): nur Rechnungen mit
+        gesetztem Einkäufer durchlaufen die Genehmigung - ohne Einkäufer gäbe es ohnehin
+        niemanden, an den geroutet werden könnte (z. B. Miete, Versicherung, laufende
+        Kosten ohne Bestellbezug werden weiterhin direkt von der Buchhaltung gebucht)."""
+        return self.einkaeufer_id is not None
 
 
 MAILTYP_CHOICES = [

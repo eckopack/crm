@@ -38,8 +38,9 @@
 
 <div class="d-flex flex-wrap gap-3 mb-3">
     <div class="btn-group btn-group-sm" role="group">
-        <a href="?status=offen&quelle={{ quelle_filter }}" class="btn btn-outline-secondary {% if status_filter == 'offen' %}active{% endif %}">Offen (Zu prüfen + Gebucht)</a>
+        <a href="?status=offen&quelle={{ quelle_filter }}" class="btn btn-outline-secondary {% if status_filter == 'offen' %}active{% endif %}">Offen (Zu prüfen + Genehmigung + Gebucht)</a>
         <a href="?status=zu_pruefen&quelle={{ quelle_filter }}" class="btn btn-outline-secondary {% if status_filter == 'zu_pruefen' %}active{% endif %}">Zu prüfen</a>
+        <a href="?status=wartet_auf_genehmigung&quelle={{ quelle_filter }}" class="btn btn-outline-secondary {% if status_filter == 'wartet_auf_genehmigung' %}active{% endif %}">Wartet auf Genehmigung</a>
         <a href="?status=gebucht&quelle={{ quelle_filter }}" class="btn btn-outline-secondary {% if status_filter == 'gebucht' %}active{% endif %}">Gebucht</a>
         <a href="?status=bezahlt&quelle={{ quelle_filter }}" class="btn btn-outline-secondary {% if status_filter == 'bezahlt' %}active{% endif %}">Bezahlt</a>
         <a href="?status=alle&quelle={{ quelle_filter }}" class="btn btn-outline-secondary {% if status_filter == 'alle' %}active{% endif %}">Alle</a>
@@ -80,6 +81,7 @@
             <td>{{ e.betrag_brutto|floatformat:2 }} €</td>
             <td>
                 {% if e.status == "zu_pruefen" %}<span class="badge text-bg-warning">Zu prüfen</span>
+                {% elif e.status == "wartet_auf_genehmigung" %}<span class="badge text-bg-primary">Wartet auf Genehmigung{% if e.einkaeufer %} ({{ e.einkaeufer.get_full_name|default:e.einkaeufer.username }}){% endif %}</span>
                 {% elif e.status == "gebucht" %}<span class="badge text-bg-info">Gebucht</span>
                 {% elif e.status == "bezahlt" %}<span class="badge text-bg-success">Bezahlt</span>
                 {% else %}<span class="badge text-bg-secondary">Storniert</span>{% endif %}

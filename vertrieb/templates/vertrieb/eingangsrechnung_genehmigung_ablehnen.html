@@ -1,0 +1,21 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Ablehnen: {{ eingangsrechnung.rechnungsnummer }}{% endblock %}
+{% block content %}
+<h2 class="mb-3">Eingangsrechnung {{ eingangsrechnung.rechnungsnummer }} ablehnen</h2>
+<p class="text-muted">
+    {{ eingangsrechnung.lieferant.name }}, {{ eingangsrechnung.betrag_brutto|floatformat:2 }} € –
+    dein Kommentar wird an die Notizen der Rechnung angehängt, der Status geht zurück an
+    die Buchhaltung ("Zu prüfen").
+</p>
+
+<form method="post">
+    {% csrf_token %}
+    <div class="card mb-3" style="max-width: 600px;">
+        <div class="card-body">
+            {% include "vertrieb/_form_fields.html" %}
+        </div>
+    </div>
+    <button type="submit" class="btn btn-danger">Ablehnen</button>
+    <a href="{% url 'vertrieb:eingangsrechnung_genehmigen' eingangsrechnung.pk %}" class="btn btn-link">Abbrechen</a>
+</form>
+{% endblock %}
