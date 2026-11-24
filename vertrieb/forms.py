@@ -8,7 +8,7 @@ from django.utils import timezone
 
 from .models import (
     Aktivitaet, Angebot, AngebotPosition, Artikel, Auftrag, AuftragPosition, Bonusstaffel,
-    Charge, Deal, Firma,
+    Charge, Deal, Eingangsrechnung, Firma,
     Kontakt, MATERIALTYPEN_MIT_CHARGENBESTAND,
     Packschein, PackscheinPosition, Lieferschein, LieferscheinPosition,
     Produktionsbericht,
@@ -481,6 +481,52 @@ class RechnungZahlungForm(BootstrapFormMixin, forms.ModelForm):
         fields = ["betrag", "datum", "notiz"]
         widgets = {
             "datum": date_input(),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()
+
+
+class EingangsrechnungBearbeitenForm(BootstrapFormMixin, forms.ModelForm):
+    """Buchhaltungsmaske fuer Eingangsrechnungen (24.11.2026, auf Wunsch von Björn: "ich
+    moechte sehen, welche eingespielten Rechnungen reingekommen sind, und die Moeglichkeit
+    haben zu kontieren"). Deckt sowohl manuell erfasste als auch per E-Mail-Import
+    angelegte Eingangsrechnungen ab - bei Import-Rechnungen sind alle Felder bewusst
+    weiterhin aenderbar, nicht nur Kostenstelle/Sachkonto, da die KI-Erkennung Fehler
+    machen kann (siehe graph_eingangsrechnungen._anthropic_erkennung) und jemand die
+    Werte vor dem Buchen gegenpruefen muss. quelle/email_message_id bleiben aussen vor -
+    das sind reine Herkunftsfelder, siehe Model-Doku.
+
+    Feldreihenfolge und -auswahl bewusst am Ablauf ausgerichtet, den Eileen Paetzel am
+    24.11.2026 per Screenshot aus Business Central (GUTOM) geschickt hat (Rechnungsnummer,
+    -datum, Faelligkeitsdatum, Einkaeufer, Bestellnummer, Kostenstelle, Betrag netto,
+    Frachtkosten, MwSt., Betrag brutto, Sachkonto, Typ) - "einkaeufer" war im Modell schon
+    vorhanden (19.11.2026), stand aber bisher in keinem Formular/keiner Admin-Liste.
+
+    Sachkonto ist hier NICHT als required=True gesetzt, obwohl es fuer eine echte Buchung
+    noetig ist - die Pruefung passiert stattdessen in views.eingangsrechnung_bearbeiten nur
+    beim Klick auf "Buchen" (per Button-Name im POST unterschieden), damit ein
+    Zwischenspeichern unvollstaendiger Angaben waehrend der Pruefung trotzdem moeglich
+    bleibt (siehe Button "Speichern" vs. "Buchen und abschliessen" im Template).
+
+    Was Eileens Ablauf zusaetzlich zeigt, hier aber bewusst (noch) NICHT nachgebaut ist:
+    ein Genehmigungsschritt nach Einkaeufer-Zuordnung ("damit es zur Genehmigung
+    weitergeleitet werden kann") - das ist ein eigener Workflow (Status, Benachrichtigung,
+    wer darf genehmigen), kein Formularfeld, und wurde mit Björn noch nicht abgestimmt."""
+
+    class Meta:
+        model = Eingangsrechnung
+        fields = [
+            "lieferant", "typ", "rechnungsnummer", "rechnungsdatum", "faelligkeitsdatum",
+            "einkaeufer", "bestellnummer", "kostenstelle", "betrag_netto", "frachtkosten",
+            "steuersatz", "mwst_betrag", "betrag_brutto", "sachkonto", "skonto_prozent",
+            "skonto_tage", "zahlungsbedingungen", "buchungstext", "notizen",
+        ]
+        widgets = {
+            "rechnungsdatum": date_input(),
+            "faelligkeitsdatum": date_input(),
+            "notizen": forms.Textarea(attrs={"rows": 3}),
         }
 
     def __init__(self, *args, **kwargs):

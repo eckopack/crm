@@ -1582,6 +1582,12 @@ SACHKONTO_CHOICES = [
 # Kostenstelle 11600 - siehe auch die offene steuerliche Abgrenzungsfrage (vGA-Risiko, da
 # Bjoern 50% Gesellschafter von ECKO-PACK ist und Martje ihm nahesteht), die vor der ersten
 # Buchung unter 11600 mit Eileen/Steuerberater geklaert werden muss.
+#
+# Korrektur 24.11.2026, auf Wunsch von Björn ("meine Gallenkamp Beratung kannst du aus
+# allem herausnehmen, nur noch die GF Konten stehen lassen"): Kostenstelle 11600 wieder
+# entfernt. 11200/11300 (die eigentlichen GF-Kostenstellen) bleiben unveraendert - die
+# vGA-Abgrenzungsfrage oben war der Grund fuer die Entfernung, nicht etwas, das hiermit
+# geklaert waere.
 KOSTENSTELLE_CHOICES = [
     ("12400", "12400 - Verwaltung allgemein"),
     ("61100", "61100 - Produktion/Fertigung"),
@@ -1600,7 +1606,6 @@ KOSTENSTELLE_CHOICES = [
     ("11300", "11300 - BG (Björn Gallenkamp, GF)"),
     ("11400", "11400 - CB (Cigdem Bizer, GUTOM, Tätigkeit für ECKO-PACK)"),
     ("11500", "11500 - MK (Marcus Klockenkämper, externer Berater)"),
-    ("11600", "11600 - Fremdleistung Beratung Gallenkamp GmbH"),
     ("40001", "40001 - PKW NMS-EP 200"),
 ]
 
@@ -1716,6 +1721,9 @@ class Eingangsrechnung(models.Model):
 
     def __str__(self):
         return f"{self.rechnungsnummer} – {self.lieferant.name}"
+
+    def get_absolute_url(self):
+        return reverse("vertrieb:eingangsrechnung_bearbeiten", args=[self.pk])
 
     @property
     def ist_ueberfaellig(self):

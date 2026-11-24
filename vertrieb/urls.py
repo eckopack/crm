@@ -107,6 +107,12 @@ urlpatterns = [
 
     path("offene-posten/", views.offene_posten_liste, name="offene_posten_list"),
 
+    path("eingangsrechnungen/", views.eingangsrechnung_list, name="eingangsrechnung_list"),
+    path(
+        "eingangsrechnungen/<int:pk>/bearbeiten/", views.eingangsrechnung_bearbeiten,
+        name="eingangsrechnung_bearbeiten",
+    ),
+
     path("emails/", views.EmailVersandListView.as_view(), name="email_versand_list"),
     path("nachfass/", views.MusterboxNachfassStatusListView.as_view(), name="musterbox_nachfass_list"),
 

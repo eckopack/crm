@@ -1,0 +1,100 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Eingangsrechnungen – ECKO-PACK CRM{% endblock %}
+{% block content %}
+<h2 class="mb-3">Eingangsrechnungen</h2>
+<p class="text-muted">
+    Lieferantenrechnungen – manuell erfasst oder automatisch aus dem Postfach
+    rechnung@ecko-pack.de importiert. Vor dem Buchen bitte die erkannten Felder
+    gegenprüfen, insbesondere bei automatisch importierten Rechnungen (Hinweis
+    „KI-Erkennung unsicher“ in den Notizen).
+</p>
+
+<div class="row g-3 mb-3">
+    <div class="col-md-4">
+        <div class="card text-bg-light h-100 border">
+            <div class="card-body">
+                <div class="small text-muted">Zu prüfen</div>
+                <div class="fs-3 fw-bold">{{ anzahl_zu_pruefen }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100 {% if anzahl_ueberfaellig %}border-danger{% endif %}">
+            <div class="card-body">
+                <div class="small {% if anzahl_ueberfaellig %}text-danger{% endif %}">Überfällig</div>
+                <div class="fs-3 fw-bold {% if anzahl_ueberfaellig %}text-danger{% endif %}">{{ anzahl_ueberfaellig }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100 {% if anzahl_skonto_moeglich %}border-success{% endif %}">
+            <div class="card-body">
+                <div class="small {% if anzahl_skonto_moeglich %}text-success{% endif %}">Skonto noch möglich</div>
+                <div class="fs-3 fw-bold {% if anzahl_skonto_moeglich %}text-success{% endif %}">{{ anzahl_skonto_moeglich }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="d-flex flex-wrap gap-3 mb-3">
+    <div class="btn-group btn-group-sm" role="group">
+        <a href="?status=offen&quelle={{ quelle_filter }}" class="btn btn-outline-secondary {% if status_filter == 'offen' %}active{% endif %}">Offen (Zu prüfen + Gebucht)</a>
+        <a href="?status=zu_pruefen&quelle={{ quelle_filter }}" class="btn btn-outline-secondary {% if status_filter == 'zu_pruefen' %}active{% endif %}">Zu prüfen</a>
+        <a href="?status=gebucht&quelle={{ quelle_filter }}" class="btn btn-outline-secondary {% if status_filter == 'gebucht' %}active{% endif %}">Gebucht</a>
+        <a href="?status=bezahlt&quelle={{ quelle_filter }}" class="btn btn-outline-secondary {% if status_filter == 'bezahlt' %}active{% endif %}">Bezahlt</a>
+        <a href="?status=alle&quelle={{ quelle_filter }}" class="btn btn-outline-secondary {% if status_filter == 'alle' %}active{% endif %}">Alle</a>
+    </div>
+    <div class="btn-group btn-group-sm" role="group">
+        <a href="?status={{ status_filter }}&quelle=" class="btn btn-outline-secondary {% if not quelle_filter %}active{% endif %}">Alle Quellen</a>
+        <a href="?status={{ status_filter }}&quelle=email_import" class="btn btn-outline-secondary {% if quelle_filter == 'email_import' %}active{% endif %}">Nur E-Mail-Import</a>
+        <a href="?status={{ status_filter }}&quelle=manuell" class="btn btn-outline-secondary {% if quelle_filter == 'manuell' %}active{% endif %}">Nur manuell erfasst</a>
+    </div>
+</div>
+
+<div class="card">
+    <table class="table table-hover mb-0">
+        <thead>
+        <tr>
+            <th>Rechnungsnummer</th>
+            <th>Lieferant</th>
+            <th>Rechnungsdatum</th>
+            <th>Fällig am</th>
+            <th>Betrag brutto</th>
+            <th>Status</th>
+            <th>Quelle</th>
+            <th>Kostenstelle</th>
+            <th>Sachkonto</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for e in eingangsrechnungen %}
+        <tr onclick="window.location='{{ e.get_absolute_url }}'" style="cursor:pointer;"{% if e.ist_ueberfaellig %} class="table-danger"{% endif %}>
+            <td>{{ e.rechnungsnummer }}{% if e.typ == "gutschrift" %} <span class="badge text-bg-secondary">Gutschrift</span>{% endif %}</td>
+            <td>{{ e.lieferant.name }}</td>
+            <td>{{ e.rechnungsdatum|date:"d.m.Y" }}</td>
+            <td>
+                {% if e.faelligkeitsdatum %}{{ e.faelligkeitsdatum|date:"d.m.Y" }}{% else %}<span class="text-muted">–</span>{% endif %}
+                {% if e.ist_ueberfaellig %}<div class="small text-danger">seit {{ e.tage_ueberfaellig }} Tag{{ e.tage_ueberfaellig|pluralize:",en" }}</div>{% endif %}
+                {% if e.status == "zu_pruefen" and e.skonto_prozent and e.skonto_noch_moeglich %}<div class="small text-success">Skonto bis {{ e.skonto_frist|date:"d.m.Y" }}</div>{% endif %}
+            </td>
+            <td>{{ e.betrag_brutto|floatformat:2 }} €</td>
+            <td>
+                {% if e.status == "zu_pruefen" %}<span class="badge text-bg-warning">Zu prüfen</span>
+                {% elif e.status == "gebucht" %}<span class="badge text-bg-info">Gebucht</span>
+                {% elif e.status == "bezahlt" %}<span class="badge text-bg-success">Bezahlt</span>
+                {% else %}<span class="badge text-bg-secondary">Storniert</span>{% endif %}
+            </td>
+            <td>
+                {% if e.quelle == "email_import" %}<span class="badge text-bg-light border">E-Mail-Import</span>
+                {% else %}<span class="text-muted small">Manuell</span>{% endif %}
+            </td>
+            <td>{{ e.get_kostenstelle_display|default:"–" }}</td>
+            <td>{{ e.get_sachkonto_display|default:"–" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="9" class="text-muted text-center py-3">Keine Eingangsrechnungen für diese Filter.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
