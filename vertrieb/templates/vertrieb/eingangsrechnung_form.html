@@ -1,0 +1,31 @@
+{% extends "vertrieb/base.html" %}
+{% block title %}Eingangsrechnung {{ eingangsrechnung.rechnungsnummer }}{% endblock %}
+{% block content %}
+<h2 class="mb-3">Eingangsrechnung {{ eingangsrechnung.rechnungsnummer }}</h2>
+
+<div class="mb-3">
+    {% if eingangsrechnung.quelle == "email_import" %}
+    <span class="badge text-bg-light border">Automatisch aus E-Mail-Postfach importiert</span>
+    {% else %}
+    <span class="badge text-bg-light border">Manuell erfasst</span>
+    {% endif %}
+    {% if "unsicher" in eingangsrechnung.notizen %}
+    <span class="badge text-bg-warning">KI-Erkennung unsicher – bitte besonders sorgfältig gegenprüfen</span>
+    {% endif %}
+    {% if eingangsrechnung.rechnung_datei %}
+    <a href="{% url 'vertrieb:eingangsrechnung_datei' eingangsrechnung.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary ms-2">Original-PDF öffnen</a>
+    {% endif %}
+</div>
+
+<form method="post">
+    {% csrf_token %}
+    <div class="card mb-3" style="max-width: 700px;">
+        <div class="card-body">
+            {% include "vertrieb/_form_fields.html" %}
+        </div>
+    </div>
+    <button type="submit" name="aktion" value="speichern" class="btn btn-outline-secondary">Speichern</button>
+    <button type="submit" name="aktion" value="buchen" class="btn btn-success">Buchen und abschließen</button>
+    <a href="{% url 'vertrieb:eingangsrechnung_list' %}" class="btn btn-link">Zurück zur Liste</a>
+</form>
+{% endblock %}

@@ -25,7 +25,7 @@ from .forms import (
     AktivitaetForm, AngebotAblehnenForm, AngebotForm, AngebotPositionFormSet, ArtikelForm,
     AuftragForm, AuftragPositionFormSet, AuftragStornierenForm,
     BestandsuebersichtFilterForm,
-    BonusstaffelFormSet, DealForm, FirmaForm, KontaktForm,
+    BonusstaffelFormSet, DealForm, EingangsrechnungBearbeitenForm, FirmaForm, KontaktForm,
     PackscheinForm, PackscheinPositionFormSet, PackscheinVersandForm,
     LieferscheinForm, LieferscheinPositionFormSet, LieferscheinVersandForm,
     ProduktionsberichtAblehnenForm, ProduktionsberichtForm, ProduktionsbuchungForm,
@@ -2035,6 +2035,99 @@ def offene_posten_liste(request):
         "summe_offen": summe_offen,
         "summe_ueberfaellig": summe_ueberfaellig,
         "anzahl_ueberfaellig": len([r for r in offene if r.ist_ueberfaellig]),
+    })
+
+
+# ---------------------------------------------------------------------------
+# Eingangsrechnungen (Buchhaltungsmaske)
+# ---------------------------------------------------------------------------
+
+@login_required
+def eingangsrechnung_list(request):
+    """Buchhaltungsmaske fuer Eingangsrechnungen (24.11.2026, auf Wunsch von Björn, direkt
+    im Anschluss an den automatischen E-Mail-Import ueber rechnung@ecko-pack.de - siehe
+    graph_eingangsrechnungen.py). Vorher gab es dafuer nur den Django-Admin (siehe
+    EingangsrechnungAdmin-Docstring in admin.py, der genau das als Uebergangsloesung
+    benannt hatte). Zugriff bewusst OHNE eigene Rechteeinschraenkung - Björns Entscheidung
+    (24.11.2026): die kuenftige Buchhaltungs-Mitarbeiterin bekommt denselben Zugriffsumfang
+    wie jeder andere Nicht-Produktions-Mitarbeiter (inkl. /admin/, siehe base.html-Nav),
+    nur die Gruppe "Produktion" bleibt ueber ProduktionszugriffMiddleware eingeschraenkt.
+
+    Standardmaessig nur "Zu pruefen"/"Gebucht" (die aktive Arbeitsliste) - Bezahlt/
+    Storniert nur ueber den Status-Filter, damit die Liste nicht mit erledigten Vorgaengen
+    zuwaechst. Quelle-Filter("email_import") beantwortet Björns konkrete Frage ("welche
+    eingespielten Rechnungen sind ueber unser Postfach reingekommen")."""
+    eingangsrechnungen = Eingangsrechnung.objects.select_related("lieferant").all()
+
+    status_filter = request.GET.get("status", "offen")
+    if status_filter == "offen":
+        eingangsrechnungen = eingangsrechnungen.filter(status__in=["zu_pruefen", "gebucht"])
+    elif status_filter in ("zu_pruefen", "gebucht", "bezahlt", "storniert"):
+        eingangsrechnungen = eingangsrechnungen.filter(status=status_filter)
+    # status_filter == "alle": keine Einschraenkung.
+
+    quelle_filter = request.GET.get("quelle", "")
+    if quelle_filter in ("manuell", "email_import"):
+        eingangsrechnungen = eingangsrechnungen.filter(quelle=quelle_filter)
+
+    eingangsrechnungen = list(eingangsrechnungen)
+    anzahl_zu_pruefen = len([e for e in eingangsrechnungen if e.status == "zu_pruefen"])
+    anzahl_ueberfaellig = len([e for e in eingangsrechnungen if e.ist_ueberfaellig])
+    anzahl_skonto_moeglich = len([
+        e for e in eingangsrechnungen
+        if e.status == "zu_pruefen" and e.skonto_prozent and e.skonto_noch_moeglich
+    ])
+
+    return render(request, "vertrieb/eingangsrechnung_list.html", {
+        "eingangsrechnungen": eingangsrechnungen,
+        "status_filter": status_filter,
+        "quelle_filter": quelle_filter,
+        "anzahl_zu_pruefen": anzahl_zu_pruefen,
+        "anzahl_ueberfaellig": anzahl_ueberfaellig,
+        "anzahl_skonto_moeglich": anzahl_skonto_moeglich,
+    })
+
+
+@login_required
+def eingangsrechnung_bearbeiten(request, pk):
+    """Kontieren/Pruefen einer einzelnen Eingangsrechnung (24.11.2026, siehe
+    eingangsrechnung_list oben). Zwei Submit-Buttons im selben Formular, per
+    request.POST["aktion"] unterschieden:
+    - "speichern": sichert Korrekturen, OHNE den Status zu aendern - fuer den Fall, dass
+      die Pruefung nicht in einem Rutsch fertig wird (z. B. Rueckfrage beim Lieferanten).
+    - "buchen": wie "speichern", verlangt zusaetzlich ein gesetztes Sachkonto (OHNE das
+      ergibt eine Buchung schlicht keinen Sinn) und setzt dann status="gebucht" sowie
+      geprueft_von/geprueft_am (beide Felder gab es im Modell schon seit 19.11.2026,
+      wurden aber bisher nirgends befuellt - siehe models.py).
+    Kostenstelle bleibt bewusst NICHT Pflicht zum Buchen - ECKO-PACK nutzt Kostenstellen
+    laut Eileen Paetzel aktuell gar nicht in DATEV (siehe KOSTENSTELLE_CHOICES-Kommentar
+    in models.py), das waere also eine Huerde ohne fachlichen Gegenwert, solange das nicht
+    mit ihr geklaert ist."""
+    eingangsrechnung = get_object_or_404(Eingangsrechnung, pk=pk)
+
+    if request.method == "POST":
+        form = EingangsrechnungBearbeitenForm(request.POST, instance=eingangsrechnung)
+        aktion = request.POST.get("aktion")
+        if form.is_valid():
+            if aktion == "buchen" and not form.cleaned_data.get("sachkonto"):
+                form.add_error("sachkonto", "Zum Buchen muss ein Sachkonto ausgewählt sein.")
+            else:
+                beleg = form.save(commit=False)
+                if aktion == "buchen":
+                    beleg.status = "gebucht"
+                    beleg.geprueft_von = request.user
+                    beleg.geprueft_am = timezone.now()
+                beleg.save()
+                messages.success(
+                    request,
+                    f"Eingangsrechnung {beleg.rechnungsnummer} "
+                    + ("gebucht." if aktion == "buchen" else "gespeichert."),
+                )
+                return redirect("vertrieb:eingangsrechnung_list")
+    else:
+        form = EingangsrechnungBearbeitenForm(instance=eingangsrechnung)
+    return render(request, "vertrieb/eingangsrechnung_form.html", {
+        "form": form, "eingangsrechnung": eingangsrechnung,
     })
 
 
