@@ -196,9 +196,15 @@ def _postfach_rechnungen_seit(token, postfach, seit_datetime):
 def _pdf_anhaenge(token, postfach, message_id):
     """Liefert alle PDF-Dateianhaenge (Name + Base64-Inhalt) einer Nachricht. Nicht-Datei-
     anhaenge (z.B. eingebettete Outlook-Items) und Nicht-PDF-Anhaenge werden ignoriert."""
+    # Kein $select hier: Graph lehnt "contentBytes" im $select auf der polymorphen
+    # attachments-Collection ab ("Could not find a property named 'contentBytes' on
+    # type 'microsoft.graph.attachment'") - contentBytes existiert nur auf der
+    # Unterklasse fileAttachment. Ohne $select liefert Graph trotzdem alle Felder
+    # (inkl. contentBytes) zurueck, nur eben ungefiltert. Live mit echten Mails
+    # verifiziert (24.11.2026, siehe Chat).
     url = (
         f"{GRAPH_BASE_URL}/users/{urllib.parse.quote(postfach)}/messages/{message_id}"
-        f"/attachments?$select=name,contentType,contentBytes,%40odata.type"
+        f"/attachments"
     )
     header = {"Authorization": f"Bearer {token}"}
     antwort = _http_json(url, headers=header)
