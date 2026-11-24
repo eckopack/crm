@@ -112,6 +112,18 @@ urlpatterns = [
         "eingangsrechnungen/<int:pk>/bearbeiten/", views.eingangsrechnung_bearbeiten,
         name="eingangsrechnung_bearbeiten",
     ),
+    path(
+        "eingangsrechnungen/genehmigung/", views.eingangsrechnung_genehmigen_list,
+        name="eingangsrechnung_genehmigen_list",
+    ),
+    path(
+        "eingangsrechnungen/<int:pk>/genehmigen/", views.eingangsrechnung_genehmigen,
+        name="eingangsrechnung_genehmigen",
+    ),
+    path(
+        "eingangsrechnungen/<int:pk>/ablehnen/", views.eingangsrechnung_genehmigung_ablehnen,
+        name="eingangsrechnung_genehmigung_ablehnen",
+    ),
 
     path("emails/", views.EmailVersandListView.as_view(), name="email_versand_list"),
     path("nachfass/", views.MusterboxNachfassStatusListView.as_view(), name="musterbox_nachfass_list"),

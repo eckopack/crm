@@ -25,7 +25,8 @@ from .forms import (
     AktivitaetForm, AngebotAblehnenForm, AngebotForm, AngebotPositionFormSet, ArtikelForm,
     AuftragForm, AuftragPositionFormSet, AuftragStornierenForm,
     BestandsuebersichtFilterForm,
-    BonusstaffelFormSet, DealForm, EingangsrechnungBearbeitenForm, FirmaForm, KontaktForm,
+    BonusstaffelFormSet, DealForm, EingangsrechnungAblehnenForm, EingangsrechnungBearbeitenForm,
+    FirmaForm, KontaktForm,
     PackscheinForm, PackscheinPositionFormSet, PackscheinVersandForm,
     LieferscheinForm, LieferscheinPositionFormSet, LieferscheinVersandForm,
     ProduktionsberichtAblehnenForm, ProduktionsberichtForm, ProduktionsbuchungForm,
@@ -2061,8 +2062,13 @@ def eingangsrechnung_list(request):
 
     status_filter = request.GET.get("status", "offen")
     if status_filter == "offen":
-        eingangsrechnungen = eingangsrechnungen.filter(status__in=["zu_pruefen", "gebucht"])
-    elif status_filter in ("zu_pruefen", "gebucht", "bezahlt", "storniert"):
+        # 24.11.2026, Genehmigungs-Workflow: "wartet_auf_genehmigung" zaehlt weiterhin als
+        # "offen" (die Buchhaltung soll sehen, dass eine Rechnung von ihr noch nicht
+        # abschliessend gebucht ist, auch wenn sie gerade beim Einkaeufer liegt).
+        eingangsrechnungen = eingangsrechnungen.filter(
+            status__in=["zu_pruefen", "wartet_auf_genehmigung", "gebucht"]
+        )
+    elif status_filter in ("zu_pruefen", "wartet_auf_genehmigung", "gebucht", "bezahlt", "storniert"):
         eingangsrechnungen = eingangsrechnungen.filter(status=status_filter)
     # status_filter == "alle": keine Einschraenkung.
 
@@ -2096,9 +2102,17 @@ def eingangsrechnung_bearbeiten(request, pk):
     - "speichern": sichert Korrekturen, OHNE den Status zu aendern - fuer den Fall, dass
       die Pruefung nicht in einem Rutsch fertig wird (z. B. Rueckfrage beim Lieferanten).
     - "buchen": wie "speichern", verlangt zusaetzlich ein gesetztes Sachkonto (OHNE das
-      ergibt eine Buchung schlicht keinen Sinn) und setzt dann status="gebucht" sowie
-      geprueft_von/geprueft_am (beide Felder gab es im Modell schon seit 19.11.2026,
-      wurden aber bisher nirgends befuellt - siehe models.py).
+      ergibt eine Buchung schlicht keinen Sinn). Hat seit dem Genehmigungs-Workflow
+      (24.11.2026, siehe Eingangsrechnung.benoetigt_genehmigung in models.py) zwei
+      moegliche Ausgaenge statt direkt "gebucht":
+        * Einkaeufer gesetzt (Bestellbezug) -> status="wartet_auf_genehmigung",
+          E-Mail an den Einkaeufer (siehe nurture.eingangsrechnung_genehmigung_angefordert_benachrichtigen).
+          geprueft_von/geprueft_am werden HIER schon gesetzt (Buchhaltung hat geprueft),
+          genehmigt_von/genehmigt_am erst bei der Genehmigung/Ablehnung selbst.
+        * kein Einkaeufer -> wie bisher direkt status="gebucht".
+    Eine abgelehnte Rechnung (status wieder "zu_pruefen", Ablehnungsgrund steht in
+    notizen - siehe eingangsrechnung_genehmigung_ablehnen) durchlaeuft denselben Weg
+    erneut, sobald die Buchhaltung erneut auf "Buchen und abschliessen" klickt.
     Kostenstelle bleibt bewusst NICHT Pflicht zum Buchen - ECKO-PACK nutzt Kostenstellen
     laut Eileen Paetzel aktuell gar nicht in DATEV (siehe KOSTENSTELLE_CHOICES-Kommentar
     in models.py), das waere also eine Huerde ohne fachlichen Gegenwert, solange das nicht
@@ -2113,21 +2127,112 @@ def eingangsrechnung_bearbeiten(request, pk):
                 form.add_error("sachkonto", "Zum Buchen muss ein Sachkonto ausgewählt sein.")
             else:
                 beleg = form.save(commit=False)
+                erfolgsmeldung = "gespeichert."
                 if aktion == "buchen":
-                    beleg.status = "gebucht"
                     beleg.geprueft_von = request.user
                     beleg.geprueft_am = timezone.now()
-                beleg.save()
+                    if beleg.benoetigt_genehmigung:
+                        beleg.status = "wartet_auf_genehmigung"
+                        beleg.save()
+                        nurture.eingangsrechnung_genehmigung_angefordert_benachrichtigen(beleg)
+                        erfolgsmeldung = (
+                            f"zur Genehmigung an {beleg.einkaeufer.get_full_name() or beleg.einkaeufer.username} gesendet."
+                        )
+                    else:
+                        beleg.status = "gebucht"
+                        beleg.save()
+                        erfolgsmeldung = "gebucht."
+                else:
+                    beleg.save()
                 messages.success(
-                    request,
-                    f"Eingangsrechnung {beleg.rechnungsnummer} "
-                    + ("gebucht." if aktion == "buchen" else "gespeichert."),
+                    request, f"Eingangsrechnung {beleg.rechnungsnummer} {erfolgsmeldung}",
                 )
                 return redirect("vertrieb:eingangsrechnung_list")
     else:
         form = EingangsrechnungBearbeitenForm(instance=eingangsrechnung)
     return render(request, "vertrieb/eingangsrechnung_form.html", {
         "form": form, "eingangsrechnung": eingangsrechnung,
+    })
+
+
+@login_required
+def eingangsrechnung_genehmigen_list(request):
+    """Liste der Eingangsrechnungen, die auf die Genehmigung des eingeloggten Nutzers
+    warten (24.11.2026, Genehmigungs-Workflow - siehe Eingangsrechnung.benoetigt_genehmigung
+    und Björns Vorgabe "zur Genehmigung wird sie an den Sachbearbeiter geleitet, der sie
+    praktisch in Auftrag gegeben hat"). Bewusst rein ueber einkaeufer=request.user gefiltert,
+    keine eigene Rechtegruppe noetig - wer nie als Einkaeufer auf einer Rechnung steht,
+    sieht hier schlicht eine leere Liste. Superuser sehen zusaetzlich alles (fuer
+    Vertretung/Admin-Zwecke, analog zu ist_produktionsleiter bei Produktionsbericht)."""
+    qs = Eingangsrechnung.objects.filter(status="wartet_auf_genehmigung").select_related(
+        "lieferant", "einkaeufer",
+    )
+    if not request.user.is_superuser:
+        qs = qs.filter(einkaeufer=request.user)
+    return render(request, "vertrieb/eingangsrechnung_genehmigen_list.html", {
+        "eingangsrechnungen": qs.order_by("-rechnungsdatum"),
+    })
+
+
+@login_required
+def eingangsrechnung_genehmigen(request, pk):
+    """Genehmigung durch den zustaendigen Einkaeufer (24.11.2026). Schliesst die Rechnung
+    direkt als "gebucht" ab - die Buchhaltung hat Sachkonto/Kostenstelle/Betraege beim
+    Klick auf "Buchen und abschliessen" bereits final geprueft (siehe
+    eingangsrechnung_bearbeiten), die Genehmigung bestaetigt nur noch den Bestellbezug
+    fachlich (ja, diese Lieferung/Leistung wurde von mir beauftragt und ist korrekt)."""
+    rechnung = get_object_or_404(Eingangsrechnung, pk=pk)
+    if rechnung.einkaeufer_id != request.user.pk and not request.user.is_superuser:
+        raise PermissionDenied("Nur der zugeordnete Einkäufer darf diese Rechnung genehmigen.")
+    if rechnung.status != "wartet_auf_genehmigung":
+        messages.error(request, "Diese Rechnung wartet nicht (mehr) auf Genehmigung.")
+        return redirect("vertrieb:eingangsrechnung_genehmigen_list")
+
+    if request.method == "POST":
+        rechnung.status = "gebucht"
+        rechnung.genehmigt_von = request.user
+        rechnung.genehmigt_am = timezone.now()
+        rechnung.save(update_fields=["status", "genehmigt_von", "genehmigt_am"])
+        messages.success(request, f"Eingangsrechnung {rechnung.rechnungsnummer} genehmigt und gebucht.")
+        return redirect("vertrieb:eingangsrechnung_genehmigen_list")
+    return render(request, "vertrieb/eingangsrechnung_genehmigen.html", {"eingangsrechnung": rechnung})
+
+
+@login_required
+def eingangsrechnung_genehmigung_ablehnen(request, pk):
+    """Ablehnung durch den zustaendigen Einkaeufer (24.11.2026, Björns Antwort auf
+    AskUserQuestion "Bei Ablehnung" -> "Zurueck an Buchhaltung mit Kommentar"). Bewusst
+    OHNE eigenes Ablehnungsgrund-Feld (anders als Produktionsbericht.ablehnungsgrund) -
+    der Kommentar wird stattdessen an das ohnehin vorhandene notizen-Feld angehaengt,
+    damit die Buchhaltung ihn direkt in derselben Maske sieht, in der sie die Rechnung
+    sowieso wieder bearbeitet. Status geht zurueck auf "zu_pruefen" (nicht "gebucht"),
+    damit die Buchhaltung die Rechnung ueber eingangsrechnung_bearbeiten korrigieren und
+    erneut zum Buchen/zur Genehmigung einreichen kann."""
+    rechnung = get_object_or_404(Eingangsrechnung, pk=pk)
+    if rechnung.einkaeufer_id != request.user.pk and not request.user.is_superuser:
+        raise PermissionDenied("Nur der zugeordnete Einkäufer darf diese Rechnung ablehnen.")
+    if rechnung.status != "wartet_auf_genehmigung":
+        messages.error(request, "Diese Rechnung wartet nicht (mehr) auf Genehmigung.")
+        return redirect("vertrieb:eingangsrechnung_genehmigen_list")
+
+    if request.method == "POST":
+        form = EingangsrechnungAblehnenForm(request.POST)
+        if form.is_valid():
+            kommentar = form.cleaned_data["kommentar"]
+            ablehner = request.user.get_full_name() or request.user.username
+            zeitstempel = timezone.localtime().strftime("%d.%m.%Y %H:%M")
+            hinweis = f"[Genehmigung abgelehnt, {zeitstempel}, {ablehner}]: {kommentar}"
+            rechnung.notizen = f"{rechnung.notizen}\n\n{hinweis}" if rechnung.notizen else hinweis
+            rechnung.status = "zu_pruefen"
+            rechnung.genehmigt_von = request.user
+            rechnung.genehmigt_am = timezone.now()
+            rechnung.save(update_fields=["notizen", "status", "genehmigt_von", "genehmigt_am"])
+            messages.success(request, f"Eingangsrechnung {rechnung.rechnungsnummer} abgelehnt und an die Buchhaltung zurückgegeben.")
+            return redirect("vertrieb:eingangsrechnung_genehmigen_list")
+    else:
+        form = EingangsrechnungAblehnenForm()
+    return render(request, "vertrieb/eingangsrechnung_genehmigung_ablehnen.html", {
+        "form": form, "eingangsrechnung": rechnung,
     })
 
 

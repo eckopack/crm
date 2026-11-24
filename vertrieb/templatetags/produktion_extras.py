@@ -42,6 +42,24 @@ def offene_produktionsberichte(user):
     return Produktionsbericht.objects.filter(status="eingereicht").count()
 
 
+@register.filter(name="offene_genehmigungen")
+def offene_genehmigungen(user):
+    """Anzahl der auf die Genehmigung DIESES Nutzers wartenden Eingangsrechnungen
+    (24.11.2026, Genehmigungs-Workflow, analog zu offene_produktionsberichte oben) - als
+    Zähler neben dem Navigationslink "Meine Genehmigungen" in base.html. Bewusst ohne
+    Sonderfall fuer Superuser (anders als in der eigentlichen Liste/den Views): hier zaehlt
+    nur, was tatsaechlich an DIESEN Nutzer als Einkaeufer geroutet ist, damit der Zaehler
+    fuer einen Superuser, der zufaellig kein Einkaeufer ist, nicht irrefuehrend die ganze
+    Firma mitzaehlt."""
+    if not user.is_authenticated:
+        return 0
+    from ..models import Eingangsrechnung
+
+    return Eingangsrechnung.objects.filter(
+        status="wartet_auf_genehmigung", einkaeufer=user,
+    ).count()
+
+
 @register.simple_tag(takes_context=True, name="t")
 def t(context, schluessel):
     """{% t "formular.einreichen" %} - siehe Moduldoku oben. Fällt auf "de" zurück, wenn

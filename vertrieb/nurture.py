@@ -109,6 +109,7 @@ from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from django.template import Context, Template
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils import timezone
 
 from . import pdf
@@ -1103,4 +1104,53 @@ def produktionsbericht_eingereicht_benachrichtigen(bericht):
         logger.exception(
             "Benachrichtigungsmail für Produktionsbericht #%s konnte nicht gesendet werden.",
             bericht.pk,
+        )
+
+
+def eingangsrechnung_genehmigung_angefordert_benachrichtigen(rechnung):
+    """Interne Hinweismail an den zugeordneten Einkaeufer, wenn die Buchhaltung eine
+    Eingangsrechnung mit Bestellbezug zur Genehmigung einreicht (24.11.2026,
+    Genehmigungs-Workflow - Björns Antwort auf AskUserQuestion "Benachrichtigung" ->
+    "Zusaetzlich E-Mail-Benachrichtigung", zusaetzlich zur in-CRM-Liste "Meine
+    Genehmigungen"). Rein intern, deshalb wie bei
+    produktionsbericht_eingereicht_benachrichtigen OHNE EmailVersand-Protokolleintrag
+    (der ist fuer Kunden-Mails gedacht) und ohne HTML-Template. Ein Fehlschlagen des
+    Mailversands darf das Einreichen zur Genehmigung nicht verhindern (siehe views.
+    eingangsrechnung_bearbeiten: wird nach dem bereits erfolgreichen .save() aufgerufen
+    und faengt alle Exceptions selbst ab)."""
+    if not rechnung.einkaeufer_id or not rechnung.einkaeufer.email:
+        logger.warning(
+            "Eingangsrechnung #%s wartet auf Genehmigung, aber der zugeordnete Einkäufer "
+            "hat keine E-Mail-Adresse hinterlegt - keine Benachrichtigung verschickt.",
+            rechnung.pk,
+        )
+        return
+
+    betreff = (
+        f"Eingangsrechnung wartet auf deine Genehmigung – {rechnung.lieferant.name} "
+        f"({rechnung.rechnungsnummer})"
+    )
+    geprueft_von_anzeige = (
+        (rechnung.geprueft_von.get_full_name() or rechnung.geprueft_von.username)
+        if rechnung.geprueft_von else "Die Buchhaltung"
+    )
+    text_body = (
+        f"{geprueft_von_anzeige} hat eine Eingangsrechnung mit Bestellbezug zu dir "
+        f"kontiert und wartet auf deine Genehmigung:\n\n"
+        f"Lieferant: {rechnung.lieferant.name}\n"
+        f"Rechnungsnummer: {rechnung.rechnungsnummer}\n"
+        f"Rechnungsdatum: {rechnung.rechnungsdatum:%d.%m.%Y}\n"
+        f"Bestellnummer: {rechnung.bestellnummer or '-'}\n"
+        f"Betrag brutto: {rechnung.betrag_brutto} EUR\n\n"
+        f"Zur Genehmigung: {SITE_URL}{reverse('vertrieb:eingangsrechnung_genehmigen', args=[rechnung.pk])}\n"
+    )
+    try:
+        mail = EmailMultiAlternatives(
+            betreff, text_body, settings.DEFAULT_FROM_EMAIL, [rechnung.einkaeufer.email],
+        )
+        mail.send(fail_silently=False)
+    except Exception:
+        logger.exception(
+            "Genehmigungs-Benachrichtigungsmail für Eingangsrechnung #%s konnte nicht "
+            "gesendet werden.", rechnung.pk,
         )

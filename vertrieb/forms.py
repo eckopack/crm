@@ -510,10 +510,12 @@ class EingangsrechnungBearbeitenForm(BootstrapFormMixin, forms.ModelForm):
     Zwischenspeichern unvollstaendiger Angaben waehrend der Pruefung trotzdem moeglich
     bleibt (siehe Button "Speichern" vs. "Buchen und abschliessen" im Template).
 
-    Was Eileens Ablauf zusaetzlich zeigt, hier aber bewusst (noch) NICHT nachgebaut ist:
-    ein Genehmigungsschritt nach Einkaeufer-Zuordnung ("damit es zur Genehmigung
-    weitergeleitet werden kann") - das ist ein eigener Workflow (Status, Benachrichtigung,
-    wer darf genehmigen), kein Formularfeld, und wurde mit Björn noch nicht abgestimmt."""
+    Update 24.11.2026 (Nachtrag, selbes Thema): der Genehmigungsschritt nach
+    Einkaeufer-Zuordnung, den Eileens Ablauf zeigt, ist inzwischen umgesetzt - siehe
+    Eingangsrechnung.benoetigt_genehmigung/-status "wartet_auf_genehmigung" in models.py
+    und views.eingangsrechnung_genehmigen/-_genehmigung_ablehnen. Dieses Formular hier
+    bleibt unveraendert (kein neues Feld noetig, "einkaeufer" triggert die Genehmigung
+    bereits automatisch)."""
 
     class Meta:
         model = Eingangsrechnung
@@ -528,6 +530,23 @@ class EingangsrechnungBearbeitenForm(BootstrapFormMixin, forms.ModelForm):
             "faelligkeitsdatum": date_input(),
             "notizen": forms.Textarea(attrs={"rows": 3}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._bootstrapify()
+
+
+class EingangsrechnungAblehnenForm(BootstrapFormMixin, forms.Form):
+    """Ablehnungs-Kommentar des Einkaeufers (24.11.2026, Genehmigungs-Workflow). Bewusst
+    ein einfaches Form statt ModelForm - der Kommentar landet nicht in einem eigenen
+    Modellfeld, sondern wird in views.eingangsrechnung_genehmigung_ablehnen mit
+    Zeitstempel/Namen an Eingangsrechnung.notizen angehaengt (siehe dortige Begruendung:
+    Björn wollte explizit KEIN separates Ablehnungsgrund-Feld wie bei Produktionsbericht)."""
+
+    kommentar = forms.CharField(
+        label="Kommentar an die Buchhaltung", widget=forms.Textarea(attrs={"rows": 3}),
+        required=True,
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

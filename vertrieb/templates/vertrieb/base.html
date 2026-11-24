@@ -121,6 +121,7 @@
                         <li><a class="dropdown-item" href="{% url 'vertrieb:offene_posten_list' %}">Offene Posten</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="{% url 'vertrieb:eingangsrechnung_list' %}">Eingangsrechnungen</a></li>
+                        <li><a class="dropdown-item" href="{% url 'vertrieb:eingangsrechnung_genehmigen_list' %}">Meine Genehmigungen{% with offen=user|offene_genehmigungen %}{% if offen %}: {{ offen }}{% endif %}{% endwith %}</a></li>
                     </ul>
                 </li>
 
