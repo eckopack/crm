@@ -19,7 +19,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         try:
-            geprueft, importiert, uebersprungen, fehlgeschlagen = rechnungen_importieren()
+            geprueft, importiert, uebersprungen, fehlgeschlagen, xml_gefunden = rechnungen_importieren()
         except GraphFehler as exc:
             # Kein Crash des Cron-Laufs nach aussen (siehe interner_eingangsrechnungen_cron) -
             # ein temporaeres Graph-/Netzwerkproblem soll beim naechsten Lauf (1x taeglich,
@@ -33,3 +33,12 @@ class Command(BaseCommand):
             f"{importiert} Eingangsrechnung(en) angelegt, {uebersprungen} übersprungen "
             f"(kein Beleg/schon vorhanden), {fehlgeschlagen} fehlgeschlagen (siehe Log)."
         ))
+        if xml_gefunden:
+            # Eigene Zeile, bewusst WARNING-Stil: reine XRechnung-XML-Anhaenge werden NICHT
+            # automatisch angelegt (s. graph_eingangsrechnungen.rechnungen_importieren-Doku),
+            # sondern muessen manuell erfasst werden - das soll im Cron-Log auffallen, nicht
+            # in der SUCCESS-Zeile untergehen.
+            self.stdout.write(self.style.WARNING(
+                f"{xml_gefunden} XRechnung-XML-Anhang/Anhaenge gefunden (keine PDF-Rechnung) "
+                f"- NICHT automatisch erfasst, Details im Log, bitte manuell nachtragen."
+            ))

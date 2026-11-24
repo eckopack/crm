@@ -23,7 +23,8 @@ NACHRICHT_BASIS = {
     "hasAttachments": True,
 }
 
-ANHANG_BASIS = {"name": "rechnung.pdf", "contentBytes": "ZmFrZS1wZGY="}
+ANHANG_BASIS = {"name": "rechnung.pdf", "contentBytes": "ZmFrZS1wZGY=", "art": "pdf"}
+XML_ANHANG_BASIS = {"name": "rechnung.xml", "contentBytes": "ZmFrZS14bWw=", "art": "xml"}
 
 EXTRAKTION_BASIS = {
     "typ": "rechnung",
@@ -51,7 +52,7 @@ def _patch_graph(nachrichten, anhaenge):
     return (
         patch("vertrieb.graph_eingangsrechnungen._access_token", return_value="fake-token"),
         patch("vertrieb.graph_eingangsrechnungen._postfach_rechnungen_seit", return_value=nachrichten),
-        patch("vertrieb.graph_eingangsrechnungen._pdf_anhaenge", return_value=anhaenge),
+        patch("vertrieb.graph_eingangsrechnungen._rechnungs_anhaenge", return_value=anhaenge),
     )
 
 
@@ -74,10 +75,10 @@ class RechnungenImportierenTests(TestCase):
                 return rechnungen_importieren()
 
     def test_rechnung_wird_mit_bestehendem_lieferanten_angelegt(self):
-        geprueft, importiert, uebersprungen, fehlgeschlagen = self._lauf(
+        geprueft, importiert, uebersprungen, fehlgeschlagen, xml_gefunden = self._lauf(
             [NACHRICHT_BASIS], [ANHANG_BASIS], EXTRAKTION_BASIS,
         )
-        self.assertEqual((geprueft, importiert, uebersprungen, fehlgeschlagen), (1, 1, 0, 0))
+        self.assertEqual((geprueft, importiert, uebersprungen, fehlgeschlagen, xml_gefunden), (1, 1, 0, 0, 0))
 
         er = Eingangsrechnung.objects.get()
         self.assertEqual(er.lieferant, self.lieferant)
@@ -95,11 +96,15 @@ class RechnungenImportierenTests(TestCase):
 
     def test_unbekannter_lieferant_wird_als_platzhalter_angelegt(self):
         self.lieferant.delete()
-        geprueft, importiert, uebersprungen, fehlgeschlagen = self._lauf(
+        geprueft, importiert, uebersprungen, fehlgeschlagen, xml_gefunden = self._lauf(
             [NACHRICHT_BASIS], [ANHANG_BASIS], EXTRAKTION_BASIS,
         )
         self.assertEqual(importiert, 1)
-        neue_firma = Firma.objects.get()
+        # Filtert bewusst auf den Namen statt Firma.objects.get() ohne Filter: Migration 0032
+        # legt auf einer frischen DB jetzt (24.11.2026-Fix, Aufgabe #43) selbst zwei
+        # Lieferanten-Firmen an (TECNARO GmbH, traceless materials GmbH), siehe dort - ohne
+        # Filter waere das hier faelschlich "3 Firmen statt 1".
+        neue_firma = Firma.objects.get(name="Beispiel Lieferant GmbH")
         self.assertEqual(neue_firma.status, "lieferant")
         self.assertEqual(neue_firma.name, "Beispiel Lieferant GmbH")
         self.assertIn("Automatisch angelegt", neue_firma.notizen)
@@ -108,7 +113,7 @@ class RechnungenImportierenTests(TestCase):
 
     def test_kein_beleg_wird_uebersprungen_ohne_datensatz(self):
         extraktion = {**EXTRAKTION_BASIS, "typ": "kein_beleg"}
-        geprueft, importiert, uebersprungen, fehlgeschlagen = self._lauf(
+        geprueft, importiert, uebersprungen, fehlgeschlagen, xml_gefunden = self._lauf(
             [NACHRICHT_BASIS], [ANHANG_BASIS], extraktion,
         )
         self.assertEqual((importiert, uebersprungen, fehlgeschlagen), (0, 1, 0))
@@ -120,7 +125,7 @@ class RechnungenImportierenTests(TestCase):
             rechnungsdatum="2026-11-01", betrag_netto=Decimal("1"), betrag_brutto=Decimal("1"),
             email_message_id="msg-1", quelle="email_import",
         )
-        geprueft, importiert, uebersprungen, fehlgeschlagen = self._lauf(
+        geprueft, importiert, uebersprungen, fehlgeschlagen, xml_gefunden = self._lauf(
             [NACHRICHT_BASIS], [ANHANG_BASIS], EXTRAKTION_BASIS,
         )
         self.assertEqual((geprueft, importiert, uebersprungen, fehlgeschlagen), (0, 0, 0, 0))
@@ -132,30 +137,44 @@ class RechnungenImportierenTests(TestCase):
             rechnungsdatum="2026-11-01", betrag_netto=Decimal("1"), betrag_brutto=Decimal("1"),
             email_message_id="irgendeine-andere-nachricht", quelle="manuell",
         )
-        geprueft, importiert, uebersprungen, fehlgeschlagen = self._lauf(
+        geprueft, importiert, uebersprungen, fehlgeschlagen, xml_gefunden = self._lauf(
             [NACHRICHT_BASIS], [ANHANG_BASIS], EXTRAKTION_BASIS,
         )
         self.assertEqual((geprueft, importiert, uebersprungen, fehlgeschlagen), (1, 0, 1, 0))
 
     def test_fehlende_rechnungsnummer_zaehlt_als_fehlgeschlagen(self):
         extraktion = {**EXTRAKTION_BASIS, "rechnungsnummer": None}
-        geprueft, importiert, uebersprungen, fehlgeschlagen = self._lauf(
+        geprueft, importiert, uebersprungen, fehlgeschlagen, xml_gefunden = self._lauf(
             [NACHRICHT_BASIS], [ANHANG_BASIS], extraktion,
         )
         self.assertEqual((importiert, uebersprungen, fehlgeschlagen), (0, 0, 1))
         self.assertFalse(Eingangsrechnung.objects.exists())
 
     def test_anthropic_fehler_zaehlt_als_fehlgeschlagen_statt_crash(self):
-        geprueft, importiert, uebersprungen, fehlgeschlagen = self._lauf(
+        geprueft, importiert, uebersprungen, fehlgeschlagen, xml_gefunden = self._lauf(
             [NACHRICHT_BASIS], [ANHANG_BASIS], ExtraktionsFehler("API down"),
         )
         self.assertEqual((importiert, uebersprungen, fehlgeschlagen), (0, 0, 1))
 
-    def test_nachricht_ohne_pdf_anhang_wird_uebersprungen(self):
-        geprueft, importiert, uebersprungen, fehlgeschlagen = self._lauf(
+    def test_nachricht_ohne_anhang_wird_uebersprungen(self):
+        geprueft, importiert, uebersprungen, fehlgeschlagen, xml_gefunden = self._lauf(
             [NACHRICHT_BASIS], [], EXTRAKTION_BASIS,
         )
         self.assertEqual((importiert, uebersprungen, fehlgeschlagen), (0, 1, 0))
+
+    def test_xrechnung_xml_anhang_wird_nicht_automatisch_angelegt(self):
+        """Aufgabe #43, 'Stufe 1': eine reine XRechnung-XML (kein PDF) darf nicht mehr
+        lautlos verschwinden, soll aber auch nicht automatisch ausgelesen/gebucht werden -
+        nur sichtbar gezaehlt (xml_gefunden) und geloggt, keine Eingangsrechnung, kein
+        Anthropic-Aufruf."""
+        with patch("vertrieb.graph_eingangsrechnungen._access_token", return_value="fake-token"), \
+             patch("vertrieb.graph_eingangsrechnungen._postfach_rechnungen_seit", return_value=[NACHRICHT_BASIS]), \
+             patch("vertrieb.graph_eingangsrechnungen._rechnungs_anhaenge", return_value=[XML_ANHANG_BASIS]), \
+             patch("vertrieb.graph_eingangsrechnungen._anthropic_erkennung") as mock_anthropic:
+            geprueft, importiert, uebersprungen, fehlgeschlagen, xml_gefunden = rechnungen_importieren()
+        self.assertEqual((geprueft, importiert, uebersprungen, fehlgeschlagen, xml_gefunden), (1, 0, 0, 0, 1))
+        self.assertFalse(Eingangsrechnung.objects.exists())
+        mock_anthropic.assert_not_called()
 
     def test_graph_fehler_beim_token_wird_durchgereicht(self):
         with patch("vertrieb.graph_eingangsrechnungen._access_token", side_effect=GraphFehler("kein Zugriff")):

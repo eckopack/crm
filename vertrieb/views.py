@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime, timedelta
 from datetime import time as dtime
@@ -20,7 +21,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView, View
 
-from . import nurture, pdf
+from . import e_rechnung, nurture, pdf
 from .forms import (
     AktivitaetForm, AngebotAblehnenForm, AngebotForm, AngebotPositionFormSet, ArtikelForm,
     AuftragForm, AuftragPositionFormSet, AuftragStornierenForm,
@@ -48,6 +49,8 @@ from .models import (
 from .produktion_sprachen import SESSION_SCHLUESSEL, STANDARDSPRACHE, uebersetzen
 from .produktionsleiter import ist_produktionsleiter
 from django.forms import inlineformset_factory
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -1851,10 +1854,31 @@ class RechnungDeleteView(LoginRequiredMixin, DeleteView):
 
 @login_required
 def rechnung_pdf_download(request, pk):
+    """Liefert dasselbe ZUGFeRD/Factur-X-PDF, das auch per Mail verschickt wird (siehe
+    nurture.rechnung_versand_senden) - 24.11.2026, auf Wunsch von Björn (E-Rechnungspflicht).
+    Faellt bei einem Fehler (z. B. nicht zuordenbares Land/Einheit, siehe e_rechnung.py) auf
+    das reine, nicht-ZUGFeRD-faehige PDF zurueck, statt den Download/die Vorschau komplett
+    zu blockieren - zeigt dafuer eine Meldung, damit der Fehler nicht unbemerkt bleibt."""
     rechnung = get_object_or_404(Rechnung, pk=pk)
-    pdf_bytes = pdf.rechnung_pdf_erzeugen(rechnung)
+    zugferd_fehler = None
+    try:
+        pdf_bytes = e_rechnung.rechnung_zugferd_pdf_erzeugen(rechnung)
+    except Exception as exc:
+        # Faellt NICHT auf einen Server-Fehler (500) zurueck: Björn soll die Rechnung immer
+        # noch ansehen/herunterladen koennen. Die Meldung geht hier bewusst per
+        # Response-Header statt messages.warning() raus - diese Response ist kein HTML und
+        # rendert daher nie ein {% if messages %}, die Meldung wuerde sonst unbemerkt
+        # verpuffen (erst auf einer spaeteren, unzusammenhaengenden Seite auftauchen).
+        logger.exception("ZUGFeRD-PDF fuer Rechnung %s konnte nicht erzeugt werden", rechnung.nummer)
+        zugferd_fehler = str(exc)
+        pdf_bytes = pdf.rechnung_pdf_erzeugen(rechnung)
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
     response["Content-Disposition"] = f'inline; filename="{rechnung.nummer}.pdf"'
+    if zugferd_fehler:
+        response["X-ZUGFeRD-Fallback"] = (
+            "Dies ist nur das normale PDF, keine E-Rechnung - ZUGFeRD-Erzeugung "
+            "fehlgeschlagen, siehe Server-Log."
+        )
     return response
 
 
