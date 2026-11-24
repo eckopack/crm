@@ -228,7 +228,13 @@ def _anthropic_erkennung(pdf_base64):
     modell = os.environ.get("ANTHROPIC_INVOICE_MODEL", STANDARD_MODELL)
     payload = {
         "model": modell,
-        "max_tokens": 1024,
+        # War 1024: bei einer realen Rechnung (SPORTFIVE/HSV, 24.11.2026) brach die
+        # Antwort ohne schliessende "}" ab - re.search unten fand daher gar keine
+        # JSON-Struktur. Ursache noch nicht abschliessend bestaetigt (kein Zugriff auf
+        # den echten stop_reason jenes Laufs), aber stop_reason wird jetzt mitgeloggt,
+        # falls es erneut passiert. 4096 kostet nichts, wenn ungenutzt - Anthropic
+        # berechnet nur tatsaechlich erzeugte Tokens.
+        "max_tokens": 4096,
         "messages": [{
             "role": "user",
             "content": [
@@ -264,7 +270,14 @@ def _anthropic_erkennung(pdf_base64):
     # an "nur JSON" haelt.
     treffer = re.search(r"\{.*\}", text, re.DOTALL)
     if not treffer:
-        raise ExtraktionsFehler(f"Keine JSON-Struktur in Anthropic-Antwort: {text[:500]}")
+        # stop_reason mitloggen: "max_tokens" belegt, dass die Antwort vor der
+        # schliessenden "}" abgeschnitten wurde (siehe max_tokens-Kommentar oben) -
+        # jeder andere Wert deutet auf eine andere Ursache hin.
+        stop_reason = antwort.get("stop_reason")
+        raise ExtraktionsFehler(
+            f"Keine JSON-Struktur in Anthropic-Antwort (stop_reason={stop_reason}, "
+            f"Laenge={len(text)}): {text[:500]}"
+        )
     try:
         return json.loads(treffer.group(0))
     except json.JSONDecodeError as exc:
